@@ -10,6 +10,7 @@ import { buildSystemPrompt } from './system-prompt.js';
 import { HookRegistry } from '../hooks/registry.js';
 import { PluginRegistry, RalphWiggumPlugin } from '../plugins/index.js';
 import { CompletionTracker } from '../audit/index.js';
+import { PlanningValidator } from './planning-validator.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
@@ -71,6 +72,12 @@ export class CopilotAgent {
     this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry);
     this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
 
+    // Register task management tools
+    this.toolRegistry.registerTaskManagementTools(this.conversation.getMemoryStore());
+
+    // Register context management tools
+    this.toolRegistry.registerContextManagementTools(this.conversation.getMemoryStore());
+
     // Initialize hook and plugin registries
     this.hookRegistry = new HookRegistry();
     this.pluginRegistry = new PluginRegistry(this.hookRegistry, this.toolRegistry, workingDirectory);
@@ -78,9 +85,13 @@ export class CopilotAgent {
     // Initialize scaffolding tracker
     this.completionTracker = new CompletionTracker(workingDirectory, trackerConfig);
 
+    // Initialize planning validator
+    const planningValidator = new PlanningValidator(this.conversation.getMemoryStore());
+
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);
     this.loop.setCompletionTracker(this.completionTracker);
+    this.loop.setPlanningValidator(planningValidator);
   }
 
   async chat(userMessage: string): Promise<void> {
@@ -178,5 +189,12 @@ export class CopilotAgent {
 
   setMaxIterations(max: number | null): void {
     this.loop.setMaxIterations(max);
+  }
+
+  // Task management access
+  getPlanningValidator(): PlanningValidator | undefined {
+    // Note: This would need to be exposed via the loop
+    // For now, we can access it indirectly
+    return undefined;
   }
 }

@@ -103,7 +103,7 @@ export class RalphWiggumPlugin implements Plugin {
       return 'A Ralph Wiggum loop is already active. Use cancel-ralph to stop it first.';
     }
 
-    const maxIterations = 50; // Default max iterations
+    const maxIterations = 10000; // Default max iterations
 
     this.loopState = {
       active: true,

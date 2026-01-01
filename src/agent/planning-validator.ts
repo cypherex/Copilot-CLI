@@ -1,0 +1,286 @@
+// Planning Validator - ensures agent has a plan and tasks before working
+
+import chalk from 'chalk';
+import type { MemoryStore, Task, SessionGoal } from '../memory/types.js';
+
+export interface ValidationResult {
+  canProceed: boolean;
+  reason?: string;
+  suggestions?: string[];
+}
+
+export interface PlanningState {
+  hasGoal: boolean;
+  hasActiveTask: boolean;
+  hasPendingTasks: boolean;
+  hasPlan: boolean;
+  taskCount: number;
+  currentTask?: Task;
+}
+
+export class PlanningValidator {
+  private lastValidationTime = 0;
+  private validationInterval = 5; // minutes between validations
+
+  constructor(private memoryStore: MemoryStore) {}
+
+  /**
+   * Validate if agent can proceed with work
+   * Called before each user message or autonomous iteration
+   */
+  validate(): ValidationResult {
+    const state = this.getState();
+    const reasons: string[] = [];
+    const suggestions: string[] = [];
+
+    // Check 1: Must have a goal
+    if (!state.hasGoal) {
+      return {
+        canProceed: false,
+        reason: 'No goal defined. You must establish a clear goal before starting work.',
+        suggestions: [
+          'Ask the user: "What would you like me to help you accomplish?"',
+          'Once you understand the goal, use create_task to break it down into actionable tasks',
+          'Example goal: "Build a REST API for a todo app"',
+        ],
+      };
+    }
+
+    // Check 2: Must have at least one task
+    if (state.taskCount === 0) {
+      return {
+        canProceed: false,
+        reason: 'No tasks defined. You must create a task list before starting work.',
+        suggestions: [
+          'Use create_task to break down the goal into specific, actionable tasks',
+          'Start with high-level tasks, then break them down further',
+          'Example tasks: "Design API endpoints", "Implement CRUD operations", "Add authentication"',
+        ],
+      };
+    }
+
+    // Check 3: Must have a current task
+    if (!state.hasActiveTask) {
+      return {
+        canProceed: false,
+        reason: 'No current task set. You must set a current task before starting work.',
+        suggestions: [
+          'Use list_tasks to see available tasks',
+          'Use set_current_task to focus on a specific task',
+          'Use update_task_status to mark the selected task as active',
+        ],
+      };
+    }
+
+    // Check 4: Current task should be active
+    if (state.currentTask && state.currentTask.status !== 'active') {
+      reasons.push(`Current task "${state.currentTask.description}" is ${state.currentTask.status}, not active`);
+      suggestions.push('Use update_task_status to set current task to active');
+    }
+
+    // Check 5: Should have active tasks (unless all done)
+    if (state.taskCount > 0 && !state.hasPendingTasks) {
+      const completedCount = this.memoryStore.getTasks().filter(t => t.status === 'completed').length;
+      if (completedCount < state.taskCount) {
+        suggestions.push('Some tasks might be blocked. Review task list with list_tasks');
+      }
+    }
+
+    // Check for blocked tasks
+    const blockedTasks = this.memoryStore.getTasks().filter(t => t.status === 'blocked');
+    if (blockedTasks.length > 0) {
+      suggestions.push(`⚠️  ${blockedTasks.length} task(s) are blocked. Use list_tasks status=blocked to see them`);
+    }
+
+    return {
+      canProceed: reasons.length === 0,
+      reason: reasons.length > 0 ? reasons.join('\n') : undefined,
+      suggestions: suggestions.length > 0 ? suggestions : undefined,
+    };
+  }
+
+  /**
+   * Get current planning state
+   */
+  getState(): PlanningState {
+    const goal = this.memoryStore.getGoal();
+    const tasks = this.memoryStore.getTasks();
+    const activeTask = this.memoryStore.getActiveTask();
+
+    return {
+      hasGoal: !!goal,
+      hasActiveTask: !!activeTask,
+      hasPendingTasks: tasks.some((t: any) => t.status === 'waiting' || t.status === 'active'),
+      hasPlan: this.hasPlan(),
+      taskCount: tasks.length,
+      currentTask: activeTask || undefined,
+    };
+  }
+
+  /**
+   * Check if there's a reasonable plan
+   * A plan exists if there are multiple tasks with different priorities
+   */
+  private hasPlan(): boolean {
+    const tasks = this.memoryStore.getTasks();
+    if (tasks.length < 2) return false;
+
+    // Check for variety in priorities (indicates planning)
+    const priorities = new Set(tasks.map(t => t.priority));
+    if (priorities.size > 1) return true;
+
+    // Check for reasonable number of tasks (2-10 suggests planning)
+    return tasks.length >= 2 && tasks.length <= 10;
+  }
+
+  /**
+   * Display validation result to user
+   */
+  displayValidation(result: ValidationResult): void {
+    if (result.canProceed) {
+      console.log(chalk.green('✓ Planning validated - ready to proceed'));
+      return;
+    }
+
+    console.log(chalk.red('\n⛔ Planning Validation Failed'));
+    if (result.reason) {
+      console.log(chalk.yellow(`\nReason:\n  ${result.reason}`));
+    }
+
+    if (result.suggestions && result.suggestions.length > 0) {
+      console.log(chalk.cyan('\nSuggestions:'));
+      for (const suggestion of result.suggestions) {
+        console.log(chalk.gray(`  • ${suggestion}`));
+      }
+    }
+    console.log();
+  }
+
+  /**
+   * Generate system prompt injection with planning reminders
+   */
+  buildPlanningReminders(): string {
+    const state = this.getState();
+    const parts: string[] = ['\n[Planning Reminders]'];
+
+    if (state.currentTask) {
+      parts.push(`\nCurrent Task: ${state.currentTask.description}`);
+      parts.push(`Status: ${state.currentTask.status} | Priority: ${state.currentTask.priority}`);
+    }
+
+    const pendingCount = this.memoryStore.getTasks().filter((t: any) => t.status === 'waiting').length;
+    if (pendingCount > 0) {
+      parts.push(`\nWaiting Tasks: ${pendingCount}`);
+    }
+
+    const blockedCount = this.memoryStore.getTasks().filter(t => t.status === 'blocked').length;
+    if (blockedCount > 0) {
+      parts.push(`\n⚠️ Blocked Tasks: ${blockedCount} - Review with list_tasks status=blocked`);
+    }
+
+    parts.push('\nReminders:');
+    parts.push('• Keep your current task updated with update_task_status');
+    parts.push('• Create new tasks with create_task when identifying new work');
+    parts.push('• Review task list regularly with list_tasks');
+    parts.push('• Set current task with set_current_task before working');
+
+    parts.push('\n[End Planning Reminders]');
+    return parts.join('\n');
+  }
+
+  /**
+   * Check if it's time to validate (avoid excessive validation)
+   */
+  shouldValidate(): boolean {
+    const now = Date.now();
+    if (now - this.lastValidationTime > this.validationInterval * 60 * 1000) {
+      this.lastValidationTime = now;
+      return true;
+    }
+    return false;
+  }
+}
+
+/**
+ * Build subagent usage reminder prompt
+ * Injected occasionally to encourage subagent consideration
+ */
+export function buildSubagentReminder(iteration: number): string | null {
+  // Only remind every 3-5 iterations
+  if (iteration % 3 !== 0) return null;
+
+  const parts: string[] = [
+    `\n[Subagent Reminder]`,
+    ``,
+    `🎯 LLMs work best on FOCUSED, SPECIFIC tasks`,
+    ``,
+    `Use spawn_agent when:`,
+    ``,
+    `📊 Context Management:`,
+    `• The conversation is getting long (> 10 messages)`,
+    `• You're working on a complex problem with many details`,
+    `• Context is becoming overloaded with irrelevant information`,
+    `• You need to step back and see the big picture`,
+    ``,
+    `🔄 Parallel Execution (multiple subagents):`,
+    `• Writing tests for multiple files or modules`,
+    `• Refactoring or analyzing multiple components`,
+    `• Investigating bugs in different parts of the codebase`,
+    `• Creating documentation for different sections`,
+    ``,
+    `🎯 Focused Sequential Tasks (single subagent):`,
+    `• Writing tests for a complex module (file-by-file)`,
+    `• Investigating a bug by tracing through components`,
+    `• Refactoring a large module (section-by-section)`,
+    `• Writing documentation while understanding code`,
+    `• Any focused, bounded task that benefits from isolation`,
+    ``,
+    `📋 Role-Based Delegation:`,
+    ``,
+    `investigator (diagnose & debug):`,
+    `  • Complex bugs that need deep investigation`,
+    `  • Root cause analysis`,
+    `  • Tracing execution paths`,
+    ``,
+    `test-writer:`,
+    `  • Writing tests for specific files/functions`,
+    `  • Edge case coverage`,
+    `  • Test refactoring`,
+    ``,
+    `refactorer:`,
+    `  • Code structure improvements`,
+    `  • Pattern application`,
+    `  • Code organization`,
+    ``,
+    `fixer:`,
+    `  • Bug fixes with minimal changes`,
+    `  • Error handling improvements`,
+    `  • Regression prevention`,
+    ``,
+    `documenter:`,
+    `  • API documentation`,
+    `  • README and guides`,
+    `  • Code comments`,
+    ``,
+    `Each subagent can run for thousands of iterations (default: 1000)`,
+    ``,
+    `💡 Context Management Tools:`,
+    `• summarize_context - Reduce bloat before spawning subagents`,
+    `• extract_focus - Provide focused context for subagent`,
+    `• merge_context - Integrate subagent results back`,
+    ``,
+    `💡 Best Practices:`,
+    `• Provide minimal, focused context to subagents`,
+    `• Use extract_focus to create bounded context`,
+    `• Merge results back with merge_context`,
+    `• Set background=true for parallel tasks`,
+    `• Wait on all background agents together`,
+    ``,
+    `Use list_agents to check running subagents.`,
+    `Use wait_agent to get results from background subagents.`,
+    ``,
+    `[End Subagent Reminder]`,
+  ];
+
+  return parts.join('\n');
+}

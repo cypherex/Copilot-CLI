@@ -16,6 +16,8 @@ export interface SmartCompressionConfig {
   preserveErrorContext: boolean;
   preserveCodeBlocks: boolean;
   archiveOldContext: boolean;
+  aggressiveMode: boolean; // Enable aggressive compression strategies
+  semanticPreservation: boolean; // Preserve semantic meaning better
 }
 
 export interface SmartCompressionResult {
@@ -24,6 +26,8 @@ export interface SmartCompressionResult {
   compressedTokens: number;
   archivedChunks: number;
   injectedContext: boolean;
+  compressionRatio: number; // compressed / original
+  strategiesUsed: string[];
 }
 
 const DEFAULT_CONFIG: SmartCompressionConfig = {
@@ -32,6 +36,8 @@ const DEFAULT_CONFIG: SmartCompressionConfig = {
   preserveErrorContext: true,
   preserveCodeBlocks: true,
   archiveOldContext: true,
+  aggressiveMode: false,
+  semanticPreservation: true,
 };
 
 export class SmartCompressor {
@@ -79,6 +85,7 @@ export class SmartCompressor {
 
   async compress(messages: ChatMessage[]): Promise<SmartCompressionResult> {
     const originalTokens = estimateMessagesTokens(messages);
+    const strategiesUsed: string[] = [];
 
     // Check if compression needed
     if (originalTokens <= this.config.targetTokens) {
@@ -88,6 +95,8 @@ export class SmartCompressor {
         compressedTokens: originalTokens,
         archivedChunks: 0,
         injectedContext: false,
+        compressionRatio: 1.0,
+        strategiesUsed: [],
       };
     }
 
@@ -101,9 +110,35 @@ export class SmartCompressor {
     // Extract and store important information before compression
     await this.extractAndStore(conversationMessages, classified);
 
-    // Determine what to keep, compress, or discard
+    // Apply compression strategies
+    let messagesToProcess = [...conversationMessages];
+
+    // Strategy 1: Remove low-importance messages
+    if (originalTokens > this.config.targetTokens * 1.5) {
+      messagesToProcess = this.removeLowImportanceMessages(messagesToProcess, classified);
+      strategiesUsed.push('remove_low_importance');
+    }
+
+    // Strategy 2: Compress code blocks to signatures
+    if (this.config.aggressiveMode && originalTokens > this.config.targetTokens * 2) {
+      messagesToProcess = this.compressCodeBlocks(messagesToProcess, classified);
+      strategiesUsed.push('compress_code_blocks');
+    }
+
+    // Strategy 3: Summarize long messages
+    if (this.config.semanticPreservation && this.llmClient) {
+      const threshold = this.config.aggressiveMode ? 500 : 1000;
+      messagesToProcess = await this.summarizeLongMessages(messagesToProcess, threshold);
+      strategiesUsed.push('summarize_long_messages');
+    }
+
+    // Strategy 4: Merge adjacent tool results
+    messagesToProcess = this.mergeAdjacentToolResults(messagesToProcess);
+    strategiesUsed.push('merge_tool_results');
+
+    // Determine what to keep, compress, or discard from processed messages
     const { keep, archive, discard } = this.partitionMessages(
-      conversationMessages,
+      messagesToProcess,
       classified
     );
 
@@ -111,6 +146,7 @@ export class SmartCompressor {
     let archivedChunks = 0;
     if (this.config.archiveOldContext && archive.length > 0) {
       archivedChunks = await this.archiveMessages(archive, classified);
+      strategiesUsed.push('archive_old_context');
     }
 
     // Build compressed message list
@@ -129,6 +165,7 @@ export class SmartCompressor {
         role: 'system',
         content: `[Persistent Memory]\n${memoryContext}`,
       });
+      strategiesUsed.push('inject_memory_context');
     }
 
     // Generate summary of archived messages if we have LLM
@@ -139,6 +176,7 @@ export class SmartCompressor {
           role: 'system',
           content: `[Earlier Conversation Summary]\n${summary}`,
         });
+        strategiesUsed.push('summarize_archived');
       }
     }
 
@@ -146,6 +184,7 @@ export class SmartCompressor {
     compressedMessages.push(...keep);
 
     const compressedTokens = estimateMessagesTokens(compressedMessages);
+    const compressionRatio = compressedTokens / originalTokens;
 
     return {
       messages: compressedMessages,
@@ -153,6 +192,8 @@ export class SmartCompressor {
       compressedTokens,
       archivedChunks,
       injectedContext: !!memoryContext,
+      compressionRatio,
+      strategiesUsed,
     };
   }
 
@@ -234,6 +275,151 @@ export class SmartCompressor {
     if (info.categories.includes('file_content')) return true;
 
     return false;
+  }
+
+  // Strategy: Remove low-importance messages
+  private removeLowImportanceMessages(
+    messages: ChatMessage[],
+    classified: ClassifiedMessage[]
+  ): ChatMessage[] {
+    const originalIndices = new Map<ChatMessage, number>();
+    classified.forEach((c, i) => {
+      originalIndices.set(messages[i], c.index);
+    });
+
+    return messages.filter((msg, idx) => {
+      const info = classified.find(c => c.index === originalIndices.get(msg));
+      if (!info) return true;
+      
+      // Keep if not noise or low importance
+      return info.importance !== 'noise' && info.importance !== 'low';
+    });
+  }
+
+  // Strategy: Compress code blocks to function signatures
+  private compressCodeBlocks(
+    messages: ChatMessage[],
+    classified: ClassifiedMessage[]
+  ): ChatMessage[] {
+    return messages.map((msg) => {
+      if (msg.content.length < 500) return msg; // Skip short messages
+
+      // Extract code blocks and compress them
+      const codeBlockPattern = /```[\s\S]*?```/g;
+      let compressed = msg.content;
+      let match;
+
+      while ((match = codeBlockPattern.exec(msg.content)) !== null) {
+        const fullBlock = match[0];
+        const content = fullBlock.replace(/```[\w]*\n?/g, '').replace(/```$/g, '');
+
+        // Try to extract function/class signatures
+        const lines = content.split('\n');
+        const signatures: string[] = [];
+
+        for (const line of lines) {
+          // Look for function/class declarations
+          if (/^\s*(function|class|interface|type|const|let|var)\s+/.test(line)) {
+            signatures.push(line.trim());
+          } else if (/^\s*\w+\s*\([^)]*\)\s*(=>|:|\{)/.test(line)) {
+            // Arrow functions or method signatures
+            signatures.push(line.trim());
+          }
+        }
+
+        if (signatures.length > 0) {
+          const placeholder = `[${signatures.length} functions/classes defined]\n` +
+                             signatures.map(s => `  ${s}`).join('\n');
+          compressed = compressed.replace(fullBlock, placeholder);
+        }
+      }
+
+      return { ...msg, content: compressed };
+    });
+  }
+
+  // Strategy: Summarize long messages using LLM
+  private async summarizeLongMessages(
+    messages: ChatMessage[],
+    threshold: number
+  ): Promise<ChatMessage[]> {
+    if (!this.llmClient) return messages;
+
+    const results: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      if (msg.content.length <= threshold) {
+        results.push(msg);
+        continue;
+      }
+
+      try {
+        const summary = await this.summarizeMessage(msg);
+        results.push({
+          ...msg,
+          content: summary,
+        });
+      } catch {
+        // If summarization fails, keep original
+        results.push(msg);
+      }
+    }
+
+    return results;
+  }
+
+  private async summarizeMessage(msg: ChatMessage): Promise<string> {
+    if (!this.llmClient) return msg.content;
+
+    try {
+      const response = await this.llmClient.chat([
+        {
+          role: 'system',
+          content: 'Summarize this message concisely while preserving key information, code snippets, and technical details.',
+        },
+        {
+          role: 'user',
+          content: msg.content,
+        },
+      ]);
+
+      return response.choices[0]?.message.content || msg.content;
+    } catch {
+      return msg.content;
+    }
+  }
+
+  // Strategy: Merge adjacent tool results
+  private mergeAdjacentToolResults(messages: ChatMessage[]): ChatMessage[] {
+    const merged: ChatMessage[] = [];
+    let i = 0;
+
+    while (i < messages.length) {
+      const msg = messages[i];
+
+      // If this is a tool result and next message is also a tool result
+      if (msg.role === 'tool' && i + 1 < messages.length && messages[i + 1].role === 'tool') {
+        // Merge consecutive tool results
+        const mergedContent = [msg.content];
+        let j = i + 1;
+
+        while (j < messages.length && messages[j].role === 'tool') {
+          mergedContent.push(messages[j].content);
+          j++;
+        }
+
+        merged.push({
+          ...msg,
+          content: mergedContent.join('\n---\n'),
+        });
+        i = j;
+      } else {
+        merged.push(msg);
+        i++;
+      }
+    }
+
+    return merged;
   }
 
   private async extractAndStore(

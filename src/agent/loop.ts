@@ -18,11 +18,13 @@ import type { HookRegistry } from '../hooks/registry.js';
 import { CompletionTracker } from '../audit/index.js';
 import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
 import { getRole } from './subagent-roles.js';
+import { PlanningValidator, buildSubagentReminder } from './planning-validator.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
+  private planningValidator?: PlanningValidator;
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
@@ -42,6 +44,10 @@ export class AgenticLoop {
 
   setCompletionTracker(tracker: CompletionTracker): void {
     this.completionTracker = tracker;
+  }
+
+  setPlanningValidator(validator: PlanningValidator): void {
+    this.planningValidator = validator;
   }
 
   async processUserMessage(userMessage: string): Promise<void> {
@@ -87,6 +93,25 @@ export class AgenticLoop {
         if (opportunity.taskCount && opportunity.taskCount > 1) {
           console.log(chalk.gray('   Detected Tasks: ' + opportunity.taskCount));
         }
+      }
+    }
+
+    // Validate planning before proceeding
+    if (this.planningValidator) {
+      const validation = this.planningValidator.validate();
+      if (!validation.canProceed) {
+        this.planningValidator.displayValidation(validation);
+        
+        // Add validation result to conversation for context
+        const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
+        this.conversation.addUserMessage(messageToProcess + '\n\n' + validationMessage);
+        return;
+      }
+
+      // Inject planning reminders into system message
+      const planningReminders = this.planningValidator.buildPlanningReminders();
+      if (planningReminders) {
+        // We'll inject this before the LLM call
       }
     }
 
@@ -137,6 +162,28 @@ export class AgenticLoop {
         messages = [
           ...messages.slice(0, -1),
           { role: 'system' as const, content: hint },
+          messages[messages.length - 1],
+        ];
+      }
+
+      // Inject planning reminders on first iteration
+      if (this.planningValidator && iteration === 1) {
+        const planningReminders = this.planningValidator.buildPlanningReminders();
+        if (planningReminders) {
+          messages = [
+            ...messages.slice(0, -1),
+            { role: 'system' as const, content: planningReminders },
+            messages[messages.length - 1],
+          ];
+        }
+      }
+
+      // Inject subagent usage reminder occasionally
+      const subagentReminder = buildSubagentReminder(iteration);
+      if (subagentReminder) {
+        messages = [
+          ...messages.slice(0, -1),
+          { role: 'system' as const, content: subagentReminder },
           messages[messages.length - 1],
         ];
       }

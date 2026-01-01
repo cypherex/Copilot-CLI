@@ -5,8 +5,15 @@ import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import type { SubAgentManager } from '../agent/subagent.js';
 import type { MemoryStore } from '../memory/types.js';
-import { listRoles, getRole } from '../agent/subagent-roles.js';
+import { listRoles, getRole, buildFocusedContext } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
+import {
+  buildSubagentTask,
+  getRecommendedPattern,
+  buildOrchestratorDispatchMessage,
+  buildOrchestratorMergeMessage,
+  parseSubagentResult,
+} from '../agent/subagent-communication-patterns.js';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -34,22 +41,43 @@ const ListAgentsSchema = z.object({
 export class SpawnAgentTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'spawn_agent',
-    description: `Spawn an autonomous subagent to handle a specific task.
+    description: `Spawn an autonomous subagent to handle a focused, specific task.
 
-Use this tool when:
-- A task can be parallelized into independent subtasks
-- You need to delegate a complex operation
-- You want to explore multiple approaches simultaneously
+KEY PRINCIPLE: LLMs work best on FOCUSED, SPECIFIC tasks with bounded context. Use subagents to break complex work into manageable pieces.
 
-The subagent will have access to all tools and work independently.
-By default, waits for completion. Set background=true to run in parallel.
+WHEN TO USE (MANDATORY):
+⚠️ You MUST use spawn_agent for these patterns:
+- "for each file/module/service" - Multiple independent items require parallel subagents
+- "across all files/modules" - Cross-module operations need parallel processing
+
+WHEN TO USE (HIGHLY RECOMMENDED):
+📊 Context Management:
+- The conversation is getting long (> 10 messages)
+- Context is becoming overloaded with irrelevant information
+- You need to step back and see the big picture
+- Complex problem with many moving parts
+
+🔄 Parallel Execution (spawn multiple subagents with background=true):
+- Writing tests for multiple files or modules
+- Refactoring or analyzing multiple components
+- Investigating bugs in different parts of the codebase
+- Creating documentation for different sections
+
+🎯 Focused Sequential Tasks (single subagent):
+- Writing tests for a complex module (file-by-file)
+- Investigating a bug by tracing through components
+- Refactoring a large module (section-by-section)
+- Writing documentation while understanding code
+- Any focused, bounded task that benefits from isolation
 
 Available Roles:
-- test-writer: Write comprehensive tests with edge cases (3 iterations)
-- investigator: Diagnose bugs and trace execution (3 iterations)
-- refactorer: Improve code quality and organization (2 iterations)
-- documenter: Create and maintain documentation (2 iterations)
-- fixer: Resolve specific bugs and issues (2 iterations)`,
+- investigator: Diagnose bugs and trace execution (deep analysis)
+- test-writer: Write comprehensive tests with edge cases
+- refactorer: Improve code quality and organization
+- documenter: Create and maintain documentation
+- fixer: Resolve specific bugs and issues
+
+Each subagent can run for thousands of iterations (default: 1000) and is suitable for long-running tasks. Use background=true for parallel tasks.`,
     parameters: {
       type: 'object',
       properties: {
@@ -102,6 +130,7 @@ Available Roles:
 
     let systemPrompt: string | undefined;
     let maxIterations: number | undefined;
+    let focusedTask = task;
 
     // If a role is provided and memoryStore is available, build a brief and convert to system prompt
     if (role && this.memoryStore) {
@@ -109,7 +138,21 @@ Available Roles:
       if (roleConfig) {
         maxIterations = roleConfig.defaultMaxIterations;
 
-        const brief = buildSubagentBrief(task, this.memoryStore, {
+        // Build focused context with communication patterns
+        const pattern = getRecommendedPattern(task, files);
+        focusedTask = buildSubagentTask(role, task, files, pattern);
+
+        // Build dispatch message for orchestrator
+        const dispatchMessage = buildOrchestratorDispatchMessage(pattern, [{
+          task,
+          roleId: role,
+          files,
+        }]);
+
+        // Show dispatch message
+        console.log(chalk.cyan('\n' + dispatchMessage + '\n'));
+
+        const brief = buildSubagentBrief(focusedTask, this.memoryStore, {
           role: roleConfig,
           files,
           successCriteria: success_criteria,
@@ -151,7 +194,14 @@ Available Roles:
 export class WaitAgentTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'wait_agent',
-    description: 'Wait for a background subagent to complete and get its results.',
+    description: `Wait for a background subagent to complete and get its results.
+
+Use after spawning subagents with background=true. This retrieves the subagent's output, including:
+- Final result or error message
+- Number of iterations used
+- Tools called during execution
+
+The merge message will be displayed showing how the subagent's work integrates into the overall task.`,
     parameters: {
       type: 'object',
       properties: {
@@ -183,6 +233,16 @@ export class WaitAgentTool extends BaseTool {
 
     if (status === 'completed') {
       const result = this.subAgentManager.getResult(agent_id)!;
+
+      // Parse and show merge message
+      const parsedResult = parseSubagentResult(result.output || '');
+      const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
+        taskId: agent_id,
+        result: parsedResult,
+      }]);
+
+      console.log(chalk.cyan('\n' + mergeMessage + '\n'));
+
       return JSON.stringify({
         status: result.success ? 'completed' : 'failed',
         output: result.output,
@@ -194,6 +254,15 @@ export class WaitAgentTool extends BaseTool {
 
     // Wait for completion
     const result = await this.subAgentManager.wait(agent_id);
+
+    // Parse and show merge message
+    const parsedResult = parseSubagentResult(result.output || '');
+    const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
+      taskId: agent_id,
+      result: parsedResult,
+    }]);
+
+    console.log(chalk.cyan('\n' + mergeMessage + '\n'));
 
     return JSON.stringify({
       status: result.success ? 'completed' : 'failed',
@@ -208,7 +277,14 @@ export class WaitAgentTool extends BaseTool {
 export class ListAgentsTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'list_agents',
-    description: 'List all spawned subagents and their status.',
+    description: `List all spawned subagents and their status.
+
+Use to track:
+- Active subagents currently running
+- Completed subagents with their results
+- Failed subagents with error messages
+
+This is especially useful when working with multiple parallel subagents spawned with background=true.`,
     parameters: {
       type: 'object',
       properties: {

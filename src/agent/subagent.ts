@@ -1,5 +1,6 @@
 // SubAgent - autonomous agent that can be spawned to handle specific tasks
 
+import { EventEmitter } from 'events';
 import type { LLMClient, LLMConfig, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import { ConversationManager } from './conversation.js';
@@ -13,6 +14,7 @@ export interface SubAgentConfig {
   systemPrompt?: string;
   maxIterations?: number;
   workingDirectory?: string;
+  allowUserInput?: boolean; // Allow user to queue messages during execution
 }
 
 export interface SubAgentResult {
@@ -23,16 +25,29 @@ export interface SubAgentResult {
   toolsUsed: string[];
 }
 
-export class SubAgent {
+export interface SubAgentProgress {
+  agentId: string;
+  name: string;
+  iteration: number;
+  maxIterations: number;
+  currentTool?: string;
+  status: 'running' | 'paused' | 'waiting_for_input' | 'completed' | 'failed';
+}
+
+export class SubAgent extends EventEmitter {
   private conversation: ConversationManager;
   private maxIterations: number;
   private toolsUsed: Set<string> = new Set();
+  private userMessageQueue: string[] = [];
+  private userMessageResolvers: Map<number, (message: string) => void> = new Map();
+  private messageCounter = 0;
 
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry,
     private config: SubAgentConfig
   ) {
+    super();
     this.config = config;
     const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
     this.conversation = new ConversationManager(systemPrompt, {
@@ -42,7 +57,52 @@ export class SubAgent {
       },
     });
     this.conversation.setLLMClient(llmClient);
-    this.maxIterations = config.maxIterations || 1000;
+    this.maxIterations = config.maxIterations || 10000;
+  }
+
+  // Queue a user message for the subagent
+  queueUserMessage(message: string): void {
+    this.userMessageQueue.push(message);
+    this.emit('user_message_queued', { message, queueLength: this.userMessageQueue.length });
+  }
+
+  // Send a message and wait for a response from the subagent
+  async sendUserMessage(message: string, timeout: number = 30000): Promise<string> {
+    const messageId = ++this.messageCounter;
+    
+    return new Promise((resolve, reject) => {
+      // Store the resolver
+      this.userMessageResolvers.set(messageId, resolve);
+      
+      // Queue the message with metadata
+      this.userMessageQueue.push(`[SYNC:${messageId}]${message}`);
+      
+      // Set timeout
+      const timer = setTimeout(() => {
+        this.userMessageResolvers.delete(messageId);
+        reject(new Error('Timeout waiting for subagent response'));
+      }, timeout);
+      
+      // Clean up timer when resolved
+      const originalResolve = resolve;
+      this.userMessageResolvers.set(messageId, (result: string) => {
+        clearTimeout(timer);
+        originalResolve(result);
+      });
+      
+      this.emit('user_message_queued', { message, messageId, queueLength: this.userMessageQueue.length });
+    });
+  }
+
+  // Get current progress
+  getProgress(): SubAgentProgress {
+    return {
+      agentId: this.config.name,
+      name: this.config.name,
+      iteration: 0,
+      maxIterations: this.maxIterations,
+      status: 'running',
+    };
   }
 
   private buildDefaultSystemPrompt(): string {
@@ -81,6 +141,56 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
         
         // Update spinner with iteration progress
         spinner.text = `${this.config.name} (iteration ${iteration}/${this.maxIterations})`;
+        
+        // Emit progress update
+        this.emit('progress', {
+          agentId: this.config.name,
+          name: this.config.name,
+          iteration,
+          maxIterations: this.maxIterations,
+          currentTool: undefined,
+          status: 'running',
+        });
+
+        // Check for queued user messages
+        if (this.userMessageQueue.length > 0) {
+          const queuedMessage = this.userMessageQueue.shift();
+          
+          if (!queuedMessage) {
+            continue;
+          }
+
+          if (queuedMessage.startsWith('[SYNC:')) {
+            // Handle synchronous message that expects a response
+            const match = queuedMessage.match(/\[SYNC:(\d+)\](.*)/);
+            if (match) {
+              const messageId = parseInt(match[1]);
+              const message = match[2];
+              
+              spinner.info(chalk.yellow(`User message: ${message.slice(0, 50)}...`));
+              
+              // Process the message
+              this.conversation.addUserMessage(message);
+              
+              // Get response and resolve the promise
+              const response = await this.getSingleResponse();
+              this.conversation.addAssistantMessage(response.content || '');
+              
+              const resolver = this.userMessageResolvers.get(messageId);
+              if (resolver) {
+                resolver(response.content || 'No response');
+                this.userMessageResolvers.delete(messageId);
+              }
+              
+              continueLoop = true;
+              continue;
+            }
+          } else {
+            // Handle async user message (fire and forget)
+            spinner.info(chalk.yellow(`User message: ${queuedMessage.slice(0, 50)}...`));
+            this.conversation.addUserMessage(queuedMessage);
+          }
+        }
 
         const tools = this.toolRegistry.getDefinitions();
         const accumulator = new StreamAccumulator();
@@ -135,6 +245,20 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
     }
   }
 
+  private async getSingleResponse(): Promise<{ content: string; toolCalls?: any[] }> {
+    const tools = this.toolRegistry.getDefinitions();
+    const accumulator = new StreamAccumulator();
+
+    for await (const chunk of this.llmClient.chatStream(
+      this.conversation.getMessages(),
+      tools
+    )) {
+      accumulator.addChunk(chunk);
+    }
+
+    return accumulator.getResponse();
+  }
+
   private async executeTools(toolCalls: ToolCall[]): Promise<void> {
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
@@ -164,15 +288,18 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
 }
 
 // SubAgent Manager for tracking and managing multiple subagents
-export class SubAgentManager {
+export class SubAgentManager extends EventEmitter {
   private activeAgents: Map<string, Promise<SubAgentResult>> = new Map();
   private completedAgents: Map<string, SubAgentResult> = new Map();
+  private agentInstances: Map<string, SubAgent> = new Map();
   private agentCounter = 0;
 
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry
-  ) {}
+  ) {
+    super();
+  }
 
   spawn(config: SubAgentConfig): string {
     const agentId = `agent_${++this.agentCounter}_${Date.now()}`;
@@ -182,15 +309,64 @@ export class SubAgentManager {
       name: config.name || agentId,
     });
 
+    // Store agent instance for progress tracking and user messages
+    this.agentInstances.set(agentId, agent);
+
+    // Forward progress events
+    agent.on('progress', (progress: SubAgentProgress) => {
+      const progressWithAgentId = { ...progress, agentId };
+      this.emit('progress', progressWithAgentId);
+    });
+
+    // Forward user_message_queued events
+    agent.on('user_message_queued', (data: any) => {
+      this.emit('user_message_queued', { agentId, ...data });
+    });
+
     const promise = agent.execute().then((result) => {
       this.activeAgents.delete(agentId);
       this.completedAgents.set(agentId, result);
+      this.agentInstances.delete(agentId);
+      this.emit('completed', { agentId, result });
       return result;
     });
 
     this.activeAgents.set(agentId, promise);
 
     return agentId;
+  }
+
+  // Send a message to a running subagent
+  sendUserMessage(agentId: string, message: string): void {
+    const agent = this.agentInstances.get(agentId);
+    if (!agent) {
+      throw new Error(`Agent not found or not running: ${agentId}`);
+    }
+    agent.queueUserMessage(message);
+  }
+
+  // Send a message and wait for response from a running subagent
+  async sendUserMessageAndWait(agentId: string, message: string, timeout?: number): Promise<string> {
+    const agent = this.agentInstances.get(agentId);
+    if (!agent) {
+      throw new Error(`Agent not found or not running: ${agentId}`);
+    }
+    return agent.sendUserMessage(message, timeout);
+  }
+
+  // Get progress of an active agent
+  getProgress(agentId: string): SubAgentProgress | null {
+    const agent = this.agentInstances.get(agentId);
+    return agent?.getProgress() || null;
+  }
+
+  // Get all active agents with their progress
+  getAllProgress(): Map<string, SubAgentProgress> {
+    const progress = new Map<string, SubAgentProgress>();
+    for (const [agentId, agent] of this.agentInstances.entries()) {
+      progress.set(agentId, agent.getProgress());
+    }
+    return progress;
   }
 
   async wait(agentId: string): Promise<SubAgentResult> {

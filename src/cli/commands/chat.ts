@@ -7,7 +7,13 @@ import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { SessionManager } from '../../session/index.js';
 
-// Define available commands with aliases for autocomplete
+// Find all commands that start with the given prefix
+function findMatchingCommands(prefix: string): string[] {
+  const searchPrefix = prefix.toLowerCase();
+  return AVAILABLE_COMMANDS.filter(cmd => cmd.startsWith(searchPrefix));
+}
+
+// Add new-session to available commands
 const AVAILABLE_COMMANDS = [
   'help',
   'clear',
@@ -18,17 +24,14 @@ const AVAILABLE_COMMANDS = [
   'context',
   'memory',
   'debt',
+  'tasks',
   'plugins',
   'sessions',
+  'new-session',
+  'resume',
   'ralph-loop',
   'cancel-ralph',
 ];
-
-// Find all commands that start with the given prefix
-function findMatchingCommands(prefix: string): string[] {
-  const searchPrefix = prefix.toLowerCase();
-  return AVAILABLE_COMMANDS.filter(cmd => cmd.startsWith(searchPrefix));
-}
 
 // Find the longest common prefix among a list of strings
 function getCommonPrefix(strings: string[]): string {
@@ -309,6 +312,27 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
   const config = await loadConfig();
 
+  // Track if agent is paused
+  let agentPaused = false;
+  let pauseReason = '';
+
+  // Setup interrupt handler (Ctrl+C)
+  const originalSigintListener = process.listeners('SIGINT')[0];
+  process.removeAllListeners('SIGINT');
+
+  process.on('SIGINT', () => {
+    if (agentPaused) {
+      // Second Ctrl+C - exit
+      console.log(chalk.red('\n\n🛑 Force exit'));
+      process.exit(0);
+    }
+
+    // First Ctrl+C - pause
+    agentPaused = true;
+    pauseReason = 'User interrupted';
+    console.log(chalk.yellow('\n\n⏸️  Agent paused. Press Enter to continue or type a new message.'));
+  });
+
   // Initialize session manager
   const sessionManager = new SessionManager();
   await sessionManager.initialize();
@@ -358,7 +382,26 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
     try {
       while (true) {
+        // Check if agent was paused
+        if (agentPaused) {
+          console.log(chalk.gray('\n⏸️  Agent is paused. Type /resume to continue, /quit to exit, or a new message to start a new task.'));
+        }
+
         const userInput = await readMultilineInput(chalk.green('You: '));
+
+        // Handle resume command when paused
+        if (agentPaused && userInput.toLowerCase().trim() === '/resume') {
+          agentPaused = false;
+          pauseReason = '';
+          console.log(chalk.green('▶️  Agent resumed\n'));
+          continue;
+        }
+
+        // If paused and user sends a non-resume message, just continue
+        if (agentPaused) {
+          console.log(chalk.gray('Agent is paused. Use /resume to continue the current task.\n'));
+          continue;
+        }
 
         if (userInput.startsWith('/')) {
           const command = userInput.slice(1).toLowerCase().trim().split(/\s+/)[0];
@@ -419,6 +462,11 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
             continue;
           }
 
+          if (command === 'tasks') {
+            showTasks(agent);
+            continue;
+          }
+
           if (command === 'sessions') {
             const sessionsCmd = parseSessionsCommand(userInput);
             if (sessionsCmd) {
@@ -427,6 +475,23 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
               await handleSessionsCommand(agent, sessionManager, { action: 'list' });
             }
             console.log();
+            continue;
+          }
+
+          if (command === 'new-session') {
+            // Start a fresh session
+            const currentSession = sessionManager.getCurrentSession();
+            if (currentSession) {
+              await sessionManager.saveCurrentSession(agent.getMemoryStore());
+            }
+            
+            // Clear agent conversation
+            agent.clearConversation();
+            
+            // Clear session in sessionManager
+            sessionManager.setCurrentSession(null as any);
+            
+            console.log(chalk.green('✓ Started fresh session\n'));
             continue;
           }
 
@@ -511,15 +576,18 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
 function showHelp(agent: CopilotAgent): void {
   console.log(chalk.bold('\n📖 Available Commands:'));
-  console.log(chalk.gray('  /help     - Show this help message'));
-  console.log(chalk.gray('  /paste    - Open editor for long/multiline input'));
-  console.log(chalk.gray('  /clear    - Clear conversation history'));
-  console.log(chalk.gray('  /context  - Show context/token usage'));
-  console.log(chalk.gray('  /memory   - Show memory status (preferences, tasks, etc.)'));
-  console.log(chalk.gray('  /debt     - Show scaffolding debt (incomplete items)'));
-  console.log(chalk.gray('  /sessions - Manage saved sessions (list, load, export, delete, clear)'));
-  console.log(chalk.gray('  /plugins  - List loaded plugins'));
-  console.log(chalk.gray('  /exit     - Exit the chat session'));
+  console.log(chalk.gray('  /help        - Show this help message'));
+  console.log(chalk.gray('  /paste       - Open editor for long/multiline input'));
+  console.log(chalk.gray('  /clear       - Clear conversation history'));
+  console.log(chalk.gray('  /context     - Show context/token usage'));
+  console.log(chalk.gray('  /memory      - Show memory status (preferences, tasks, etc.)'));
+  console.log(chalk.gray('  /debt        - Show scaffolding debt (incomplete items)'));
+  console.log(chalk.gray('  /tasks       - Show task list with statuses'));
+  console.log(chalk.gray('  /sessions    - Manage saved sessions (list, load, export, delete, clear)'));
+  console.log(chalk.gray('  /new-session - Start a fresh session'));
+  console.log(chalk.gray('  /resume      - Resume a paused agent'));
+  console.log(chalk.gray('  /plugins     - List loaded plugins'));
+  console.log(chalk.gray('  /exit        - Exit the chat session'));
   console.log();
   console.log(chalk.bold('Plugin Commands (Ralph Wiggum):'));
   console.log(chalk.gray('  /ralph-loop <task>  - Start autonomous agent loop'));
@@ -590,6 +658,63 @@ function showDebt(agent: CopilotAgent): void {
   console.log();
   console.log(debt);
   console.log();
+}
+
+function showTasks(agent: CopilotAgent): void {
+  const memoryStore = agent.getMemoryStore();
+  const tasks = memoryStore.getTasks();
+  
+  if (tasks.length === 0) {
+    console.log(chalk.gray('\nNo tasks tracked yet.\n'));
+    console.log(chalk.dim('Tasks are automatically tracked when you mention things like:'));
+    console.log(chalk.dim('  - "Need to implement authentication"'));
+    console.log(chalk.dim('  - "Should refactor the API"'));
+    console.log(chalk.dim('  - "Going to add unit tests"\n'));
+    return;
+  }
+
+  console.log(chalk.bold('\n📋 Tracked Tasks:\n'));
+
+  // Group by status
+  const pending = tasks.filter((t: any) => t.status === 'pending');
+  const inProgress = tasks.filter((t: any) => t.status === 'in_progress');
+  const completed = tasks.filter((t: any) => t.status === 'completed');
+  const blocked = tasks.filter((t: any) => t.status === 'blocked');
+
+  if (inProgress.length > 0) {
+    console.log(chalk.yellow('● In Progress:'));
+    for (const task of inProgress) {
+      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+    }
+    console.log();
+  }
+
+  if (pending.length > 0) {
+    console.log(chalk.gray('○ Pending:'));
+    for (const task of pending) {
+      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+    }
+    console.log();
+  }
+
+  if (blocked.length > 0) {
+    console.log(chalk.red('⚠ Blocked:'));
+    for (const task of blocked) {
+      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+    }
+    console.log();
+  }
+
+  if (completed.length > 0) {
+    console.log(chalk.green(`✓ Completed (${completed.length}):`));
+    for (const task of completed.slice(-5)) {
+      console.log(chalk.dim(`  ${task.description}`));
+    }
+    if (completed.length > 5) {
+      console.log(chalk.dim(`  ... and ${completed.length - 5} more`));
+    }
+    console.log();
+  }
 }
 
 function showSessionHeader(providerInfo: string, workingDirectory: string, sessionId?: string, sessionTitle?: string): void {
