@@ -4,6 +4,8 @@ import type { LLMClient, LLMConfig, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import { ConversationManager } from './conversation.js';
 import { StreamAccumulator } from '../llm/streaming.js';
+import ora from 'ora';
+import chalk from 'chalk';
 
 export interface SubAgentConfig {
   name: string;
@@ -67,9 +69,18 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
     let finalOutput = '';
     let continueLoop = true;
 
+    // Create spinner for progress tracking
+    const spinner = ora({
+      text: `${this.config.name} working...`,
+      color: 'cyan',
+    }).start();
+
     try {
       while (continueLoop && iteration < this.maxIterations) {
         iteration++;
+        
+        // Update spinner with iteration progress
+        spinner.text = `${this.config.name} (iteration ${iteration}/${this.maxIterations})`;
 
         const tools = this.toolRegistry.getDefinitions();
         const accumulator = new StreamAccumulator();
@@ -97,17 +108,27 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
         }
       }
 
+      const toolsUsed = Array.from(this.toolsUsed);
+      const successMessage = toolsUsed.length > 0 
+        ? `${this.config.name} completed (used: ${toolsUsed.join(', ')})`
+        : `${this.config.name} completed`;
+
+      spinner.succeed(chalk.green(successMessage));
+
       return {
         success: true,
         output: finalOutput,
         iterations: iteration,
-        toolsUsed: Array.from(this.toolsUsed),
+        toolsUsed,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      spinner.fail(chalk.red(`${this.config.name} failed: ${errorMessage}`));
+      
       return {
         success: false,
         output: finalOutput,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         iterations: iteration,
         toolsUsed: Array.from(this.toolsUsed),
       };

@@ -172,6 +172,10 @@ export class CopilotAgent {
     return this.completionTracker;
   }
 
+  getMemoryStore(): any {
+    return this.conversation.getMemoryStore();
+  }
+
   setMaxIterations(max: number | null): void {
     this.loop.setMaxIterations(max);
   }

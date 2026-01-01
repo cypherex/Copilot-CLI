@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import chalk from 'chalk';
 import type { ChatMessage, LLMClient } from '../llm/types.js';
 import type {
   IncompleteItem,
@@ -365,36 +366,68 @@ Analyze for incomplete scaffolding and return JSON:`;
     const lines: string[] = [];
 
     if (debt.resolved.length > 0) {
-      lines.push('\x1b[32m✓ Resolved:\x1b[0m');
+      lines.push(chalk.green('✓ Resolved:'));
       for (const item of debt.resolved.slice(-3)) {
-        lines.push(`  \x1b[32m✓\x1b[0m ${item.type}: ${item.description.slice(0, 60)}`);
+        lines.push(`  ${chalk.green('✓')} ${item.type}: ${item.description.slice(0, 60)}`);
       }
     }
 
     if (debt.critical.length > 0) {
-      lines.push('\x1b[31m⚠ Critical incomplete:\x1b[0m');
+      lines.push(chalk.red('⚠ Critical incomplete:'));
       for (const item of debt.critical.slice(0, 3)) {
-        lines.push(`  \x1b[31m●\x1b[0m ${item.file}: ${item.description.slice(0, 60)}`);
+        lines.push(`  ${chalk.red('●')} ${item.file}: ${item.description.slice(0, 60)}`);
       }
     }
 
     if (debt.stale.length > 0) {
-      lines.push('\x1b[33m● Stale items:\x1b[0m');
+      lines.push(chalk.yellow('● Stale items:'));
       for (const item of debt.stale.filter(i => i.priority < 4).slice(0, 3)) {
-        lines.push(`  \x1b[33m●\x1b[0m ${item.file}: ${item.description.slice(0, 50)} (${item.responsesSinceIntroduced} ago)`);
+        lines.push(`  ${chalk.yellow('●')} ${item.file}: ${item.description.slice(0, 50)} (${item.responsesSinceIntroduced} ago)`);
       }
     }
 
     if (debt.recent.length > 0 && this.config.strictnessMode !== 'off') {
-      lines.push(`\x1b[90m○ ${debt.recent.length} new item(s) tracking\x1b[0m`);
+      lines.push(`${chalk.gray('○')} ${debt.recent.length} new item(s) tracking`);
     }
 
+    // Add actionable hints at the end
     if (debt.shouldBlock) {
       lines.push('');
-      lines.push('\x1b[31m⛔ Too much scaffolding debt - complete existing items before adding features\x1b[0m');
+      lines.push(chalk.red('⛔ Debt limit reached - complete these items first'));
+      
+      // Generate suggestions based on critical items
+      if (debt.critical.length > 0) {
+        const suggestions: string[] = [];
+        for (const item of debt.critical.slice(0, 2)) {
+          const action = this.getSuggestedAction(item);
+          suggestions.push(`Complete the ${item.type} in ${item.file}${action ? `, ${action}` : ''}`);
+        }
+        if (suggestions.length > 0) {
+          lines.push(`${chalk.yellow('→')} Try: '${suggestions.join(', ')}'`);
+        }
+      }
+    } else if (debt.critical.length > 0) {
+      lines.push('');
+      lines.push(`${chalk.yellow('⚠')} ${debt.critical.length} critical item${debt.critical.length > 1 ? 's' : ''} need attention`);
     }
 
     return lines.join('\n');
+  }
+
+  // Helper to generate suggested actions for a debt item
+  private getSuggestedAction(item: IncompleteItem): string {
+    const actionMap: Record<IncompleteItemType, string> = {
+      unwired_extraction: 'wire up the extracted data',
+      unconnected_method: 'connect this method to callers',
+      missing_call: 'add the expected call site',
+      stub: 'replace placeholder with implementation',
+      simplified: 'enhance the simplified logic',
+      todo: 'resolve the TODO comment',
+      missing_implementation: 'provide concrete implementation',
+      dead_code: 'remove unreachable code',
+      obsolete_code: 'clean up superseded code',
+    };
+    return actionMap[item.type] || 'address this item';
   }
 
   // Persistence

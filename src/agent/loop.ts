@@ -9,6 +9,7 @@ import { StreamAccumulator } from '../llm/streaming.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import { CompletionTracker } from '../audit/index.js';
 import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
+import { getRole } from './subagent-roles.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
@@ -55,7 +56,14 @@ export class AgenticLoop {
     this.currentSubagentOpportunity = detectSubagentOpportunity(messageToProcess);
     if (this.currentSubagentOpportunity && this.currentSubagentOpportunity.shouldSpawn) {
       const hint = buildSubagentHint(this.currentSubagentOpportunity);
-      console.log(chalk.gray('\n💡 Subagent suggestion available'));
+      const opportunity = this.currentSubagentOpportunity;
+      
+      // Get role name if roleId exists
+      const roleName = opportunity.roleId ? getRole(opportunity.roleId)?.name : 'General Subagent';
+      
+      console.log(chalk.gray('\n💡 Suggestion: ' + roleName));
+      console.log(chalk.gray('   ' + opportunity.reason));
+      console.log(chalk.gray('   Priority: ' + opportunity.priority));
     }
 
     this.conversation.addUserMessage(messageToProcess);
@@ -79,8 +87,10 @@ export class AgenticLoop {
       }
 
       const tools = this.toolRegistry.getDefinitions();
-      const spinner = ora('Thinking...').start();
+      let spinner: ReturnType<typeof ora> | null = ora('Thinking...').start();
       const accumulator = new StreamAccumulator();
+      const startTime = Date.now();
+      let hasStartedStreaming = false;
 
       // Build messages with optional scaffolding reminder and subagent hint
       let messages = this.conversation.getMessages();
@@ -117,7 +127,20 @@ export class AgenticLoop {
         )) {
           if (chunk.delta.content) {
             currentContent += chunk.delta.content;
-            if (!hasToolCalls) {
+
+            // Check if we should start streaming (after 500ms or when we have content)
+            const elapsed = Date.now() - startTime;
+            if (!hasStartedStreaming && elapsed >= 500) {
+              // Stop spinner and enable streaming
+              spinner?.stop();
+              spinner = null;
+              accumulator.enableStreaming();
+              hasStartedStreaming = true;
+            } else if (hasStartedStreaming) {
+              // Update streaming display in real-time
+              accumulator.updateStreamingDisplay();
+            } else if (!hasToolCalls && spinner) {
+              // Still showing spinner, update preview
               spinner.text = chalk.gray(
                 currentContent.slice(0, 60) + (currentContent.length > 60 ? '...' : '')
               );
@@ -128,17 +151,32 @@ export class AgenticLoop {
 
           if (chunk.delta.toolCalls) {
             hasToolCalls = true;
-            spinner.text = 'Executing tools...';
+            if (spinner) {
+              spinner.text = 'Executing tools...';
+            }
           }
         }
 
-        spinner.stop();
+        // Stop spinner if still running
+        if (spinner) {
+          spinner.stop();
+          spinner = null;
+        }
+
+        // Finalize streaming if enabled
+        if (hasStartedStreaming) {
+          accumulator.finalizeStreaming();
+        }
 
         const response = accumulator.getResponse();
 
-        if (response.content) {
+        // If we didn't stream (tool-only response or very fast), display now
+        if (response.content && !hasStartedStreaming) {
           console.log(chalk.cyan('\nAssistant:'));
           console.log(response.content);
+          console.log();
+        } else if (!response.content && hasStartedStreaming) {
+          // Ensure proper newline even if no content
           console.log();
         }
 
@@ -194,7 +232,7 @@ export class AgenticLoop {
           }
         }
       } catch (error) {
-        spinner.fail('Error communicating with Copilot');
+        spinner?.fail('Error communicating with Copilot');
         console.error(chalk.red(error instanceof Error ? error.message : String(error)));
         continueLoop = false;
       }
@@ -235,7 +273,19 @@ export class AgenticLoop {
       }
 
       console.log(chalk.blue(`\n→ Executing: ${toolName}`));
-      console.log(chalk.gray(JSON.stringify(toolArgs, null, 2)));
+
+      // Display compact tool arguments
+      const argSummary = Object.entries(toolArgs)
+        .map(([key, value]) => {
+          const strValue = typeof value === 'string' ? value : JSON.stringify(value);
+          const truncated = strValue.length > 50 ? strValue.slice(0, 50) + '...' : strValue;
+          return `${key}="${truncated}"`;
+        })
+        .join(', ');
+      console.log(chalk.gray('   ' + argSummary));
+
+      // Create spinner for real-time status
+      const spinner = ora({ indent: 2, text: toolName }).start();
 
       let result: { success: boolean; output?: string; error?: string };
 
@@ -243,7 +293,7 @@ export class AgenticLoop {
         result = await this.toolRegistry.execute(toolName, toolArgs);
 
         if (result.success) {
-          console.log(chalk.green('✓ Success'));
+          spinner.succeed(chalk.green(toolName));
           if (result.output) {
             console.log(chalk.gray(result.output.slice(0, 500) + (result.output.length > 500 ? '...' : '')));
           }
@@ -257,13 +307,13 @@ export class AgenticLoop {
           // Track file edits in memory
           this.trackFileEdit(toolName, toolArgs);
         } else {
-          console.log(chalk.red('✗ Failed'));
+          spinner.fail(chalk.red(toolName));
           console.log(chalk.red(result.error));
           this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.log(chalk.red('✗ Failed'));
+        spinner.fail(chalk.red(toolName));
         console.log(chalk.red(errorMessage));
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
         result = { success: false, error: errorMessage };

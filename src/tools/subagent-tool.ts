@@ -7,6 +7,8 @@ import type { SubAgentManager } from '../agent/subagent.js';
 import type { MemoryStore } from '../memory/types.js';
 import { listRoles, getRole } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
+import ora from 'ora';
+import chalk from 'chalk';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({

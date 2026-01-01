@@ -96,7 +96,8 @@ export class ContextManager {
   getUsageSummary(): string {
     const { totalTokens, percentUsed } = this.state.usage;
     const bar = this.createProgressBar(percentUsed);
-    return `Context: ${bar} ${percentUsed.toFixed(1)}% (${totalTokens}/${this.config.maxContextTokens} tokens)`;
+    const warning = percentUsed > 80 ? '\n⚠️  Approaching token limit - conversation may be trimmed' : '';
+    return `${bar} ${Math.round(percentUsed)}% used (${totalTokens}/${this.config.maxContextTokens} tokens)${warning}`;
   }
 
   private createProgressBar(percent: number): string {
@@ -105,9 +106,9 @@ export class ContextManager {
     const empty = width - filled;
 
     let color = chalk.green;
-    if (percent >= this.config.compressionThreshold) {
+    if (percent > 80) {
       color = chalk.red;
-    } else if (percent >= this.config.compressionThreshold * 0.75) {
+    } else if (percent > 60) {
       color = chalk.yellow;
     }
 
