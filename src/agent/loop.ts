@@ -1,4 +1,12 @@
 // Main agentic loop
+//
+// MANDATORY DELEGATION SYSTEM:
+// When a subagent opportunity is detected with mandatory=true, the agent MUST delegate
+// the task to a subagent and not attempt it directly. This is enforced for:
+// - High priority patterns (parallel processing, investigation, debugging)
+// - Tasks requiring specialized handling or parallel execution
+//
+// Non-mandatory opportunities are presented as suggestions that the agent may consider.
 
 import chalk from 'chalk';
 import ora from 'ora';
@@ -55,15 +63,31 @@ export class AgenticLoop {
     // Detect subagent opportunities on first iteration
     this.currentSubagentOpportunity = detectSubagentOpportunity(messageToProcess);
     if (this.currentSubagentOpportunity && this.currentSubagentOpportunity.shouldSpawn) {
-      const hint = buildSubagentHint(this.currentSubagentOpportunity);
       const opportunity = this.currentSubagentOpportunity;
+      const isMandatory = opportunity.mandatory === true;
       
       // Get role name if roleId exists
       const roleName = opportunity.roleId ? getRole(opportunity.roleId)?.name : 'General Subagent';
       
-      console.log(chalk.gray('\n💡 Suggestion: ' + roleName));
-      console.log(chalk.gray('   ' + opportunity.reason));
-      console.log(chalk.gray('   Priority: ' + opportunity.priority));
+      if (isMandatory) {
+        // MANDATORY delegation - use warning style with different color
+        console.log(chalk.yellow.bold('\n⚠️ [WARNING] MANDATORY DELEGATION'));
+        console.log(chalk.yellow('   ' + roleName));
+        console.log(chalk.yellow('   ' + opportunity.reason));
+        console.log(chalk.yellow('   Priority: ' + opportunity.priority));
+        if (opportunity.taskCount && opportunity.taskCount > 1) {
+          console.log(chalk.yellow('   Detected Tasks: ' + opportunity.taskCount));
+        }
+        console.log(chalk.yellow('   ⚠️ YOU MUST delegate this task to a subagent'));
+      } else {
+        // Suggestion mode - use gray color
+        console.log(chalk.gray('\n💡 Suggestion: ' + roleName));
+        console.log(chalk.gray('   ' + opportunity.reason));
+        console.log(chalk.gray('   Priority: ' + opportunity.priority));
+        if (opportunity.taskCount && opportunity.taskCount > 1) {
+          console.log(chalk.gray('   Detected Tasks: ' + opportunity.taskCount));
+        }
+      }
     }
 
     this.conversation.addUserMessage(messageToProcess);

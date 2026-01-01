@@ -23,7 +23,7 @@ Your responsibilities:
 - Use appropriate assertions and descriptive test names
 
 Focus on test quality over quantity. Every test should have a clear purpose and validate meaningful behavior.`,
-    defaultMaxIterations: 3,
+    defaultMaxIterations: 100000,
     contextNeeds: ['projectContext', 'conventions', 'files', 'facts'],
   },
 
@@ -41,7 +41,7 @@ Your responsibilities:
 - Add comments explaining complex refactored sections
 
 Refactor incrementally and safely. Each change should be independently testable.`,
-    defaultMaxIterations: 2,
+    defaultMaxIterations: 10000,
     contextNeeds: ['projectContext', 'conventions', 'files', 'preferences'],
   },
 
@@ -59,7 +59,7 @@ Your responsibilities:
 - Use debugging tools and systematic approaches
 
 Be methodical and thorough. Consider multiple hypotheses and validate each one.`,
-    defaultMaxIterations: 3,
+    defaultMaxIterations: 10000,
     contextNeeds: ['workingState', 'recentErrors', 'files', 'facts'],
   },
 
@@ -77,7 +77,7 @@ Your responsibilities:
 - Use appropriate formatting (markdown, JSDoc, etc.)
 
 Documentation should be accurate, complete, and easy to understand for new contributors.`,
-    defaultMaxIterations: 2,
+    defaultMaxIterations: 10000,
     contextNeeds: ['projectContext', 'conventions', 'files', 'preferences'],
   },
 
@@ -95,7 +95,7 @@ Your responsibilities:
 - Document the nature of the bug and the fix
 
 Fixes should be minimal, focused, and well-tested. Avoid over-engineering.`,
-    defaultMaxIterations: 2,
+    defaultMaxIterations: 10000,
     contextNeeds: ['workingState', 'recentErrors', 'files', 'facts'],
   },
 };

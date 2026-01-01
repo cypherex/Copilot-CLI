@@ -54,6 +54,29 @@ export class SmartCompressor {
     this.extractor.setLLMClient(client);
   }
 
+  /**
+   * Calculate token budget for memory context
+   * Uses 20% of target tokens to avoid excessive memory.
+   * 
+   * Note: We use a simple calculation (20% of targetTokens) instead of calling
+   * calculateBudget() from context/budget.ts because:
+   * 1. The full ContextBudget type includes allocations for sections we don't use here
+   * 2. We only need the memory portion for buildContextSummary()
+   * 3. This keeps the smart-compressor focused on its specific use case
+   * 4. The ConversationManager handles the full budget allocation
+   */
+  private calculateMemoryBudget(): number {
+    // Use 20% of target tokens for memory context
+    // This is separate from the ConversationManager's memory allocation (10% of 80% = 8%)
+    // The difference is because:
+    // - SmartCompressor's targetTokens is typically 50% of context limit (for compression)
+    // - ConversationManager's budget is 80% of context limit (for total context)
+    // - So: SmartCompressor memory = 0.2 * 0.5 * limit = 10% of limit
+    // - ConversationManager memory = 0.1 * 0.8 * limit = 8% of limit
+    // Both are reasonable amounts for memory context
+    return Math.floor(this.config.targetTokens * 0.2);
+  }
+
   async compress(messages: ChatMessage[]): Promise<SmartCompressionResult> {
     const originalTokens = estimateMessagesTokens(messages);
 
@@ -99,7 +122,8 @@ export class SmartCompressor {
     }
 
     // Inject memory context
-    const memoryContext = this.memoryStore.buildContextSummary();
+    const memoryBudget = this.calculateMemoryBudget();
+    const memoryContext = this.memoryStore.buildContextSummary(memoryBudget);
     if (memoryContext) {
       compressedMessages.push({
         role: 'system',

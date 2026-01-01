@@ -42,7 +42,7 @@ export class SubAgent {
       },
     });
     this.conversation.setLLMClient(llmClient);
-    this.maxIterations = config.maxIterations || 10;
+    this.maxIterations = config.maxIterations || 1000;
   }
 
   private buildDefaultSystemPrompt(): string {

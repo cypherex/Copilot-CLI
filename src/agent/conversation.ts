@@ -6,6 +6,7 @@ import { ContextManager, type ContextManagerConfig, MODEL_CONTEXT_LIMITS } from 
 import { LocalMemoryStore } from '../memory/store.js';
 import { SmartCompressor, type SmartCompressionConfig } from '../memory/smart-compressor.js';
 import { ContextExtractor } from '../memory/extractor.js';
+import { calculateBudget, adjustBudgetForTotal, type ContextBudget } from '../context/budget.js';
 
 export interface ConversationConfig {
   maxHistoryLength?: number;
@@ -27,6 +28,7 @@ export class ConversationManager {
   private initialized: boolean = false;
   private pendingContextInjections: string[] = [];
   private pendingRetrievalIds: string[] = [];
+  private currentBudget?: ContextBudget;
 
   constructor(systemPrompt: string, config: ConversationConfig = {}) {
     this.maxHistoryLength = config.maxHistoryLength ?? 50;
@@ -60,14 +62,42 @@ export class ConversationManager {
     });
   }
 
+  /**
+   * Calculate the token budget for context building
+   * Returns a ContextBudget object with allocations for each context section
+   */
+  private calculateTokenBudget(): ContextBudget {
+    // Get the current context usage to access the maxContextTokens from state
+    const usage = this.contextManager.getUsage();
+
+    // Derive max context tokens from remaining + total (or use default if not yet set)
+    // This works because: totalTokens = maxContextLimit - remainingTokens
+    // Therefore: maxContextLimit = totalTokens + remainingTokens
+    const maxContextTokens = usage.totalTokens + usage.remainingTokens || 32000;
+
+    // Use 80% of max context for the budget to leave room for overhead
+    // The 20% buffer accounts for:
+    // - Token estimation inaccuracies (typically 5-10% error)
+    // - Model response generation space
+    // - Metadata and protocol overhead
+    // - Unexpected token usage spikes
+    const totalBudget = Math.floor(maxContextTokens * 0.8);
+
+    return calculateBudget(totalBudget);
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     // Load persisted memory
     await this.memoryStore.load();
 
+    // Calculate and store budget for context building
+    this.currentBudget = this.calculateTokenBudget();
+
     // Inject persistent context into system prompt if available
-    const memoryContext = this.memoryStore.buildContextSummary();
+    const memoryBudget = this.currentBudget.memory;
+    const memoryContext = this.memoryStore.buildContextSummary(memoryBudget);
     if (memoryContext && this.messages.length > 0) {
       const systemMsg = this.messages[0];
       if (systemMsg.role === 'system') {
@@ -91,15 +121,28 @@ export class ConversationManager {
   }
 
   setModelContextLimit(model: string): void {
+    // Update context manager with new model limit
     this.contextManager.setModelContextLimit(model);
 
     // Update smart compressor target
+    // SmartCompressor uses 50% of context limit as its compression target
+    // This is separate from the budget system and more aggressive
     const limit = MODEL_CONTEXT_LIMITS[model] || 32000;
     this.smartCompressor = new SmartCompressor(this.memoryStore, {
       targetTokens: Math.floor(limit * 0.5),
     });
+
+    // Re-attach LLM client if it was set (it was reset by new SmartCompressor)
     if (this.llmClient) {
       this.smartCompressor.setLLMClient(this.llmClient);
+    }
+
+    // Adjust budget if it was already calculated
+    // This preserves proportional allocations while scaling to new limit
+    // For example: switching from 8k to 32k will 4x all section allocations
+    if (this.currentBudget) {
+      const newTotal = Math.floor(limit * 0.8);
+      this.currentBudget = adjustBudgetForTotal(this.currentBudget, newTotal);
     }
   }
 
@@ -137,6 +180,47 @@ export class ConversationManager {
         error: result.slice(0, 500),
       });
     }
+  }
+
+  /**
+   * Update budget tracking after LLM response to monitor token usage
+   * Should be called after each LLM response to track budget consumption
+   *
+   * @param usedTokens - The total number of tokens used in the last LLM request/response
+   */
+  updateBudgetAfterResponse(usedTokens: number): void {
+    // Skip tracking if budget hasn't been initialized yet
+    if (!this.currentBudget) {
+      return;
+    }
+
+    // Calculate remaining tokens and usage ratio
+    // availableTokens represents buffer space for future messages
+    const availableTokens = this.currentBudget.total - usedTokens;
+    const usageRatio = usedTokens / this.currentBudget.total;
+
+    // Warning when running low on budget (< 20% remaining AND > 80% used)
+    // Dual check ensures warning only triggers when truly low on budget
+    // This prevents false warnings if usedTokens is unexpectedly low
+    if (availableTokens < this.currentBudget.total * 0.2 && usageRatio > 0.8) {
+      console.log(chalk.yellow(
+        `[Budget] Warning: ${Math.floor(usageRatio * 100)}% of token budget used. ` +
+        `${availableTokens} tokens remaining.`
+      ));
+    }
+
+    // Debug logging for budget tracking (can be removed or made conditional)
+    // Enable with: DEBUG_BUDGET=1 node app.js
+    if (process.env.DEBUG_BUDGET) {
+      console.log(chalk.gray(
+        `[Budget] Used ${usedTokens} / ${this.currentBudget.total} tokens ` +
+        `(${Math.floor(usageRatio * 100)}%)`
+      ));
+    }
+
+    // Note: We don't adjust currentBudget here because it represents the
+    // allocation limits, not actual usage. The same budget is used for
+    // multiple iterations until the model changes or compression occurs.
   }
 
   private async processNewMessage(message: ChatMessage): Promise<void> {
