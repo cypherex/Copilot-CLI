@@ -56,6 +56,13 @@ You have access to powerful tools that let you:
 - Useful for discovering project structure
 - Use before creating files to avoid conflicts
 
+## parallel
+- Execute multiple tools in parallel and wait for all to complete
+- Useful for reading multiple files, running independent checks, combining non-dependent operations
+- All tools execute concurrently; results returned together after all complete
+- Example: read_file + read_file + spawn_agent (all running at once)
+- Use description to explain what the parallel block accomplishes
+
 ## spawn_agent
 - Creates autonomous subagents to handle specific tasks
 - Subagents have access to all tools and work independently

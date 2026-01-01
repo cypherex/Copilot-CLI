@@ -1,4 +1,5 @@
 // Microsoft 365 Copilot Client via Graph API
+import chalk from 'chalk';
 // Uses the Copilot Chat API (beta): https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/api/ai-services/chat/overview
 
 import type { AuthManager } from '../auth/index.js';
@@ -15,6 +16,8 @@ import type {
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
+const RATE_LIMIT_STATUS_CODE = 429;
+const RATE_LIMIT_DELAY_MS = 10000; // 10 seconds
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,15 +34,23 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, options);
+      const status = response.status;
 
-      // Check if we should retry
-      if (!response.ok && RETRYABLE_STATUS_CODES.includes(response.status)) {
+      // Check for rate limit (429)
+      if (status === RATE_LIMIT_STATUS_CODE) {
+        console.warn(chalk.yellow(`Rate limit hit! Waiting ${RATE_LIMIT_DELAY_MS / 1000} seconds before retrying...`));
+        await sleep(RATE_LIMIT_DELAY_MS);
+        continue;
+      }
+
+      // Check if we should retry for other errors
+      if (!response.ok && RETRYABLE_STATUS_CODES.includes(status)) {
         if (attempt < maxRetries) {
           // Check for Retry-After header
           const retryAfter = response.headers.get('Retry-After');
           const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
 
-          console.warn(`API returned ${response.status}, retrying in ${waitTime}ms...`);
+          console.warn(`API returned ${status}, retrying in ${waitTime}ms...`);
           await sleep(waitTime);
           delay *= 2; // Exponential backoff
           continue;

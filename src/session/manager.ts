@@ -35,7 +35,8 @@ export class SessionManager {
     workingDirectory: string,
     provider: string,
     model?: string,
-    firstMessage?: ChatMessage
+    firstMessage?: ChatMessage,
+    memorySessionId?: string
   ): Promise<Session> {
     const sessionId = uuidv4();
     const title = this.generateTitle(firstMessage);
@@ -49,6 +50,7 @@ export class SessionManager {
       provider,
       model,
       messages: firstMessage ? [firstMessage] : [],
+      sessionId: memorySessionId,
     };
 
     this.currentSession = session;
@@ -74,7 +76,13 @@ export class SessionManager {
     }
 
     if (memoryStore) {
-      this.currentSession.memoryData = this.extractMemoryData(memoryStore);
+      // Store the link between session and memory
+      if (!this.currentSession.sessionId) {
+        this.currentSession.sessionId = memoryStore.getSessionId();
+      }
+
+      // Extract session-specific memory data (not project data)
+      this.currentSession.sessionData = memoryStore.exportSessionData();
     }
 
     if (scaffoldingDebt) {
@@ -104,6 +112,58 @@ export class SessionManager {
         session.scaffoldingDebt.items = session.scaffoldingDebt.items.map((item: any) => ({
           ...item,
           timestamp: new Date(item.timestamp),
+        }));
+      }
+
+      // Convert session data dates
+      if (session.sessionData?.goals) {
+        session.sessionData.goals = session.sessionData.goals.map((g: any) => ({
+          ...g,
+          established: new Date(g.established),
+        }));
+      }
+
+      if (session.sessionData?.tasks) {
+        session.sessionData.tasks = session.sessionData.tasks.map((t: any) => ({
+          ...t,
+          createdAt: new Date(t.createdAt),
+          updatedAt: new Date(t.updatedAt),
+          completedAt: t.completedAt ? new Date(t.completedAt) : undefined,
+        }));
+      }
+
+      if (session.sessionData?.workingState?.activeFiles) {
+        session.sessionData.workingState.activeFiles = session.sessionData.workingState.activeFiles.map((f: any) => ({
+          ...f,
+          lastAccessed: new Date(f.lastAccessed),
+        }));
+      }
+
+      if (session.sessionData?.workingState?.recentErrors) {
+        session.sessionData.workingState.recentErrors = session.sessionData.workingState.recentErrors.map((e: any) => ({
+          ...e,
+          timestamp: new Date(e.timestamp),
+        }));
+      }
+
+      if (session.sessionData?.workingState?.editHistory) {
+        session.sessionData.workingState.editHistory = session.sessionData.workingState.editHistory.map((e: any) => ({
+          ...e,
+          timestamp: new Date(e.timestamp),
+        }));
+      }
+
+      if (session.sessionData?.archive) {
+        session.sessionData.archive = session.sessionData.archive.map((a: any) => ({
+          ...a,
+          timestamp: new Date(a.timestamp),
+        }));
+      }
+
+      if (session.sessionData?.retrievalHistory) {
+        session.sessionData.retrievalHistory = session.sessionData.retrievalHistory.map((r: any) => ({
+          ...r,
+          retrievedAt: new Date(r.retrievedAt),
         }));
       }
 
@@ -225,37 +285,54 @@ export class SessionManager {
     lines.push('');
 
     // Export memory data if available
-    if (session.memoryData) {
-      if (session.memoryData.goal) {
-        lines.push('## Goal');
-        lines.push('');
-        lines.push(`**Status:** ${session.memoryData.goal.status}`);
-        lines.push(`**Description:** ${session.memoryData.goal.description}`);
-        if (session.memoryData.goal.completionCriteria) {
-          lines.push(`**Completion Criteria:**`);
-          for (const criterion of session.memoryData.goal.completionCriteria) {
-            lines.push(`  - ${criterion}`);
+    if (session.sessionData) {
+      // Goals
+      if (session.sessionData.goals && session.sessionData.goals.length > 0) {
+        const rootGoal = session.sessionData.goals.find(g => !g.parentGoalId);
+        if (rootGoal) {
+          lines.push('## Goal');
+          lines.push('');
+          lines.push(`**Status:** ${rootGoal.status}`);
+          lines.push(`**Description:** ${rootGoal.description}`);
+          if (rootGoal.completionCriteria) {
+            lines.push(`**Completion Criteria:**`);
+            for (const criterion of rootGoal.completionCriteria) {
+              lines.push(`  - ${criterion}`);
+            }
           }
+          lines.push('');
         }
-        lines.push('');
       }
 
-      if (session.memoryData.tasks && session.memoryData.tasks.length > 0) {
+      // Tasks
+      if (session.sessionData.tasks && session.sessionData.tasks.length > 0) {
         lines.push('## Tasks');
         lines.push('');
-        for (const task of session.memoryData.tasks) {
+        for (const task of session.sessionData.tasks) {
           lines.push(`- [${task.status}] ${task.description} (${task.priority})`);
         }
         lines.push('');
       }
 
-      if (session.memoryData.decisions && session.memoryData.decisions.length > 0) {
-        lines.push('## Decisions');
-        lines.push('');
-        for (const decision of session.memoryData.decisions) {
-          lines.push(`- **${decision.description}** ${decision.category ? `(${decision.category})` : ''}`);
+      // Working state (errors, edits)
+      if (session.sessionData.workingState) {
+        const ws = session.sessionData.workingState;
+        if (ws.recentErrors && ws.recentErrors.length > 0) {
+          lines.push('## Recent Errors');
+          lines.push('');
+          for (const error of ws.recentErrors.slice(-3)) {
+            lines.push(`- ${error.error.slice(0, 200)}`);
+          }
+          lines.push('');
         }
-        lines.push('');
+        if (ws.editHistory && ws.editHistory.length > 0) {
+          lines.push('## Recent Changes');
+          lines.push('');
+          for (const edit of ws.editHistory.slice(-5)) {
+            lines.push(`- ${edit.file}: ${edit.description}`);
+          }
+          lines.push('');
+        }
       }
 
       lines.push('---');
@@ -312,7 +389,7 @@ export class SessionManager {
     this.currentSession.lastUpdatedAt = new Date();
 
     if (memoryStore) {
-      this.currentSession.memoryData = this.extractMemoryData(memoryStore);
+      this.currentSession.sessionData = this.exportSessionData(memoryStore);
     }
 
     if (scaffoldingDebt) {
@@ -349,7 +426,14 @@ export class SessionManager {
   }
 
   /**
-   * Extract memory data for serialization
+   * Export session data from memory store
+   */
+  private exportSessionData(memoryStore: MemoryStore): any {
+    return memoryStore.exportSessionData();
+  }
+
+  /**
+   * Extract memory data for serialization (deprecated - use exportSessionData)
    */
   private extractMemoryData(memoryStore: MemoryStore): any {
     return {
@@ -395,6 +479,13 @@ export class SessionManager {
     const shortId = metadata.id.slice(0, 8);
 
     return `  ${shortId} - ${metadata.title}\n    ${timeAgo} • ${metadata.messageCount} messages • ${metadata.workingDirectory}`;
+  }
+
+  /**
+   * Format relative time (exposed for external use)
+   */
+  formatDistanceToNow(date: Date): string {
+    return formatDistanceToNow(date, { addSuffix: true });
   }
 
   /**

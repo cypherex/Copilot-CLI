@@ -76,8 +76,8 @@ This helps prevent context overflow and keeps reasoning focused.`,
 
     const goal = this.memoryStore.getGoal();
     const tasks = this.memoryStore.getTasks();
-    const currentTask = tasks.find((t: any) => t.status === 'active');
-    const userFacts = (this.memoryStore as any).getUserFacts();
+    const currentTask = tasks.find((t) => t.status === 'active');
+    const userFacts = this.memoryStore.getUserFacts();
 
     let summary = '';
     const lines: string[] = [];
@@ -121,7 +121,7 @@ This helps prevent context overflow and keeps reasoning focused.`,
       const factsToShow = detail_level === 'brief' ? 3 : detail_level === 'detailed' ? userFacts.length : 5;
       for (let i = 0; i < Math.min(factsToShow, userFacts.length); i++) {
         const fact = userFacts[i];
-        lines.push(`   • ${fact.key}: ${fact.value}`);
+        lines.push(`   • ${fact.fact}`);
       }
       if (userFacts.length > factsToShow) {
         lines.push(`   ... and ${userFacts.length - factsToShow} more`);
@@ -130,14 +130,15 @@ This helps prevent context overflow and keeps reasoning focused.`,
     }
 
     // Recent working state
-    const workingState = (this.memoryStore as any).getWorkingState();
+    const workingState = this.memoryStore.getWorkingState();
     if (workingState) {
       lines.push(`💼 Working State:`);
-      if (workingState.lastAction) {
-        lines.push(`   Last Action: ${workingState.lastAction}`);
+      if (workingState.editHistory.length > 0) {
+        const lastEdit = workingState.editHistory[0];
+        lines.push(`   Last Action: ${lastEdit.description}`);
       }
       if (workingState.currentTask) {
-        const task = tasks.find((t: any) => t.id === workingState.currentTask);
+        const task = tasks.find((t) => t.id === workingState.currentTask);
         if (task) {
           lines.push(`   Focus: ${task.description}`);
         }
@@ -162,7 +163,7 @@ This helps prevent context overflow and keeps reasoning focused.`,
     summary = lines.join('\n');
 
     // Store summary in working state for reference
-    (this.memoryStore as any).updateWorkingState({
+    this.memoryStore.updateWorkingState({
       lastContextSummary: summary,
       summaryScope: scope,
       summaryTimestamp: new Date(),
@@ -222,9 +223,9 @@ This extracts minimal context needed for the focus area, avoiding context overlo
 
     const goal = this.memoryStore.getGoal();
     const tasks = this.memoryStore.getTasks();
-    const currentTask = tasks.find((t: any) => t.status === 'active');
-    const userFacts = (this.memoryStore as any).getUserFacts();
-    const workingState = (this.memoryStore as any).getWorkingState();
+    const currentTask = tasks.find((t) => t.status === 'active');
+    const userFacts = this.memoryStore.getUserFacts();
+    const workingState = this.memoryStore.getWorkingState();
 
     let context = '';
     const lines: string[] = [];
@@ -253,7 +254,7 @@ This extracts minimal context needed for the focus area, avoiding context overlo
       if (relevantFacts.length > 0) {
         lines.push(`👤 Relevant User Preferences:`);
         for (const fact of relevantFacts) {
-          lines.push(`   • ${fact.key}: ${fact.value}`);
+          lines.push(`   • ${fact.fact}`);
         }
         lines.push('');
       }
@@ -298,11 +299,10 @@ This extracts minimal context needed for the focus area, avoiding context overlo
   ): any[] {
     const focusLower = focusArea.toLowerCase();
     return facts.filter((fact) => {
-      const keyLower = fact.key.toLowerCase();
-      const valueLower = fact.value.toString().toLowerCase();
+      const factLower = fact.fact.toLowerCase();
 
       // Direct match to focus area
-      if (focusLower.includes(keyLower) || keyLower.includes(focusLower)) {
+      if (focusLower.includes(factLower) || factLower.includes(focusLower)) {
         return true;
       }
 
@@ -310,7 +310,7 @@ This extracts minimal context needed for the focus area, avoiding context overlo
       if (files && files.length > 0) {
         for (const file of files) {
           const fileName = file.toLowerCase();
-          if (keyLower.includes(fileName) || valueLower.includes(fileName)) {
+          if (factLower.includes(fileName)) {
             return true;
           }
         }
@@ -398,7 +398,7 @@ This consolidates subagent findings while maintaining orchestrator's overall vie
   protected async executeInternal(args: z.infer<typeof MergeContextSchema>): Promise<string> {
     const { subagent_output, summary, files_affected, action_items } = args;
 
-    const workingState = (this.memoryStore as any).getWorkingState();
+    const workingState = this.memoryStore.getWorkingState();
     const lines: string[] = [];
 
     // Update working state with merge info
@@ -409,7 +409,7 @@ This consolidates subagent findings while maintaining orchestrator's overall vie
       timestamp: new Date(),
     };
 
-    (this.memoryStore as any).updateWorkingState({
+    this.memoryStore.updateWorkingState({
       lastSubagentMerge: mergeInfo,
       lastMergedOutput: subagent_output,
     });

@@ -934,6 +934,77 @@ export interface ContextBudget {
 }
 ```
 
+## Recent Fixes and Improvements
+
+### Budget Integration Fixes
+
+Several critical fixes were implemented to ensure proper use of the budget system:
+
+#### ConversationManager Integration
+
+The `ConversationManager` class in `src/agent/conversation.ts` was enhanced to properly track and manage budgets:
+
+1. **Added Budget Instance Variable**
+   ```typescript
+   private currentBudget?: ContextBudget;
+   ```
+
+2. **Updated Budget Calculation**
+   - Now properly calls `calculateBudget()` from `src/context/budget.ts`
+   - Uses proper API access via `contextManager.getUsage()` instead of `as any` assertions
+   - Returns `ContextBudget` type instead of `number`
+
+3. **Budget Integration in Memory Injection**
+   - Extracts `budget.memory` when calling `buildContextSummary()`
+   - Maintains backward compatibility with existing interface
+
+4. **Dynamic Budget Adjustment**
+   - Integrated `adjustBudgetForTotal()` in `setModelContextLimit()`
+   - Budget automatically adjusts when model context limit changes
+   - Maintains proper budget ratios during adjustments
+
+5. **Budget Tracking**
+   - Added `updateBudgetAfterResponse()` method
+   - Tracks token usage after each LLM response
+   - Warns when budget runs low (< 20% remaining)
+   - Optional debug logging via `DEBUG_BUDGET` environment variable
+
+#### SmartCompressor Separation
+
+The `SmartCompressor` in `src/memory/smart-compressor.ts` uses a simplified budget calculation:
+
+```typescript
+private calculateMemoryBudget(): number {
+  // Uses 20% of target tokens to avoid excessive memory
+  return Math.floor(this.config.targetTokens * 0.2);
+}
+```
+
+**Rationale for Separate Calculation:**
+- The full `ContextBudget` type includes allocations for sections not used here
+- Only the memory portion is needed for `buildContextSummary()`
+- Keeps the smart-compressor focused on its specific use case
+- The `ConversationManager` handles the full budget allocation
+
+#### Type Safety Improvements
+
+- All budget-related functions return consistent `ContextBudget` type
+- Removed `as any` type assertions
+- Proper API access via public methods
+
+### Testing
+
+All changes compile successfully:
+```bash
+npm run build
+# Exit Code: 0
+```
+
+Type safety verification:
+- ✅ All budget-related functions return consistent `ContextBudget` type
+- ✅ No `as any` assertions for budget-related code
+- ✅ Proper type inference throughout
+
 ## See Also
 
 - [Context Manager Documentation](./context-manager.md)

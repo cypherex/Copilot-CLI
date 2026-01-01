@@ -1,11 +1,12 @@
 // Interactive chat command
 
-import { editor } from '@inquirer/prompts';
+import { editor, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { SessionManager } from '../../session/index.js';
+import { ChatUI } from '../../ui/index.js';
 
 // Find all commands that start with the given prefix
 function findMatchingCommands(prefix: string): string[] {
@@ -307,14 +308,17 @@ function parseSessionsCommand(input: string): { action: 'list' | 'load' | 'expor
 }
 
 export async function chatCommand(options: { directory: string; maxIterations?: number }): Promise<void> {
-  console.log(chalk.blue.bold('\n🤖 Copilot CLI Agent'));
-  console.log(chalk.gray('Type your message or /help for commands\n'));
-
   const config = await loadConfig();
 
   // Track if agent is paused
   let agentPaused = false;
   let pauseReason = '';
+
+  // Initialize UI
+  const ui = new ChatUI({
+    showStatusBar: true,
+    showTaskPanel: true,
+  });
 
   // Setup interrupt handler (Ctrl+C)
   const originalSigintListener = process.listeners('SIGINT')[0];
@@ -323,14 +327,14 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   process.on('SIGINT', () => {
     if (agentPaused) {
       // Second Ctrl+C - exit
-      console.log(chalk.red('\n\n🛑 Force exit'));
+      ui.showError('Force exit');
       process.exit(0);
     }
 
     // First Ctrl+C - pause
     agentPaused = true;
     pauseReason = 'User interrupted';
-    console.log(chalk.yellow('\n\n⏸️  Agent paused. Press Enter to continue or type a new message.'));
+    ui.showWarning('Agent paused. Press Enter to continue or type a new message.');
   });
 
   // Initialize session manager
@@ -364,11 +368,14 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
     await agent.initialize();
     spinner.succeed('Agent ready!');
 
+    // Initialize UI with agent
+    ui.initialize(agent);
+
     // Show session header
     const providerInfo = agent.getModelName()
       ? `${agent.getProviderName()} (${agent.getModelName()})`
       : agent.getProviderName();
-    showSessionHeader(providerInfo, options.directory);
+    ui.showWelcome(providerInfo, options.directory);
 
     // Check if there's a saved session to load
     const sessions = await sessionManager.listSessions();
@@ -376,18 +383,21 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
     let currentSession = sessionManager.getCurrentSession();
 
     if (recentSession && !currentSession) {
-      console.log(chalk.dim(`ℹ️  Recent session available: ${recentSession.title.slice(0, 40)}...`));
-      console.log(chalk.dim('   Use /sessions load to restore it\n'));
+      ui.showInfo(`Recent session available: ${recentSession.title.slice(0, 40)}...`);
+      console.log(chalk.dim('   Use /sessions to browse and load saved sessions\n'));
     }
+
+    // Show initial status
+    ui.showStatusPanel();
 
     try {
       while (true) {
         // Check if agent was paused
         if (agentPaused) {
-          console.log(chalk.gray('\n⏸️  Agent is paused. Type /resume to continue, /quit to exit, or a new message to start a new task.'));
+          ui.showWarning('Agent is paused. Type /resume to continue, /quit to exit, or a new message to start a new task.');
         }
 
-        const userInput = await readMultilineInput(chalk.green('You: '));
+        const userInput = await ui.readInput();
 
         // Handle resume command when paused
         if (agentPaused && userInput.toLowerCase().trim() === '/resume') {
@@ -408,18 +418,21 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
           if (command === 'exit' || command === 'quit') {
             await agent.shutdown();
-            console.log(chalk.gray('Goodbye!'));
+            ui.shutdown();
+            ui.showInfo('Goodbye!');
             break;
           }
 
           if (command === 'clear') {
             agent.clearConversation();
-            console.log(chalk.gray('Conversation cleared\n'));
+            ui.clearScreen();
+            ui.showWelcome(providerInfo, options.directory);
+            ui.showSuccess('Conversation cleared');
             continue;
           }
 
           if (command === 'help') {
-            showHelp(agent);
+            ui.showHelp();
             continue;
           }
 
@@ -472,7 +485,8 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
             if (sessionsCmd) {
               await handleSessionsCommand(agent, sessionManager, sessionsCmd);
             } else {
-              await handleSessionsCommand(agent, sessionManager, { action: 'list' });
+              // Default to interactive load instead of list
+              await handleSessionsCommand(agent, sessionManager, { action: 'load' });
             }
             console.log();
             continue;
@@ -484,14 +498,14 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
             if (currentSession) {
               await sessionManager.saveCurrentSession(agent.getMemoryStore());
             }
-            
+
             // Clear agent conversation
             agent.clearConversation();
-            
+
             // Clear session in sessionManager
             sessionManager.setCurrentSession(null as any);
-            
-            console.log(chalk.green('✓ Started fresh session\n'));
+
+            ui.showSuccess('Started fresh session');
             continue;
           }
 
@@ -508,17 +522,13 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
                 console.log(chalk.cyan(result));
               }
             } catch (error) {
-              console.error(chalk.red('✗ Error:'), error instanceof Error ? error.message : String(error));
               const hint = getErrorHint(error);
-              if (hint) {
-                console.log(hint);
-              }
+              ui.showError(error instanceof Error ? error : new Error(String(error)), hint);
             }
-            console.log();
             continue;
           }
 
-          console.log(chalk.yellow(`Unknown command: ${command}\n`));
+          ui.showWarning(`Unknown command: ${command}`);
           continue;
         }
 
@@ -526,6 +536,9 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
         try {
           await agent.chat(userInput);
+
+          // Update status after chat
+          ui.showStatusPanel();
           
           // Auto-save session after each message
           const currentSession = sessionManager.getCurrentSession();
@@ -535,41 +548,33 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
               options.directory,
               config.llm.provider,
               config.llm.model,
-              { role: 'user', content: userInput }
+              { role: 'user', content: userInput },
+              agent.getMemoryStore().getSessionId()
             );
           } else {
             // Add message to existing session
             await sessionManager.addMessage(
               { role: 'user', content: userInput },
               agent.getMemoryStore(),
-              undefined // scaffoldingDebt would need proper typing
+              agent.getCompletionTracker().getDebt()
             );
           }
         } catch (error) {
-          console.error(chalk.red('✗ Error:'), error instanceof Error ? error.message : String(error));
           const hint = getErrorHint(error);
-          if (hint) {
-            console.log(hint);
-          }
+          ui.showError(error instanceof Error ? error : new Error(String(error)), hint);
         }
-
-        console.log();
       }
     } catch (loopError) {
       // Handle errors in the chat loop
-      console.error(chalk.red('✗ Error:'), loopError instanceof Error ? loopError.message : String(loopError));
       const hint = getErrorHint(loopError);
-      if (hint) {
-        console.log(hint);
-      }
+      ui.showError(loopError instanceof Error ? loopError : new Error(String(loopError)), hint);
+    } finally {
+      ui.shutdown();
     }
   } catch (error) {
     spinner.fail('Failed to initialize agent');
-    console.error(chalk.red('✗ Error:'), error instanceof Error ? error.message : String(error));
     const hint = getErrorHint(error);
-    if (hint) {
-      console.log(hint);
-    }
+    ui.showError(error instanceof Error ? error : new Error(String(error)), hint);
     process.exit(1);
   }
 }
@@ -583,7 +588,7 @@ function showHelp(agent: CopilotAgent): void {
   console.log(chalk.gray('  /memory      - Show memory status (preferences, tasks, etc.)'));
   console.log(chalk.gray('  /debt        - Show scaffolding debt (incomplete items)'));
   console.log(chalk.gray('  /tasks       - Show task list with statuses'));
-  console.log(chalk.gray('  /sessions    - Manage saved sessions (list, load, export, delete, clear)'));
+  console.log(chalk.gray('  /sessions    - Interactive session browser (or: list, load <id>, export <id>, delete <id>, clear)'));
   console.log(chalk.gray('  /new-session - Start a fresh session'));
   console.log(chalk.gray('  /resume      - Resume a paused agent'));
   console.log(chalk.gray('  /plugins     - List loaded plugins'));
@@ -747,28 +752,49 @@ async function handleSessionsCommand(
     }
 
     case 'load': {
-      if (!cmd.id) {
-        console.log(chalk.yellow('Usage: /sessions load <session-id>'));
-        console.log(chalk.gray('Use /sessions list to see available sessions\n'));
-        return;
+      let sessionId = cmd.id;
+
+      // If no ID provided, show interactive selector
+      if (!sessionId) {
+        const sessions = await sessionManager.listSessions();
+        if (sessions.length === 0) {
+          console.log(chalk.yellow('No saved sessions found.\n'));
+          return;
+        }
+
+        try {
+          sessionId = await select({
+            message: 'Select a session to load:',
+            choices: sessions.map(s => ({
+              name: `${s.title}\n  ${chalk.dim(sessionManager.formatDistanceToNow(s.lastUpdatedAt) + ' • ' + s.messageCount + ' messages')}`,
+              value: s.id,
+              description: s.workingDirectory
+            })),
+          });
+        } catch {
+          console.log(chalk.yellow('\nCancelled\n'));
+          return;
+        }
       }
 
-      const session = await sessionManager.loadSession(cmd.id);
+      const session = await sessionManager.loadSession(sessionId);
       if (!session) {
-        console.log(chalk.red(`✗ Session not found: ${cmd.id}\n`));
+        console.log(chalk.red(`✗ Session not found: ${sessionId}\n`));
         return;
       }
 
-      console.log(chalk.green(`✓ Loaded session: ${session.title}`));
+      console.log(chalk.green(`\n✓ Loading session: ${session.title}`));
       console.log(chalk.gray(`  Created: ${session.createdAt.toLocaleString()}`));
-      console.log(chalk.gray(`  Messages: ${session.messages.length}\n`));
-      
+      console.log(chalk.gray(`  Messages: ${session.messages.length}`));
+
+      // Show preview of conversation
+      const spinner = ora('Restoring conversation...').start();
+
       // Update session header to show loaded session (re-create providerInfo for this scope)
       const providerInfo = agent.getModelName()
         ? `${agent.getProviderName()} (${agent.getModelName()})`
         : agent.getProviderName();
-      showSessionHeader(providerInfo, session.workingDirectory, session.id, session.title);
-      
+
       // Restore conversation from session
       const messages = session.messages;
       for (const msg of messages) {
@@ -781,23 +807,43 @@ async function handleSessionsCommand(
         }
       }
 
-      // Restore memory if available
-      if (session.memoryData) {
-        const memoryStore = agent.getMemoryStore();
-        if (session.memoryData.goal) {
-          memoryStore.setGoal(session.memoryData.goal);
-        }
-        for (const pref of session.memoryData.preferences || []) {
-          memoryStore.addPreference(pref);
-        }
-        for (const task of session.memoryData.tasks || []) {
-          memoryStore.addTask(task);
-        }
-        for (const decision of session.memoryData.decisions || []) {
-          memoryStore.addDecision(decision);
-        }
-        console.log(chalk.gray('✓ Memory restored from session\n'));
+      // Restore session data if available
+      if (session.sessionData) {
+        agent.loadSessionData(session.sessionData);
       }
+
+      spinner.succeed('Session loaded');
+
+      // Show session header
+      showSessionHeader(providerInfo, session.workingDirectory, session.id, session.title);
+
+      // Display full conversation history
+      console.log(chalk.bold('📜 Conversation History:\n'));
+      console.log(chalk.dim('─'.repeat(60)));
+
+      for (const msg of messages) {
+        if (msg.role === 'user') {
+          console.log(chalk.green('\nYou:'));
+          console.log(msg.content);
+        } else if (msg.role === 'assistant') {
+          console.log(chalk.cyan('\nAssistant:'));
+          if (msg.toolCalls && msg.toolCalls.length > 0) {
+            // Show tool calls
+            for (const toolCall of msg.toolCalls) {
+              console.log(chalk.blue(`→ Executing: ${toolCall.function.name}`));
+            }
+          }
+          if (msg.content) {
+            console.log(msg.content);
+          }
+        } else if (msg.role === 'tool') {
+          // Optionally show tool results (commented out to reduce noise)
+          // console.log(chalk.gray(`  ✓ ${msg.name}: ${msg.content.slice(0, 100)}...`));
+        }
+      }
+
+      console.log(chalk.dim('\n' + '─'.repeat(60)));
+      console.log(chalk.green('\n✓ Session restored - continue the conversation\n'));
       break;
     }
 

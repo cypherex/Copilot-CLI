@@ -19,12 +19,23 @@ import { CompletionTracker } from '../audit/index.js';
 import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
 import { getRole } from './subagent-roles.js';
 import { PlanningValidator, buildSubagentReminder } from './planning-validator.js';
+import { TaskBarRenderer } from '../ui/task-bar.js';
+import { ProactiveContextMonitor } from './proactive-context-monitor.js';
+import { IncompleteWorkDetector } from './incomplete-work-detector.js';
+import { FileRelationshipTracker } from './file-relationship-tracker.js';
+import { WorkContinuityManager } from './work-continuity-manager.js';
+import type { MemoryStore } from '../memory/types.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
   private planningValidator?: PlanningValidator;
+  private taskBarRenderer?: TaskBarRenderer;
+  private proactiveContextMonitor?: ProactiveContextMonitor;
+  private incompleteWorkDetector?: IncompleteWorkDetector;
+  private fileRelationshipTracker?: FileRelationshipTracker;
+  private workContinuityManager?: WorkContinuityManager;
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
@@ -50,7 +61,36 @@ export class AgenticLoop {
     this.planningValidator = validator;
   }
 
+  setTaskBarRenderer(renderer: TaskBarRenderer): void {
+    this.taskBarRenderer = renderer;
+  }
+
+  setMemoryStore(memoryStore: MemoryStore): void {
+    // For task bar updates
+  }
+
+  setProactiveContextMonitor(monitor: ProactiveContextMonitor): void {
+    this.proactiveContextMonitor = monitor;
+  }
+
+  setIncompleteWorkDetector(detector: IncompleteWorkDetector): void {
+    this.incompleteWorkDetector = detector;
+  }
+
+  setFileRelationshipTracker(tracker: FileRelationshipTracker): void {
+    this.fileRelationshipTracker = tracker;
+  }
+
+  setWorkContinuityManager(manager: WorkContinuityManager): void {
+    this.workContinuityManager = manager;
+  }
+
   async processUserMessage(userMessage: string): Promise<void> {
+    // Check for session resume and display continuity info
+    if (this.workContinuityManager && this.workContinuityManager.isSessionResume()) {
+      this.workContinuityManager.displaySessionResume();
+    }
+
     // Execute user:prompt-submit hook
     let messageToProcess = userMessage;
     if (this.hookRegistry) {
@@ -98,14 +138,20 @@ export class AgenticLoop {
 
     // Validate planning before proceeding
     if (this.planningValidator) {
-      const validation = this.planningValidator.validate();
+      // Detect if this is a read-only operation (query) vs write operation (task)
+      const isReadOnly = this.planningValidator.isReadOnlyOperation(messageToProcess);
+      const validation = this.planningValidator.validate(!isReadOnly); // Skip requirements for read-only
+
       if (!validation.canProceed) {
         this.planningValidator.displayValidation(validation);
-        
-        // Add validation result to conversation for context
+
+        // Add validation result to conversation for context, but DON'T block the agent
+        // The agent needs to be able to respond to CREATE tasks
         const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
         this.conversation.addUserMessage(messageToProcess + '\n\n' + validationMessage);
-        return;
+        // Don't return early - let the agent respond and create tasks!
+      } else {
+        this.conversation.addUserMessage(messageToProcess);
       }
 
       // Inject planning reminders into system message
@@ -113,9 +159,17 @@ export class AgenticLoop {
       if (planningReminders) {
         // We'll inject this before the LLM call
       }
+    } else {
+      this.conversation.addUserMessage(messageToProcess);
     }
 
-    this.conversation.addUserMessage(messageToProcess);
+    // Check context usage proactively and warn if approaching limits
+    if (this.proactiveContextMonitor) {
+      const warned = this.proactiveContextMonitor.checkAndWarn();
+      if (!warned && this.proactiveContextMonitor.shouldPromptSummary()) {
+        this.proactiveContextMonitor.displaySummaryPrompt();
+      }
+    }
 
     let iteration = 0;
     let continueLoop = true;
@@ -251,6 +305,9 @@ export class AgenticLoop {
           console.log();
         }
 
+        // Update task bar after response
+        this.updateTaskBar();
+
         // Execute assistant:response hook
         if (this.hookRegistry) {
           const responseResult = await this.hookRegistry.execute('assistant:response', {
@@ -274,6 +331,71 @@ export class AgenticLoop {
         } else {
           this.conversation.addAssistantMessage(response.content || '');
           continueLoop = false;
+
+          // Detect incomplete work - if LLM says it's done but left things undone
+          if (this.incompleteWorkDetector && response.content) {
+            const isToolFree = this.incompleteWorkDetector.isToolFreeResponse({
+              role: 'assistant',
+              content: response.content,
+              toolCalls: response.toolCalls || []
+            });
+            const hasTrackingItems = (this.completionTracker?.getIncomplete().length || 0) > 0;
+            const detection = this.incompleteWorkDetector.analyze(
+              response.content,
+              hasTrackingItems
+            );
+
+            // AUTO-PROCEED: When agent asks permission for task-authorized action
+            if (detection.askingPermission && detection.permissionAlreadyGranted && detection.currentTask) {
+              const prompt = this.incompleteWorkDetector.generatePrompt(detection);
+              console.log(prompt);
+
+              // Inject decision directly into conversation
+              const autoDecision = `Your task is "${detection.currentTask}". This already authorizes the action you're asking about. Proceed with the best option that aligns with your task requirements. Do not wait for user confirmation - make the decision autonomously.`;
+
+              console.log(chalk.green.bold('🤖 Auto-injecting decision to proceed\n'));
+
+              this.conversation.addUserMessage(autoDecision);
+              continueLoop = true;
+              continue;
+            }
+
+            // Case 1: LLM says it's done but has tracking items (pre-response check)
+            if (isToolFree && detection.completionPhrases.length > 0 && hasTrackingItems) {
+              // Show formatted warning to user
+              const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
+              if (consolePrompt) {
+                console.log(consolePrompt);
+              }
+
+              // Generate LLM-friendly message and ask to review
+              const llmMessage = this.incompleteWorkDetector.generateLLMMessage(detection);
+              const reviewPrompt = `${llmMessage}\n\nPlease review the items above and determine which ones are actually relevant and should be added to the task list. Use the task management tools to add only the relevant items. Skip any items that are:\n- Already completed\n- Duplicates of existing tasks\n- Not actually needed\n- Outside the current scope\n\nExplain your reasoning briefly for which items you're adding or skipping.`;
+
+              console.log(chalk.green.bold('🤖 Asking LLM to review and filter tracking items\n'));
+              this.conversation.addUserMessage(reviewPrompt);
+              continueLoop = true;
+              continue;
+            }
+
+            // Case 2: LLM mentions remaining/incomplete work (post-response check)
+            if (detection.remainingPhrases.length > 0 || detection.trackingItems.length > 0) {
+              // Show formatted warning to user
+              const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
+              if (consolePrompt) {
+                console.log(consolePrompt);
+              }
+
+              // Generate LLM-friendly message and ask to review
+              const llmMessage = this.incompleteWorkDetector.generateLLMMessage(detection);
+              const reviewPrompt = `${llmMessage}\n\nPlease review the tracking items above and determine which ones should be added to the task list. Use the task management tools to add only the relevant items. Skip any items that are:\n- Already completed\n- Duplicates of existing tasks\n- Not actually needed\n- Just informational notes\n\nExplain briefly which items you're adding and why you're skipping others (if any).`;
+
+              console.log(chalk.green.bold('🤖 Asking LLM to review and filter tracking items\n'));
+              this.conversation.addUserMessage(reviewPrompt);
+              continueLoop = true;
+              continue;
+            }
+          }
 
           // Track retrieval usefulness if we had retrievals
           const pendingRetrievalIds = this.conversation.getPendingRetrievalIds();
@@ -399,16 +521,21 @@ export class AgenticLoop {
         });
       }
 
-      console.log();
+      // Update task bar after tool execution
+      this.updateTaskBar();
     }
+
+    console.log();
   }
 
   private trackFileEdit(toolName: string, toolArgs: Record<string, any>): void {
     try {
       const memoryStore = this.conversation.getMemoryStore();
       const activeTask = memoryStore.getActiveTask();
+      let editedFile: string | undefined;
 
       if (toolName === 'create_file') {
+        editedFile = toolArgs.path;
         memoryStore.addEditRecord({
           file: toolArgs.path || 'unknown',
           description: toolArgs.overwrite ? 'Overwrote file' : 'Created new file',
@@ -420,7 +547,13 @@ export class AgenticLoop {
           path: toolArgs.path,
           purpose: 'Created in session',
         });
+
+        // Track file relationship
+        if (this.fileRelationshipTracker && editedFile) {
+          this.fileRelationshipTracker.trackFileAccess(editedFile, true);
+        }
       } else if (toolName === 'patch_file') {
+        editedFile = toolArgs.path;
         memoryStore.addEditRecord({
           file: toolArgs.path || 'unknown',
           description: `Replaced: ${toolArgs.search?.slice(0, 50)}...`,
@@ -429,6 +562,16 @@ export class AgenticLoop {
           afterSnippet: toolArgs.replace?.slice(0, 100),
           relatedTaskId: activeTask?.id,
         });
+
+        // Track file relationship
+        if (this.fileRelationshipTracker && editedFile) {
+          this.fileRelationshipTracker.trackFileAccess(editedFile, true);
+
+          // Display prompt if this file has relationships
+          if (this.fileRelationshipTracker.shouldPrompt(editedFile)) {
+            this.fileRelationshipTracker.displayPrompt(editedFile);
+          }
+        }
         memoryStore.addActiveFile({
           path: toolArgs.path,
           purpose: 'Modified in session',
@@ -469,6 +612,25 @@ export class AgenticLoop {
     const debt = this.completionTracker.getDebt();
     if (debt.critical.length === 0 && debt.stale.length === 0) return null;
     return this.completionTracker.formatDebtDisplay();
+  }
+
+  // Update task bar display
+  private updateTaskBar(): void {
+    if (!this.taskBarRenderer) return;
+
+    try {
+      const memoryStore = this.conversation.getMemoryStore();
+      const currentTask = memoryStore.getActiveTask();
+      const allTasks = memoryStore.getTasks();
+
+      const taskBar = this.taskBarRenderer.renderCompact(currentTask, allTasks);
+      if (taskBar) {
+        // Use process.stdout.write to avoid newline
+        process.stdout.write('\r' + ' '.repeat(100) + '\r' + taskBar);
+      }
+    } catch (error) {
+      // Silently fail to avoid disrupting the flow
+    }
   }
 
   // Track if retrieved context was useful (heuristic-based)

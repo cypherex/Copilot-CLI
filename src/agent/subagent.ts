@@ -287,26 +287,46 @@ Working directory: ${this.config.workingDirectory || process.cwd()}
   }
 }
 
-// SubAgent Manager for tracking and managing multiple subagents
+import { SubAgentQueue } from './subagent-queue.js';
+
+// SubAgent Manager for tracking and managing multiple subagents with queue
 export class SubAgentManager extends EventEmitter {
   private activeAgents: Map<string, Promise<SubAgentResult>> = new Map();
   private completedAgents: Map<string, SubAgentResult> = new Map();
   private agentInstances: Map<string, SubAgent> = new Map();
   private agentCounter = 0;
+  private agentQueue: SubAgentQueue;
 
   constructor(
     private llmClient: LLMClient,
-    private toolRegistry: ToolRegistry
+    private toolRegistry: ToolRegistry,
+    maxConcurrency: number = 5
   ) {
     super();
+    // Create the queue with concurrency limit
+    this.agentQueue = new SubAgentQueue(maxConcurrency, llmClient, toolRegistry);
+
+    // Forward queue events
+    this.agentQueue.on('agent_queued', (data) => {
+      this.emit('agent_queued', data);
+    });
+
+    this.agentQueue.on('agent_completed', (data) => {
+      this.emit('agent_completed', data);
+    });
+
+    this.agentQueue.on('agent_failed', (data) => {
+      this.emit('agent_failed', data);
+    });
   }
 
   spawn(config: SubAgentConfig): string {
     const agentId = `agent_${++this.agentCounter}_${Date.now()}`;
 
+    // Create agent instance for progress tracking and user messages
     const agent = new SubAgent(this.llmClient, this.toolRegistry, {
       ...config,
-      name: config.name || agentId,
+      name: agentId,
     });
 
     // Store agent instance for progress tracking and user messages
@@ -323,7 +343,17 @@ export class SubAgentManager extends EventEmitter {
       this.emit('user_message_queued', { agentId, ...data });
     });
 
-    const promise = agent.execute().then((result) => {
+    // Add to queue (will wait for slot)
+    const queueConfig = {
+      name: agentId,
+      task: config.task,
+      systemPrompt: config.systemPrompt,
+      maxIterations: config.maxIterations,
+      workingDirectory: config.workingDirectory,
+      allowUserInput: config.allowUserInput,
+    };
+
+    const promise = this.agentQueue.addToQueue(queueConfig).then((result) => {
       this.activeAgents.delete(agentId);
       this.completedAgents.set(agentId, result);
       this.agentInstances.delete(agentId);
@@ -414,5 +444,9 @@ export class SubAgentManager extends EventEmitter {
 
   listCompleted(): string[] {
     return Array.from(this.completedAgents.keys());
+  }
+
+  getQueueStatus() {
+    return this.agentQueue.getStatus();
   }
 }

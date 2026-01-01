@@ -12,3 +12,4 @@ pub use task::{Task, TaskStatus, TaskId};
 pub use message::{Message, MessageType};
 pub use error::{TaskQueueError, Result};
 pub use priority::{Priority, PriorityTier};
+pub use serialization::{serialize_task, deserialize_task, serialize_task_bincode, deserialize_task_bincode};

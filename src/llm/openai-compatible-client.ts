@@ -13,6 +13,8 @@ import type {
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
+const RATE_LIMIT_STATUS_CODE = 429;
+const RATE_LIMIT_DELAY_MS = 10000; // 10 seconds
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,13 +32,21 @@ async function fetchWithRetry(
     try {
       const response = await fetch(url, options);
 
+      // Check for rate limit (429)
+      if (response.status === RATE_LIMIT_STATUS_CODE) {
+        console.warn(`Rate limit hit! Waiting ${RATE_LIMIT_DELAY_MS / 1000} seconds before retrying...`);
+        await sleep(RATE_LIMIT_DELAY_MS);
+        continue;
+      }
+
+      // Check if we should retry for other errors
       if (!response.ok && RETRYABLE_STATUS_CODES.includes(response.status)) {
         if (attempt < maxRetries) {
           const retryAfter = response.headers.get('Retry-After');
           const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
           console.warn(`API returned ${response.status}, retrying in ${waitTime}ms...`);
           await sleep(waitTime);
-          delay *= 2;
+          delay *= 2; // Exponential backoff
           continue;
         }
       }
@@ -44,6 +54,7 @@ async function fetchWithRetry(
       return response;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+
       if (attempt < maxRetries) {
         console.warn(`Network error, retrying in ${delay}ms...`);
         await sleep(delay);
@@ -189,8 +200,8 @@ export class OpenAICompatibleClient implements LLMClient {
                 delta: {
                   role: delta.role,
                   content: delta.content,
-                  toolCalls: delta.tool_calls?.map((tc: any, index: number) => ({
-                    index,
+                  toolCalls: delta.tool_calls?.map((tc: any) => ({
+                    index: tc.index,
                     id: tc.id,
                     type: tc.type,
                     function: tc.function,

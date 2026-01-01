@@ -45,6 +45,7 @@ export class SmartCompressor {
   private extractor: ContextExtractor;
   private memoryStore: LocalMemoryStore;
   private llmClient?: LLMClient;
+  private chunkSummaryCache: Map<string, string>; // Cache for chunk summaries to avoid re-summarizing
 
   constructor(
     memoryStore: LocalMemoryStore,
@@ -53,11 +54,20 @@ export class SmartCompressor {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.memoryStore = memoryStore;
     this.extractor = new ContextExtractor();
+    this.chunkSummaryCache = new Map();
   }
 
   setLLMClient(client: LLMClient): void {
     this.llmClient = client;
     this.extractor.setLLMClient(client);
+  }
+
+  /**
+   * Clear the chunk summary cache.
+   * Call this periodically or when session context changes significantly.
+   */
+  clearSummaryCache(): void {
+    this.chunkSummaryCache.clear();
   }
 
   /**
@@ -86,6 +96,12 @@ export class SmartCompressor {
   async compress(messages: ChatMessage[]): Promise<SmartCompressionResult> {
     const originalTokens = estimateMessagesTokens(messages);
     const strategiesUsed: string[] = [];
+
+    // Clear cache periodically to avoid stale summaries
+    // Clear when cache size exceeds 100 entries
+    if (this.chunkSummaryCache.size > 100) {
+      this.clearSummaryCache();
+    }
 
     // Check if compression needed
     if (originalTokens <= this.config.targetTokens) {
@@ -581,6 +597,15 @@ export class SmartCompressor {
              `Assistant: ${assistantMsgs.map(m => m.content.slice(0, 50)).join('; ')}`;
     }
 
+    // Generate cache key from message contents
+    const cacheKey = messages.map(m => `${m.role}:${m.content.slice(0, 100)}`).join('|');
+
+    // Check cache first
+    const cachedSummary = this.chunkSummaryCache.get(cacheKey);
+    if (cachedSummary) {
+      return cachedSummary;
+    }
+
     try {
       const response = await this.llmClient.chat([
         {
@@ -592,7 +617,12 @@ export class SmartCompressor {
           content: messages.map(m => `${m.role}: ${m.content.slice(0, 300)}`).join('\n'),
         },
       ]);
-      return response.choices[0]?.message.content || 'No summary available';
+      const summary = response.choices[0]?.message.content || 'No summary available';
+      
+      // Cache the summary
+      this.chunkSummaryCache.set(cacheKey, summary);
+      
+      return summary;
     } catch {
       return 'Conversation chunk (summary unavailable)';
     }

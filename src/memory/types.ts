@@ -80,6 +80,7 @@ export interface ProjectContext {
 
 // Task tracking
 export type TaskStatus = 'active' | 'blocked' | 'waiting' | 'completed' | 'abandoned';
+export type TaskComplexity = 'simple' | 'moderate' | 'complex';
 
 export interface Task {
   id: string;
@@ -93,6 +94,13 @@ export interface Task {
   completedAt?: Date;
   relatedFiles: string[];
   priority: MemoryPriority;
+  relatedToGoal?: boolean; // Whether this task is related to the main goal
+
+  // Complexity tracking
+  estimatedComplexity?: TaskComplexity;
+  actualComplexity?: TaskComplexity;
+  actualIterations?: number; // How many iterations/LLM calls to complete
+  shouldHaveSpawnedSubagent?: boolean; // Retrospective flag
 }
 
 // Working state - current focus
@@ -102,6 +110,29 @@ export interface WorkingState {
   recentErrors: ErrorContext[];
   editHistory: EditRecord[];
   lastUpdated: Date;
+  lastContextSummary?: string;
+  summaryScope?: 'current_task' | 'recent_messages' | 'all_transcript' | 'files';
+  summaryTimestamp?: Date;
+  lastSubagentMerge?: {
+    summary: string;
+    filesAffected: string[];
+    actionItems: string[];
+    timestamp: Date;
+  };
+  lastMergedOutput?: string;
+}
+
+// Session resume info for work continuity
+export interface SessionResume {
+  lastActiveTime: Date;
+  lastGoalDescription?: string;
+  goalProgress?: number;
+  activeTaskDescription?: string;
+  pausedAtDescription?: string;
+  lastFileEdited?: string;
+  pendingDecisionsCount?: number;
+  completedTasksCount?: number;
+  activeTasksCount?: number;
 }
 
 export interface ActiveFile {
@@ -133,6 +164,7 @@ export interface FeatureGroup {
 
 export interface ErrorContext {
   error: string;
+  message?: string; // Human-readable error message
   file?: string;
   line?: number;
   timestamp: Date;
@@ -229,6 +261,8 @@ export interface Decision {
   description: string;
   rationale?: string;
   alternatives?: string[];
+  tradeoffs?: string;        // Pros/cons of the chosen approach
+  revisitCondition?: string;  // "Revisit if performance degrades", etc.
   timestamp: Date;
   supersededBy?: string; // ID of decision that replaced this
   supersededAt?: Date;
@@ -251,6 +285,12 @@ export interface ArchiveEntry {
 
 // Memory store interface
 export interface MemoryStore {
+  // Session identification
+  getSessionId(): string;
+  
+  // Initialize stores
+  initialize(): Promise<void>;
+
   // Session goal (with hierarchy support)
   getGoal(): SessionGoal | undefined;
   getGoalById(id: string): SessionGoal | undefined;
@@ -318,6 +358,10 @@ export interface MemoryStore {
 
   // Persistence
   save(): Promise<void>;
-  load(): Promise<void>;
+
+  // Session data management (for session persistence)
+  exportSessionData(): any;
+  importSessionData(data: any): void;
+
   clear(lifespan?: MemoryLifespan): void;
 }

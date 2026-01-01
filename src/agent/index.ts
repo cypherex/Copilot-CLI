@@ -11,6 +11,11 @@ import { HookRegistry } from '../hooks/registry.js';
 import { PluginRegistry, RalphWiggumPlugin } from '../plugins/index.js';
 import { CompletionTracker } from '../audit/index.js';
 import { PlanningValidator } from './planning-validator.js';
+import { TaskBarRenderer } from '../ui/task-bar.js';
+import { ProactiveContextMonitor } from './proactive-context-monitor.js';
+import { IncompleteWorkDetector } from './incomplete-work-detector.js';
+import { FileRelationshipTracker } from './file-relationship-tracker.js';
+import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
@@ -69,7 +74,7 @@ export class CopilotAgent {
     }
 
     // Create SubAgentManager and register subagent tools
-    this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry);
+    this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry, 5);
     this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
 
     // Register task management tools
@@ -77,6 +82,12 @@ export class CopilotAgent {
 
     // Register context management tools
     this.toolRegistry.registerContextManagementTools(this.conversation.getMemoryStore());
+
+    // Register decision management tools
+    this.toolRegistry.registerDecisionManagementTools(this.conversation.getMemoryStore());
+
+    // Register task complexity tools
+    this.toolRegistry.registerTaskComplexityTools(this.conversation.getMemoryStore());
 
     // Initialize hook and plugin registries
     this.hookRegistry = new HookRegistry();
@@ -88,10 +99,43 @@ export class CopilotAgent {
     // Initialize planning validator
     const planningValidator = new PlanningValidator(this.conversation.getMemoryStore());
 
+    // Initialize task bar renderer for persistent task display
+    const taskBarRenderer = new TaskBarRenderer({
+      enabled: true,
+      refreshInterval: 2000,
+      showCompleted: true,
+      showBlocked: true,
+      maxTasks: 3,
+    });
+
+    // Initialize proactive context monitor for context warnings
+    const proactiveContextMonitor = new ProactiveContextMonitor(
+      this.conversation,
+      {
+        warningThreshold: 70,
+        criticalThreshold: 85,
+        cooldownPeriod: 60000, // 1 minute between warnings
+      }
+    );
+
+    // Initialize incomplete work detector for catching unfinished tasks
+    const incompleteWorkDetector = new IncompleteWorkDetector(this.conversation.getMemoryStore());
+
+    // Initialize file relationship tracker for smart file suggestions
+    const fileRelationshipTracker = new FileRelationshipTracker();
+
+    // Initialize work continuity manager for session resume
+    const workContinuityManager = new WorkContinuityManager(this.conversation.getMemoryStore());
+
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);
     this.loop.setCompletionTracker(this.completionTracker);
     this.loop.setPlanningValidator(planningValidator);
+    this.loop.setTaskBarRenderer(taskBarRenderer);
+    this.loop.setProactiveContextMonitor(proactiveContextMonitor);
+    this.loop.setIncompleteWorkDetector(incompleteWorkDetector);
+    this.loop.setFileRelationshipTracker(fileRelationshipTracker);
+    this.loop.setWorkContinuityManager(workContinuityManager);
   }
 
   async chat(userMessage: string): Promise<void> {
@@ -196,5 +240,16 @@ export class CopilotAgent {
     // Note: This would need to be exposed via the loop
     // For now, we can access it indirectly
     return undefined;
+  }
+
+  // Session data management
+  loadSessionData(sessionData: any): void {
+    // Import session-scoped memory data into conversation
+    this.conversation.getMemoryStore().importSessionData(sessionData);
+  }
+
+  exportSessionData(): any {
+    // Export session-scoped memory data
+    return this.conversation.getMemoryStore().exportSessionData();
   }
 }

@@ -36,7 +36,7 @@ export class StreamAccumulator {
           existing.function.name += toolCallDelta.function.name;
         }
         if (toolCallDelta.function?.arguments) {
-          existing.function.arguments = toolCallDelta.function.arguments;
+          existing.function.arguments += toolCallDelta.function.arguments;
         }
 
         this.toolCalls.set(toolCallDelta.index, existing);

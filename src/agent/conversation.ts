@@ -14,6 +14,7 @@ export interface ConversationConfig {
   compressionConfig?: Partial<SmartCompressionConfig>;
   workingDirectory?: string;
   enableSmartMemory?: boolean;
+  sessionId?: string;
 }
 
 export class ConversationManager {
@@ -40,9 +41,9 @@ export class ConversationManager {
       ...config.contextConfig,
     });
 
-    // Initialize memory store
+    // Initialize memory store with optional session ID
     const workingDir = config.workingDirectory || process.cwd();
-    this.memoryStore = new LocalMemoryStore(workingDir);
+    this.memoryStore = new LocalMemoryStore(workingDir, config.sessionId);
 
     // Initialize smart compressor
     this.smartCompressor = new SmartCompressor(this.memoryStore, {
@@ -89,8 +90,8 @@ export class ConversationManager {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    // Load persisted memory
-    await this.memoryStore.load();
+    // Initialize stores (load project memory, not session memory)
+    await this.memoryStore.initialize();
 
     // Calculate and store budget for context building
     this.currentBudget = this.calculateTokenBudget();

@@ -72,14 +72,15 @@ Tasks should be specific, actionable, and measurable.`,
   protected async executeInternal(args: z.infer<typeof CreateTaskSchema>): Promise<string> {
     const { description, priority, related_to_goal } = args;
 
-    const task = (this.memoryStore as any).addTask({
+    const task = this.memoryStore.addTask({
       description,
       status: 'waiting',
       priority: priority || 'medium',
       relatedToGoal: related_to_goal,
+      relatedFiles: [], // Required by Task interface
     });
 
-    return `Created task: ${description}\n  Task ID: ${task.id}\n  Priority: ${task.priority}\n  Status: pending`;
+    return `Created task: ${description}\n  Task ID: ${task.id}\n  Priority: ${task.priority}\n  Status: ${task.status}`;
   }
 }
 
@@ -177,13 +178,13 @@ You should always have a current task set when actively working.`,
   protected async executeInternal(args: z.infer<typeof SetCurrentTaskSchema>): Promise<string> {
     const { task_id } = args;
 
-    const task = (this.memoryStore as any).getTasks().find((t: any) => t.id === task_id);
+    const task = this.memoryStore.getTasks().find((t) => t.id === task_id);
     if (!task) {
       throw new Error(`Task not found: ${task_id}`);
     }
 
     // Update working state to set current task
-    (this.memoryStore as any).updateWorkingState({
+    this.memoryStore.updateWorkingState({
       currentTask: task_id,
       lastUpdated: new Date(),
     });

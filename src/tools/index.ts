@@ -6,9 +6,12 @@ import { PatchFileTool } from './patch-file.js';
 import { ReadFileTool } from './read-file.js';
 import { ExecuteBashTool } from './execute-bash.js';
 import { ListFilesTool } from './list-files.js';
-import { SpawnAgentTool, WaitAgentTool, ListAgentsTool } from './subagent-tool.js';
+import { ParallelTool } from './parallel-tool.js';
+import { SpawnAgentTool, WaitAgentTool, ListAgentsTool, GetAgentQueueStatusTool } from './subagent-tool.js';
 import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool } from './task-management-tool.js';
 import { SummarizeContextTool, ExtractFocusTool, MergeContextTool } from './context-management-tool.js';
+import { AddDecisionTool, GetDecisionsTool, SupersedeDecisionTool } from './decision-management-tool.js';
+import { SetTaskComplexityTool, ReportTaskComplexityTool, GetComplexityInsightsTool } from './task-complexity-tool.js';
 import type { SubAgentManager } from '../agent/subagent.js';
 import type { MemoryStore } from '../memory/types.js';
 
@@ -26,6 +29,7 @@ export class ToolRegistry {
     this.register(new ReadFileTool());
     this.register(new ExecuteBashTool());
     this.register(new ListFilesTool());
+    this.register(new ParallelTool(this)); // Parallel tool needs registry reference
   }
 
   // Register subagent tools once the manager is available
@@ -38,6 +42,7 @@ export class ToolRegistry {
     }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));
+    this.register(new GetAgentQueueStatusTool(manager));
   }
 
   // Register task management tools once memory store is available
@@ -53,6 +58,20 @@ export class ToolRegistry {
     this.register(new SummarizeContextTool(memoryStore));
     this.register(new ExtractFocusTool(memoryStore));
     this.register(new MergeContextTool(memoryStore));
+  }
+
+  // Register decision management tools once memory store is available
+  registerDecisionManagementTools(memoryStore: MemoryStore): void {
+    this.register(new AddDecisionTool(memoryStore));
+    this.register(new GetDecisionsTool(memoryStore));
+    this.register(new SupersedeDecisionTool(memoryStore));
+  }
+
+  // Register task complexity tools once memory store is available
+  registerTaskComplexityTools(memoryStore: MemoryStore): void {
+    this.register(new SetTaskComplexityTool(memoryStore));
+    this.register(new ReportTaskComplexityTool(memoryStore));
+    this.register(new GetComplexityInsightsTool(memoryStore));
   }
 
   register(tool: Tool): void {

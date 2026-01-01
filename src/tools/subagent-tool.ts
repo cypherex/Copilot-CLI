@@ -38,6 +38,9 @@ const ListAgentsSchema = z.object({
   status: z.enum(['active', 'completed', 'all']).optional().default('all'),
 });
 
+// Schema for get_agent_queue_status
+const GetAgentQueueStatusSchema = z.object({});
+
 export class SpawnAgentTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'spawn_agent',
@@ -338,5 +341,39 @@ This is especially useful when working with multiple parallel subagents spawned 
     };
 
     return JSON.stringify(result, null, 2);
+  }
+}
+
+export class GetAgentQueueStatusTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'get_agent_queue_status',
+    description: `Get the current status of the agent queue, including running and queued agents.
+
+Use to check:
+- How many agents are currently running (max 5)
+- How many agents are waiting in queue
+- Total statistics (completed, failed)
+
+This helps understand agent concurrency and queue state.`,
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  };
+
+  protected readonly schema = GetAgentQueueStatusSchema;
+  private subAgentManager: SubAgentManager;
+
+  constructor(subAgentManager: SubAgentManager) {
+    super();
+    this.subAgentManager = subAgentManager;
+  }
+
+  protected async executeInternal(_args: z.infer<typeof GetAgentQueueStatusSchema>): Promise<string> {
+    // Get queue status from manager
+    const queueStatus = this.subAgentManager.getQueueStatus();
+
+    return JSON.stringify(queueStatus, null, 2);
   }
 }

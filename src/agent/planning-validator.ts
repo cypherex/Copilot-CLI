@@ -25,19 +25,87 @@ export class PlanningValidator {
   constructor(private memoryStore: MemoryStore) {}
 
   /**
+   * Detect if a user message is a read-only query vs a write operation
+   * Read-only: explanations, questions, information gathering
+   * Write: create, modify, fix, build, implement
+   */
+  isReadOnlyOperation(message: string): boolean {
+    const lower = message.toLowerCase();
+
+    // Read-only patterns (queries, explanations)
+    const readOnlyPatterns = [
+      /^what (does|is|are|do)/,
+      /^how (do|does|can|to)/,
+      /^explain/,
+      /^show me/,
+      /^help (me )?understand/,
+      /^tell me/,
+      /^describe/,
+      /^why (does|is|are|do)/,
+      /^which/,
+      /^where/,
+      /\?$/,
+    ];
+
+    // Write patterns (actions, modifications)
+    const writePatterns = [
+      /create/,
+      /implement/,
+      /add/,
+      /fix/,
+      /build/,
+      /write/,
+      /update/,
+      /modify/,
+      /change/,
+      /delete/,
+      /remove/,
+      /refactor/,
+    ];
+
+    // Check for read-only patterns
+    for (const pattern of readOnlyPatterns) {
+      if (pattern.test(lower)) {
+        return true;
+      }
+    }
+
+    // Check for write patterns
+    for (const pattern of writePatterns) {
+      if (pattern.test(lower)) {
+        return false;
+      }
+    }
+
+    // Default: assume write operation if unclear (safer to require planning)
+    return false;
+  }
+
+  /**
    * Validate if agent can proceed with work
    * Called before each user message or autonomous iteration
+   *
+   * @param isWriteOperation - If true, requires goal and tasks. If false (read-only), allows proceeding without them.
    */
-  validate(): ValidationResult {
+  validate(isWriteOperation: boolean = false): ValidationResult {
     const state = this.getState();
     const reasons: string[] = [];
     const suggestions: string[] = [];
 
-    // Check 1: Must have a goal
+    // Read-only operations (queries, explanations) don't require planning
+    if (!isWriteOperation) {
+      return {
+        canProceed: true,
+        reason: 'Read-only operation detected - no planning required.',
+      };
+    }
+
+    // Check 1: For write operations, must have a goal
+    // For read-only operations (queries, explanations), a goal is optional
     if (!state.hasGoal) {
       return {
         canProceed: false,
-        reason: 'No goal defined. You must establish a clear goal before starting work.',
+        reason: 'No goal defined. Write operations require a clear goal before starting work.',
         suggestions: [
           'Ask the user: "What would you like me to help you accomplish?"',
           'Once you understand the goal, use create_task to break it down into actionable tasks',
@@ -46,11 +114,11 @@ export class PlanningValidator {
       };
     }
 
-    // Check 2: Must have at least one task
-    if (state.taskCount === 0) {
+    // Check 2: For write operations, must have at least one task
+    if (isWriteOperation && state.taskCount === 0) {
       return {
         canProceed: false,
-        reason: 'No tasks defined. You must create a task list before starting work.',
+        reason: 'No tasks defined. Write operations require a task list before starting work.',
         suggestions: [
           'Use create_task to break down the goal into specific, actionable tasks',
           'Start with high-level tasks, then break them down further',
@@ -59,11 +127,11 @@ export class PlanningValidator {
       };
     }
 
-    // Check 3: Must have a current task
-    if (!state.hasActiveTask) {
+    // Check 3: For write operations, must have a current task
+    if (isWriteOperation && !state.hasActiveTask) {
       return {
         canProceed: false,
-        reason: 'No current task set. You must set a current task before starting work.',
+        reason: 'No current task set. Write operations require a current task.',
         suggestions: [
           'Use list_tasks to see available tasks',
           'Use set_current_task to focus on a specific task',
@@ -72,8 +140,8 @@ export class PlanningValidator {
       };
     }
 
-    // Check 4: Current task should be active
-    if (state.currentTask && state.currentTask.status !== 'active') {
+    // Check 4: For write operations, current task should be active
+    if (isWriteOperation && state.currentTask && state.currentTask.status !== 'active') {
       reasons.push(`Current task "${state.currentTask.description}" is ${state.currentTask.status}, not active`);
       suggestions.push('Use update_task_status to set current task to active');
     }

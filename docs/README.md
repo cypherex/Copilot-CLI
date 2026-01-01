@@ -8,6 +8,26 @@ Welcome to the Copilot CLI Agent documentation hub.
 
 ## Feature Documentation
 
+### Azure Setup
+
+- [Azure AD Setup](azure-setup.md) - Complete guide for configuring Azure AD app registration
+
+### Subagent System
+
+- [Subagent Quick Reference](subagent-quick-reference.md) - Quick lookup for subagent roles, tools, and workflows
+- [Subagent Development Guide](subagent-development.md) - Implementation details for developing subagent features
+- [Task Management](task-management.md) - Guide to the task planning and management system
+
+### Memory System
+
+- [Memory Supersession](MEMORY_SUPERSESSION.md) - Documentation of the memory supersession feature
+
+### Proactive Monitoring
+
+- [Proactive Monitor](proactive-monitor.md) - Complete documentation of the proactive context monitoring system
+
+### Context Budget System
+
 ### Mandatory Delegation System
 
 **Main Documentation**
@@ -80,46 +100,103 @@ Welcome to the Copilot CLI Agent documentation hub.
 docs/
 ├── README.md (this file)
 │
-├── mandatory-delegation.md
-│   ├── Overview
-│   ├── What is Mandatory Delegation
-│   ├── When Does It Trigger
-│   ├── Expected Behavior
-│   ├── Customization
-│   ├── Pattern Reference
-│   ├── Troubleshooting
-│   └── Migration Guide
+├── Azure Setup/
+│   └── azure-setup.md
+│       ├── Prerequisites
+│       ├── App Registration
+│       ├── API Permissions
+│       ├── Admin Consent
+│       ├── Configuration
+│       └── Troubleshooting
 │
-├── mandatory-patterns-reference.md
-│   ├── Summary Table
-│   ├── Parallel Processing Patterns
-│   ├── Investigation Patterns
-│   ├── Bug Fix Patterns
-│   ├── Suggested Patterns
-│   └── Pattern Decision Matrix
+├── Subagent System/
+│   ├── subagent-quick-reference.md
+│   │   ├── TL;DR
+│   │   ├── Roles Overview
+│   │   ├── When to Use
+│   │   ├── Communication Patterns
+│   │   ├── Workflow Examples
+│   │   └── Context Tools
+│   ├── subagent-development.md
+│   │   ├── Enhanced Roles
+│   │   ├── Context Management
+│   │   ├── Communication Patterns
+│   │   ├── Tool Details
+│   │   └── Key Principles
+│   └── task-management.md
+│       ├── Task Tools
+│       ├── Planning Validator
+│       └── Best Practices
 │
-├── adding-mandatory-patterns.md
-│   ├── Quick Start
-│   ├── Pattern Template
-│   ├── Step-by-Step Guide
-│   ├── Common Pattern Examples
-│   ├── Advanced Topics
-│   ├── Testing Checklist
-│   ├── Common Mistakes
-│   └── Contributing
+├── Memory System/
+│   └── MEMORY_SUPERSESSION.md
+│       └── Memory Supersession Feature
 │
-├── troubleshooting-mandatory-delegation.md
-│   ├── Common Issues
-│   ├── Debugging Steps
-│   ├── Diagnostic Commands
-│   ├── Testing Patterns
-│   └── Advanced Debugging
+├── Context Budget System/
+│   ├── context-budget.md
+│   │   ├── Overview
+│   │   ├── ContextBudget Interface
+│   │   ├── Budget Calculation
+│   │   ├── Integration Points
+│   │   ├── Budget Warnings
+│   │   ├── Usage Examples
+│   │   ├── Best Practices
+│   │   ├── Troubleshooting
+│   │   └── Recent Fixes and Improvements
+│   └── context-budget-summary.md
+│       └── Quick Reference
 │
-├── context-budget.md
-│   └── Context Budget System Details
+├── Mandatory Delegation System/
+│   ├── mandatory-delegation.md
+│   │   ├── Overview
+│   │   ├── What is Mandatory Delegation
+│   │   ├── When Does It Trigger
+│   │   ├── Expected Behavior
+│   │   ├── Customization
+│   │   ├── Pattern Reference
+│   │   ├── Troubleshooting
+│   │   └── Migration Guide
+│   ├── mandatory-patterns-reference.md
+│   │   ├── Summary Table
+│   │   ├── Parallel Processing Patterns
+│   │   ├── Investigation Patterns
+│   │   ├── Bug Fix Patterns
+│   │   ├── Suggested Patterns
+│   │   └── Pattern Decision Matrix
+│   ├── adding-mandatory-patterns.md
+│   │   ├── Quick Start
+│   │   ├── Pattern Template
+│   │   ├── Step-by-Step Guide
+│   │   ├── Common Pattern Examples
+│   │   ├── Advanced Topics
+│   │   ├── Testing Checklist
+│   │   ├── Common Mistakes
+│   │   └── Contributing
+│   └── troubleshooting-mandatory-delegation.md
+│       ├── Common Issues
+│       ├── Debugging Steps
+│       ├── Diagnostic Commands
+│       ├── Testing Patterns
+│       └── Advanced Debugging
 │
-└── context-budget-summary.md
-    └── Context Budget Quick Reference
+├── Proactive Monitoring/
+│   └── proactive-monitor.md
+│       ├── Overview
+│       ├── Implementation
+│       ├── User Flow
+│       ├── Configuration
+│       └── Usage Examples
+│
+└── archive/
+    ├── summaries/
+    │   ├── SUBAGENT_DELEGATION_SUMMARY.md
+    │   ├── SUBAGENT_IMPLEMENTATION_SUMMARY.md
+    │   ├── SUBAGENT_SYSTEM_GUIDE.md
+    │   ├── FEATURE_IMPLEMENTATION_DELIVERY_SUMMARY.md
+    │   └── ...
+    └── plans/
+        ├── IMPROVEMENTS.md
+        └── DOCUMENTATION_CLEANUP_PLAN.md
 ```
 
 ## Key Concepts
@@ -188,14 +265,36 @@ When adding new features or modifying existing ones:
 
 ## Version Information
 
-- **Current Version**: 2.0.0
-- **Last Updated**: 2024
+- **Current Version**: 2.1.0
+- **Last Updated**: 2025-01-16
 - **Major Features**:
   - Mandatory delegation system (v2.0.0)
   - Context budget management (v2.0.0)
   - Parallel subagent execution (v2.0.0)
+  - Documentation reorganization (v2.1.0)
+  - Task management system (v2.1.0)
+  - Developer documentation hub (v2.1.0)
 
 ## Changelog
+
+### Version 2.1.0 (2025-01-16)
+- **Documentation Reorganization**: Comprehensive documentation cleanup and reorganization
+  - Created docs/ archive for historical summaries and plans
+  - Moved Azure setup guide to docs/azure-setup.md
+  - Created comprehensive developer guide (docs/developer-guide.md)
+  - Created subagent development guide (docs/subagent-development.md)
+  - Created task management guide (docs/task-management.md)
+  - Consolidated proactive monitor documentation
+  - Organized testbox documentation structure
+  - Deleted 8 outdated task tracking files
+  - Archived 6 implementation summaries and 2 planning documents
+- **New Documentation Files**:
+  - docs/developer-guide.md - Comprehensive developer documentation
+  - docs/subagent-development.md - Subagent implementation guide
+  - docs/task-management.md - Task planning and management
+  - docs/pattern-reference.md - Pattern reference documentation
+  - docs/proactive-monitor.md - Consolidated proactive monitor docs
+- **Root Directory Cleanup**: Reduced from 29 to 1 markdown file (README.md)
 
 ### Version 2.0.0
 - Added mandatory delegation system

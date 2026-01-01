@@ -122,6 +122,10 @@ npm link
 
 ### 1. Azure AD App Registration
 
+> **For detailed setup instructions with troubleshooting, see [docs/azure-setup.md](docs/azure-setup.md)**
+
+Quick setup:
+
 1. Go to [Azure Portal](https://portal.azure.com) → Azure Active Directory → App registrations
 2. Click "New registration"
 3. Configure:

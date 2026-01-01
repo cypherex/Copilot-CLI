@@ -1,10 +1,12 @@
 [workspace]
+resolver = "2"
 members = [
     "crates/task-queue-core",
     "crates/task-queue-broker",
     "crates/task-queue-worker",
     "crates/task-queue-client",
     "crates/task-queue-cli",
+    "crates/task-queue-web-ui",
 ]
 
 [workspace.dependencies]
