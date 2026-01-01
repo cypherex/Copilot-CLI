@@ -4,11 +4,17 @@ import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import type { SubAgentManager } from '../agent/subagent.js';
+import type { MemoryStore } from '../memory/types.js';
+import { listRoles, getRole } from '../agent/subagent-roles.js';
+import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
   task: z.string().describe('The task for the subagent to complete'),
   name: z.string().optional().describe('Optional name for the subagent'),
+  role: z.string().optional().describe(`Subagent role: ${listRoles().map(r => r.id).join(', ')}`),
+  files: z.array(z.string()).optional().describe('Files relevant to this subagent task'),
+  success_criteria: z.string().optional().describe('Success criteria for the subagent'),
   wait: z.boolean().optional().default(true).describe('Whether to wait for the agent to complete (default: true)'),
   background: z.boolean().optional().default(false).describe('Run in background and return agent ID immediately'),
 });
@@ -34,7 +40,14 @@ Use this tool when:
 - You want to explore multiple approaches simultaneously
 
 The subagent will have access to all tools and work independently.
-By default, waits for completion. Set background=true to run in parallel.`,
+By default, waits for completion. Set background=true to run in parallel.
+
+Available Roles:
+- test-writer: Write comprehensive tests with edge cases (3 iterations)
+- investigator: Diagnose bugs and trace execution (3 iterations)
+- refactorer: Improve code quality and organization (2 iterations)
+- documenter: Create and maintain documentation (2 iterations)
+- fixer: Resolve specific bugs and issues (2 iterations)`,
     parameters: {
       type: 'object',
       properties: {
@@ -45,6 +58,19 @@ By default, waits for completion. Set background=true to run in parallel.`,
         name: {
           type: 'string',
           description: 'Optional descriptive name for the subagent',
+        },
+        role: {
+          type: 'string',
+          description: 'Subagent role for specialized behavior',
+        },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Files relevant to this subagent task',
+        },
+        success_criteria: {
+          type: 'string',
+          description: 'Success criteria for the subagent',
         },
         wait: {
           type: 'boolean',
@@ -61,18 +87,41 @@ By default, waits for completion. Set background=true to run in parallel.`,
 
   protected readonly schema = SpawnAgentSchema;
   private subAgentManager: SubAgentManager;
+  private memoryStore?: MemoryStore;
 
-  constructor(subAgentManager: SubAgentManager) {
+  constructor(subAgentManager: SubAgentManager, memoryStore?: MemoryStore) {
     super();
     this.subAgentManager = subAgentManager;
+    this.memoryStore = memoryStore;
   }
 
   protected async executeInternal(args: z.infer<typeof SpawnAgentSchema>): Promise<string> {
-    const { task, name, background } = args;
+    const { task, name, role, files, success_criteria, background } = args;
+
+    let systemPrompt: string | undefined;
+    let maxIterations: number | undefined;
+
+    // If a role is provided and memoryStore is available, build a brief and convert to system prompt
+    if (role && this.memoryStore) {
+      const roleConfig = getRole(role);
+      if (roleConfig) {
+        maxIterations = roleConfig.defaultMaxIterations;
+
+        const brief = buildSubagentBrief(task, this.memoryStore, {
+          role: roleConfig,
+          files,
+          successCriteria: success_criteria,
+        });
+
+        systemPrompt = briefToSystemPrompt(brief);
+      }
+    }
 
     const agentId = this.subAgentManager.spawn({
       name: name || `SubAgent for: ${task.slice(0, 30)}...`,
       task,
+      systemPrompt,
+      maxIterations,
     });
 
     if (background) {

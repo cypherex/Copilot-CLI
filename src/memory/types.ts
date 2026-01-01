@@ -47,6 +47,9 @@ export interface UserFact {
   timestamp: Date;
   lastReinforced?: Date; // When this was last confirmed/mentioned
   lifespan: MemoryLifespan;
+  // Add supersession support
+  supersededBy?: string;
+  supersededAt?: Date;
 }
 
 // User facts and preferences
@@ -258,18 +261,23 @@ export interface MemoryStore {
 
   // User facts
   getUserFacts(): UserFact[];
+  getAllUserFacts(): UserFact[];
   addUserFact(fact: Omit<UserFact, 'id' | 'timestamp'>): UserFact;
+  supersedeUserFact(id: string, newFactId: string): void;
 
   // Preferences
   getPreferences(): UserPreference[];
+  getAllPreferences(): UserPreference[];
   addPreference(pref: Omit<UserPreference, 'id' | 'timestamp'>): UserPreference;
   updatePreference(id: string, updates: Partial<UserPreference>): void;
   supersedePreference(id: string, newPrefId: string): void;
 
   // Decisions (with supersession)
   getDecisions(): Decision[];
+  getAllDecisions(): Decision[];
   addDecision(decision: Omit<Decision, 'id' | 'timestamp'>): Decision;
   supersedeDecision(id: string, newDecisionId: string): void;
+  getDecisionById(id: string): Decision | undefined;
 
   // Project context
   getProjectContext(): ProjectContext[];

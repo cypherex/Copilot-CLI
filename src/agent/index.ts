@@ -49,17 +49,7 @@ export class CopilotAgent {
 
     this.toolRegistry = new ToolRegistry();
 
-    // Create SubAgentManager and register subagent tools
-    this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry);
-    this.toolRegistry.registerSubAgentTools(this.subAgentManager);
-
-    // Initialize hook and plugin registries
-    this.hookRegistry = new HookRegistry();
-    this.pluginRegistry = new PluginRegistry(this.hookRegistry, this.toolRegistry, workingDirectory);
-
-    // Initialize scaffolding tracker
-    this.completionTracker = new CompletionTracker(workingDirectory, trackerConfig);
-
+    // Initialize conversation first so we can get the memory store
     const systemPrompt = buildSystemPrompt(workingDirectory);
     this.conversation = new ConversationManager(systemPrompt, {
       workingDirectory,
@@ -76,6 +66,17 @@ export class CopilotAgent {
     if (llmConfig.model) {
       this.conversation.setModelContextLimit(llmConfig.model);
     }
+
+    // Create SubAgentManager and register subagent tools
+    this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry);
+    this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
+
+    // Initialize hook and plugin registries
+    this.hookRegistry = new HookRegistry();
+    this.pluginRegistry = new PluginRegistry(this.hookRegistry, this.toolRegistry, workingDirectory);
+
+    // Initialize scaffolding tracker
+    this.completionTracker = new CompletionTracker(workingDirectory, trackerConfig);
 
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);

@@ -25,6 +25,8 @@ export class ConversationManager {
   private llmClient?: LLMClient;
   private enableSmartMemory: boolean;
   private initialized: boolean = false;
+  private pendingContextInjections: string[] = [];
+  private pendingRetrievalIds: string[] = [];
 
   constructor(systemPrompt: string, config: ConversationConfig = {}) {
     this.maxHistoryLength = config.maxHistoryLength ?? 50;
@@ -129,15 +131,6 @@ export class ConversationManager {
       toolCallId,
     });
 
-    // Track file reads
-    if (toolName === 'read_file' && this.enableSmartMemory) {
-      // Extract file path from the tool result context
-      this.memoryStore.addActiveFile({
-        path: toolName, // Would need actual path from args
-        purpose: 'Read by tool',
-      });
-    }
-
     // Track errors from tool results
     if (result.toLowerCase().includes('error') && this.enableSmartMemory) {
       this.memoryStore.addError({
@@ -165,13 +158,33 @@ export class ConversationManager {
     // Store user facts
     for (const fact of info.userFacts || []) {
       if (fact.fact && fact.category) {
-        this.memoryStore.addUserFact({
-          fact: fact.fact,
-          category: fact.category,
-          source: fact.source || message.content.slice(0, 100),
-          confidence: fact.confidence || 0.7,
-          lifespan: fact.lifespan || 'session',
-        });
+        const factText = fact.fact; // TypeScript narrowing helper
+        // Check if this fact supersedes an existing one (conflicting info)
+        const existingFact = this.memoryStore.getUserFacts().find(f =>
+          f.category === fact.category &&
+          f.fact.toLowerCase().includes(factText.toLowerCase().split(' ').slice(0, 2).join(' '))
+        );
+
+        if (existingFact && fact.fact !== existingFact.fact) {
+          // Conflicting fact - supersede old one
+          const newFact = this.memoryStore.addUserFact({
+            fact: fact.fact,
+            category: fact.category,
+            source: fact.source || message.content.slice(0, 100),
+            confidence: (fact.confidence || 0.7) + 0.1, // Slightly higher for corrections
+            lifespan: fact.lifespan || 'session',
+          });
+          this.memoryStore.supersedeUserFact(existingFact.id, newFact.id);
+          console.log(chalk.gray(`[Memory] Superseded fact: "${existingFact.fact}" → "${fact.fact}"`));
+        } else if (!existingFact) {
+          this.memoryStore.addUserFact({
+            fact: fact.fact,
+            category: fact.category,
+            source: fact.source || message.content.slice(0, 100),
+            confidence: fact.confidence || 0.7,
+            lifespan: fact.lifespan || 'session',
+          });
+        }
       }
     }
 
@@ -213,6 +226,29 @@ export class ConversationManager {
       }
     }
 
+    // Store decisions with supersession support
+    if (message.role === 'assistant' && info.decisions) {
+      for (const decision of info.decisions) {
+        if (decision.description) {
+          // Check if this supersedes an existing decision
+          const existing = this.memoryStore.getDecisions().find(d =>
+            d.description.toLowerCase().includes(decision.description!.toLowerCase().slice(0, 30))
+          );
+
+          const newDecision = this.memoryStore.addDecision({
+            description: decision.description,
+            rationale: decision.rationale,
+            category: decision.category || 'implementation',
+            relatedFiles: info.files,
+          });
+
+          if (existing && !existing.supersededBy) {
+            this.memoryStore.supersedeDecision(existing.id, newDecision.id);
+          }
+        }
+      }
+    }
+
     // Store project context
     for (const ctx of info.projectContext || []) {
       if (ctx.type && ctx.key && ctx.value) {
@@ -248,9 +284,23 @@ export class ConversationManager {
     for (const ref of info.backwardReferences || []) {
       const retrieved = await this.retrieveContext(ref.searchQuery);
       if (retrieved) {
-        // Inject retrieved context as a system message
+        // Store for injection before next LLM call
+        this.pendingContextInjections.push(retrieved);
+        
+        // Track the retrieval
+        const archiveResults = this.memoryStore.search(ref.searchQuery, 5);
+        const retrieval = this.memoryStore.trackRetrieval({
+          backwardReference: ref,
+          retrievedEntryIds: archiveResults.map(e => e.id),
+          retrievedAt: new Date(),
+          messageIndex: this.messages.length - 1,
+          injectedContent: retrieved,
+        });
+        
+        // Store retrieval ID for usefulness tracking
+        this.pendingRetrievalIds.push(retrieval.id);
+        
         console.log(chalk.gray(`[Memory] Retrieved context for: "${ref.phrase}"`));
-        // The context will be available in the next LLM call
       }
     }
 
@@ -269,7 +319,36 @@ export class ConversationManager {
   }
 
   getMessages(): ChatMessage[] {
-    return this.messages;
+    if (this.pendingContextInjections.length === 0) {
+      return this.messages;
+    }
+
+    const injections = this.pendingContextInjections.join('\n\n');
+    this.pendingContextInjections = []; // Clear after use
+
+    // Insert as system message before last user message
+    const messages = [...this.messages];
+    // Use reverse search for ES2022 compatibility
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx > 0) {
+      messages.splice(lastUserIdx, 0, {
+        role: 'system',
+        content: `[Retrieved from earlier context]\n${injections}`,
+      });
+    }
+    return messages;
+  }
+
+  getPendingRetrievalIds(): string[] {
+    const ids = [...this.pendingRetrievalIds];
+    this.pendingRetrievalIds = [];
+    return ids;
   }
 
   clear(): void {
@@ -318,6 +397,14 @@ export class ConversationManager {
 
   getMemoryStore(): LocalMemoryStore {
     return this.memoryStore;
+  }
+
+  // Track file read with actual path (called from loop)
+  trackFileRead(path: string, purpose?: string): void {
+    this.memoryStore.addActiveFile({
+      path,
+      purpose: purpose || 'Read by tool',
+    });
   }
 
   // Retrieve relevant context from memory based on query

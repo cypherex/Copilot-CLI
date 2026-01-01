@@ -8,6 +8,7 @@ import { ExecuteBashTool } from './execute-bash.js';
 import { ListFilesTool } from './list-files.js';
 import { SpawnAgentTool, WaitAgentTool, ListAgentsTool } from './subagent-tool.js';
 import type { SubAgentManager } from '../agent/subagent.js';
+import type { MemoryStore } from '../memory/types.js';
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
@@ -26,9 +27,13 @@ export class ToolRegistry {
   }
 
   // Register subagent tools once the manager is available
-  registerSubAgentTools(manager: SubAgentManager): void {
+  registerSubAgentTools(manager: SubAgentManager, memoryStore?: MemoryStore): void {
     this.subAgentManager = manager;
-    this.register(new SpawnAgentTool(manager));
+    if (memoryStore) {
+      this.register(new SpawnAgentTool(manager, memoryStore));
+    } else {
+      this.register(new SpawnAgentTool(manager));
+    }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));
   }

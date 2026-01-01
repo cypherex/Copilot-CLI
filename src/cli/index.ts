@@ -18,6 +18,7 @@ export function createCLI(): Command {
     .command('chat', { isDefault: true })
     .description('Start interactive chat session with Copilot agent')
     .option('-d, --directory <path>', 'Working directory', process.cwd())
+    .option('--max-iterations <n>', 'Limit iterations per message (default: unlimited)', parseInt)
     .action(chatCommand);
 
   // One-shot ask command

@@ -8,12 +8,14 @@ import type { ConversationManager } from './conversation.js';
 import { StreamAccumulator } from '../llm/streaming.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import { CompletionTracker } from '../audit/index.js';
+import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
   private responseCounter = 0;
+  private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
   constructor(
     private llmClient: LLMClient,
@@ -49,6 +51,13 @@ export class AgenticLoop {
       }
     }
 
+    // Detect subagent opportunities on first iteration
+    this.currentSubagentOpportunity = detectSubagentOpportunity(messageToProcess);
+    if (this.currentSubagentOpportunity && this.currentSubagentOpportunity.shouldSpawn) {
+      const hint = buildSubagentHint(this.currentSubagentOpportunity);
+      console.log(chalk.gray('\n💡 Subagent suggestion available'));
+    }
+
     this.conversation.addUserMessage(messageToProcess);
 
     let iteration = 0;
@@ -73,14 +82,27 @@ export class AgenticLoop {
       const spinner = ora('Thinking...').start();
       const accumulator = new StreamAccumulator();
 
-      // Build messages with optional scaffolding reminder
+      // Build messages with optional scaffolding reminder and subagent hint
       let messages = this.conversation.getMessages();
+
+      // Inject scaffolding reminder on first iteration
       const scaffoldingContext = this.completionTracker?.buildContextInjection();
       if (scaffoldingContext && iteration === 1) {
         // Inject reminder as a system message before the latest user message
         messages = [
           ...messages.slice(0, -1),
           { role: 'system' as const, content: scaffoldingContext },
+          messages[messages.length - 1],
+        ];
+      }
+
+      // Inject subagent hint on first iteration if opportunity detected
+      if (this.currentSubagentOpportunity && iteration === 1) {
+        const hint = buildSubagentHint(this.currentSubagentOpportunity);
+        // Inject hint as a system message before the latest user message
+        messages = [
+          ...messages.slice(0, -1),
+          { role: 'system' as const, content: hint },
           messages[messages.length - 1],
         ];
       }
@@ -143,6 +165,12 @@ export class AgenticLoop {
         } else {
           this.conversation.addAssistantMessage(response.content || '');
           continueLoop = false;
+
+          // Track retrieval usefulness if we had retrievals
+          const pendingRetrievalIds = this.conversation.getPendingRetrievalIds();
+          if (pendingRetrievalIds.length > 0 && response.content) {
+            await this.trackRetrievalUsefulness(pendingRetrievalIds, response.content);
+          }
 
           // Audit completed response for incomplete scaffolding
           if (this.completionTracker && response.content) {
@@ -221,6 +249,11 @@ export class AgenticLoop {
           }
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
 
+          // Track file reads in memory
+          if (toolName === 'read_file' && toolArgs.path) {
+            this.conversation.trackFileRead(toolArgs.path, 'Read by tool');
+          }
+
           // Track file edits in memory
           this.trackFileEdit(toolName, toolArgs);
         } else {
@@ -250,34 +283,38 @@ export class AgenticLoop {
   }
 
   private trackFileEdit(toolName: string, toolArgs: Record<string, any>): void {
-    const memoryStore = this.conversation.getMemoryStore();
-    const activeTask = memoryStore.getActiveTask();
+    try {
+      const memoryStore = this.conversation.getMemoryStore();
+      const activeTask = memoryStore.getActiveTask();
 
-    if (toolName === 'create_file') {
-      memoryStore.addEditRecord({
-        file: toolArgs.path || 'unknown',
-        description: toolArgs.overwrite ? 'Overwrote file' : 'Created new file',
-        changeType: toolArgs.overwrite ? 'modify' : 'create',
-        afterSnippet: toolArgs.content?.slice(0, 200),
-        relatedTaskId: activeTask?.id,
-      });
-      memoryStore.addActiveFile({
-        path: toolArgs.path,
-        purpose: 'Created in session',
-      });
-    } else if (toolName === 'patch_file') {
-      memoryStore.addEditRecord({
-        file: toolArgs.path || 'unknown',
-        description: `Replaced: ${toolArgs.search?.slice(0, 50)}...`,
-        changeType: 'modify',
-        beforeSnippet: toolArgs.search?.slice(0, 100),
-        afterSnippet: toolArgs.replace?.slice(0, 100),
-        relatedTaskId: activeTask?.id,
-      });
-      memoryStore.addActiveFile({
-        path: toolArgs.path,
-        purpose: 'Modified in session',
-      });
+      if (toolName === 'create_file') {
+        memoryStore.addEditRecord({
+          file: toolArgs.path || 'unknown',
+          description: toolArgs.overwrite ? 'Overwrote file' : 'Created new file',
+          changeType: toolArgs.overwrite ? 'modify' : 'create',
+          afterSnippet: toolArgs.content?.slice(0, 200),
+          relatedTaskId: activeTask?.id,
+        });
+        memoryStore.addActiveFile({
+          path: toolArgs.path,
+          purpose: 'Created in session',
+        });
+      } else if (toolName === 'patch_file') {
+        memoryStore.addEditRecord({
+          file: toolArgs.path || 'unknown',
+          description: `Replaced: ${toolArgs.search?.slice(0, 50)}...`,
+          changeType: 'modify',
+          beforeSnippet: toolArgs.search?.slice(0, 100),
+          afterSnippet: toolArgs.replace?.slice(0, 100),
+          relatedTaskId: activeTask?.id,
+        });
+        memoryStore.addActiveFile({
+          path: toolArgs.path,
+          purpose: 'Modified in session',
+        });
+      }
+    } catch (error) {
+      console.log(chalk.gray(`[Memory] Failed to track edit: ${error instanceof Error ? error.message : String(error)}`));
     }
   }
 
@@ -311,5 +348,25 @@ export class AgenticLoop {
     const debt = this.completionTracker.getDebt();
     if (debt.critical.length === 0 && debt.stale.length === 0) return null;
     return this.completionTracker.formatDebtDisplay();
+  }
+
+  // Track if retrieved context was useful (heuristic-based)
+  private async trackRetrievalUsefulness(
+    retrievalIds: string[],
+    assistantResponse: string
+  ): Promise<void> {
+    const store = this.conversation.getMemoryStore();
+    const history = store.getRetrievalHistory();
+
+    for (const id of retrievalIds) {
+      const retrieval = history.find(r => r.id === id);
+      if (retrieval && retrieval.injectedContent) {
+        // Simple heuristic: did the response use any of the retrieval keywords?
+        const keywords = retrieval.backwardReference.searchQuery.toLowerCase().split(/\s+/);
+        const responseWords = assistantResponse.toLowerCase();
+        const wasUsed = keywords.some(k => k.length > 3 && responseWords.includes(k));
+        store.markRetrievalUseful(id, wasUsed);
+      }
+    }
   }
 }

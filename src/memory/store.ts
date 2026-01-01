@@ -160,7 +160,12 @@ export class LocalMemoryStore implements MemoryStore {
 
   // User Facts
   getUserFacts(): UserFact[] {
-    return Array.from(this.userFacts.values()).filter(f => !this.isExpired(f));
+    return Array.from(this.userFacts.values()).filter(f => !this.isExpired(f) && !f.supersededBy);
+  }
+
+  // Get all user facts including superseded (for history)
+  getAllUserFacts(): UserFact[] {
+    return Array.from(this.userFacts.values());
   }
 
   addUserFact(fact: Omit<UserFact, 'id' | 'timestamp'>): UserFact {
@@ -181,10 +186,27 @@ export class LocalMemoryStore implements MemoryStore {
     }
   }
 
+  supersedeUserFact(id: string, newFactId: string): void {
+    const existing = this.userFacts.get(id);
+    if (existing) {
+      existing.supersededBy = newFactId;
+      existing.supersededAt = new Date();
+    }
+  }
+
+  getUserFactById(id: string): UserFact | undefined {
+    return this.userFacts.get(id);
+  }
+
   // Preferences
   getPreferences(): UserPreference[] {
     return Array.from(this.preferences.values())
       .filter(p => !p.supersededBy && !this.isExpired(p));
+  }
+
+  // Get all preferences including superseded (for history)
+  getAllPreferences(): UserPreference[] {
+    return Array.from(this.preferences.values());
   }
 
   addPreference(pref: Omit<UserPreference, 'id' | 'timestamp'>): UserPreference {
@@ -224,6 +246,11 @@ export class LocalMemoryStore implements MemoryStore {
   // Decisions (with supersession)
   getDecisions(): Decision[] {
     return Array.from(this.decisions.values()).filter(d => !d.supersededBy);
+  }
+
+  // Get all decisions including superseded (for history)
+  getAllDecisions(): Decision[] {
+    return Array.from(this.decisions.values());
   }
 
   addDecision(decision: Omit<Decision, 'id' | 'timestamp'>): Decision {
@@ -903,6 +930,7 @@ export class LocalMemoryStore implements MemoryStore {
         if (fact.lifespan !== 'session') {
           fact.timestamp = new Date(fact.timestamp);
           if (fact.lastReinforced) fact.lastReinforced = new Date(fact.lastReinforced);
+          if (fact.supersededAt) fact.supersededAt = new Date(fact.supersededAt);
           this.userFacts.set(fact.id, fact);
         }
       }

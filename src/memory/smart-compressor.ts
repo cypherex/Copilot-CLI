@@ -216,129 +216,17 @@ export class SmartCompressor {
     messages: ChatMessage[],
     classified: ClassifiedMessage[]
   ): Promise<void> {
+    // NOTE: Preferences, facts, and decisions are now extracted in real-time
+    // in ConversationManager.processNewMessage(). This method only handles
+    // files, file sections, and errors for archival context.
+    
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       const info = classified[i];
 
       if (!info.extractedInfo) continue;
 
-      // Store goal (first substantial user request)
-      if (info.extractedInfo.goal && !this.memoryStore.getGoal()) {
-        this.memoryStore.setGoal({
-          description: info.extractedInfo.goal.description || msg.content.slice(0, 200),
-          originalMessage: info.extractedInfo.goal.originalMessage || msg.content,
-          status: 'active',
-        });
-      }
-
-      // Store user facts
-      for (const fact of info.extractedInfo.userFacts || []) {
-        if (fact.fact && fact.category) {
-          this.memoryStore.addUserFact({
-            fact: fact.fact,
-            category: fact.category,
-            source: fact.source || msg.content.slice(0, 100),
-            confidence: fact.confidence || 0.7,
-            lifespan: fact.lifespan || 'session',
-          });
-        }
-      }
-
-      // Handle corrections - supersede old preferences/decisions
-      for (const correction of info.extractedInfo.corrections || []) {
-        if (correction.from && correction.to) {
-          if (correction.category === 'preference') {
-            // Find and supersede matching preference
-            const oldPref = this.memoryStore.getPreferences().find(
-              p => p.value.toLowerCase().includes(correction.from!.toLowerCase())
-            );
-            const newPref = this.memoryStore.addPreference({
-              category: 'tooling',
-              key: correction.what || correction.from,
-              value: correction.to,
-              source: msg.content.slice(0, 100),
-              confidence: 0.9, // Corrections are high confidence
-              lifespan: 'project',
-            });
-            if (oldPref) {
-              this.memoryStore.supersedePreference(oldPref.id, newPref.id);
-            }
-          } else if (correction.category === 'decision') {
-            // Find and supersede matching decision
-            const oldDec = this.memoryStore.getDecisions().find(
-              d => d.description.toLowerCase().includes(correction.from!.toLowerCase())
-            );
-            const newDec = this.memoryStore.addDecision({
-              description: correction.to,
-              rationale: `Corrected from: ${correction.from}`,
-            });
-            if (oldDec) {
-              this.memoryStore.supersedeDecision(oldDec.id, newDec.id);
-            }
-          }
-        }
-      }
-
-      // Store preferences (check for existing to avoid duplicates)
-      for (const pref of info.extractedInfo.preferences || []) {
-        if (pref.category && pref.key && pref.value) {
-          const existing = this.memoryStore.getPreferences().find(
-            p => p.category === pref.category && p.key === pref.key && !p.supersededBy
-          );
-          if (!existing) {
-            this.memoryStore.addPreference({
-              category: pref.category,
-              key: pref.key,
-              value: pref.value,
-              source: pref.source || msg.content.slice(0, 100),
-              confidence: pref.confidence || 0.7,
-              lifespan: 'project',
-            });
-          } else if (existing.value !== pref.value) {
-            // Value changed - supersede old preference
-            const newPref = this.memoryStore.addPreference({
-              category: pref.category,
-              key: pref.key,
-              value: pref.value,
-              source: pref.source || msg.content.slice(0, 100),
-              confidence: pref.confidence || 0.8,
-              lifespan: 'project',
-            });
-            this.memoryStore.supersedePreference(existing.id, newPref.id);
-          }
-        }
-      }
-
-      // Store decisions
-      for (const dec of info.extractedInfo.decisions || []) {
-        if (dec.description) {
-          this.memoryStore.addDecision({
-            description: dec.description,
-            rationale: dec.rationale,
-            alternatives: dec.alternatives,
-            relatedFiles: info.extractedInfo.files,
-          });
-        }
-      }
-
-      // Store project context
-      for (const ctx of info.extractedInfo.projectContext || []) {
-        if (ctx.type && ctx.key && ctx.value) {
-          const existing = this.memoryStore.getProjectContext().find(
-            c => c.type === ctx.type && c.key === ctx.key
-          );
-          if (!existing) {
-            this.memoryStore.addProjectContext({
-              type: ctx.type,
-              key: ctx.key,
-              value: ctx.value,
-              lifespan: ctx.lifespan || 'project',
-            });
-          }
-        }
-      }
-
-      // Store files as active
+      // Store files as active (for archival context)
       for (const file of info.extractedInfo.files || []) {
         this.memoryStore.addActiveFile({
           path: file,
@@ -346,7 +234,7 @@ export class SmartCompressor {
         });
       }
 
-      // Store file sections
+      // Store file sections (for archival context)
       for (const { path, section } of info.extractedInfo.fileSections || []) {
         if (section.name && section.type) {
           this.memoryStore.addFileSection(path, {
@@ -359,7 +247,7 @@ export class SmartCompressor {
         }
       }
 
-      // Store errors
+      // Store errors (for archive context - not resolved ones)
       for (const error of info.extractedInfo.errors || []) {
         if (error.error) {
           this.memoryStore.addError({

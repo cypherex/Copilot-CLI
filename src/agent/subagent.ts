@@ -31,6 +31,7 @@ export class SubAgent {
     private toolRegistry: ToolRegistry,
     private config: SubAgentConfig
   ) {
+    this.config = config;
     const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
     this.conversation = new ConversationManager(systemPrompt, {
       maxHistoryLength: 30,
