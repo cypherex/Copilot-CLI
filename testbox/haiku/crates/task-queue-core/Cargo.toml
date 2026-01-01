@@ -1,0 +1,32 @@
+[package]
+name = "task-queue-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+proptest = { workspace = true, optional = true }
+quickcheck = { workspace = true, optional = true }
+quickcheck_macros = { workspace = true, optional = true }
+regex = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+
+[features]
+property-test = ["proptest", "quickcheck", "quickcheck_macros"]

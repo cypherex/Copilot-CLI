@@ -1,0 +1,89 @@
+{
+  "current_phase": 1,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "description": "Implement BrokerCredential as primary auth in src/auth/index.ts",
+      "status": "pending",
+      "priority": "critical"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "description": "Refactor DeviceCodeCredential as fallback with proper error handling",
+      "status": "pending",
+      "priority": "critical"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "description": "Implement DPAPI encryption in token-cache.ts using msal-node-extensions",
+      "status": "pending",
+      "priority": "critical"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "description": "Update cache path to %LOCALAPPDATA%/copilot-cli/cache/",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "description": "Extract real account info from token response",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "description": "Refactor copilot-client.ts to use Microsoft Graph SDK",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "description": "Add retry logic with exponential backoff",
+      "status": "pending",
+      "priority": "high"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "description": "Add Zod response validation for API responses",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "description": "Implement beta API endpoint fallback",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "description": "Add Zod validation to tool-schema.ts",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "description": "Improve error messages with actionable guidance",
+      "status": "pending",
+      "priority": "medium"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "description": "Update README with accurate setup instructions",
+      "status": "pending",
+      "priority": "low"
+    }
+  ]
+}

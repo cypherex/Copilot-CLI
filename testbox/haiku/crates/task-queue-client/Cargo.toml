@@ -1,0 +1,15 @@
+[package]
+name = "task-queue-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+task-queue-core = { path = "../task-queue-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }

@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package taskqueue.v1;
+
+// Task Queue Service
+service TaskQueue {
+    // Submit a new task
+    rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+
+    // Get task status
+    rpc GetTaskStatus(GetTaskStatusRequest) returns (GetTaskStatusResponse);
+
+    // Cancel a task
+    rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+
+    // List tasks
+    rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+
+    // Stream task updates (server streaming)
+    rpc StreamTaskUpdates(StreamTaskUpdatesRequest) returns (stream TaskUpdate);
+
+    // Get system statistics
+    rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+// Task submission
+message SubmitTaskRequest {
+    string task_type = 1;
+    bytes payload = 2;
+    uint32 priority = 3;
+    string schedule_at = 4; // ISO8601 timestamp
+    uint64 timeout_seconds = 5;
+    uint32 max_retries = 6;
+    repeated string dependencies = 7; // Task IDs as strings
+}
+
+message SubmitTaskResponse {
+    string task_id = 1;
+    string status = 2;
+}
+
+// Task status query
+message GetTaskStatusRequest {
+    string task_id = 1;
+}
+
+message GetTaskStatusResponse {
+    Task task = 1;
+}
+
+message Task {
+    string id = 1;
+    string task_type = 2;
+    bytes payload = 3;
+    uint32 priority = 4;
+    string created_at = 5;
+    string updated_at = 6;
+    string scheduled_at = 7;
+    uint32 max_retries = 8;
+    uint32 retry_count = 9;
+    uint64 timeout_seconds = 10;
+    string status = 11;
+    string worker_id = 12;
+    string lease_expires_at = 13;
+    repeated string dependencies = 14;
+    TaskResult result = 15;
+    repeated string error_history = 16;
+}
+
+message TaskResult {
+    string task_id = 1;
+    bool success = 2;
+    bytes result_data = 3;
+    string error_message = 4;
+    string worker_id = 5;
+    string completed_at = 6;
+    uint64 processing_duration_ms = 7;
+}
+
+// Cancel task
+message CancelTaskRequest {
+    string task_id = 1;
+}
+
+message CancelTaskResponse {
+    bool success = 1;
+}
+
+// List tasks
+message ListTasksRequest {
+    string status = 1;
+    string task_type = 2;
+    uint32 limit = 3;
+    uint32 offset = 4;
+}
+
+message ListTasksResponse {
+    repeated Task tasks = 1;
+    uint64 total = 2;
+}
+
+// Stream updates
+message StreamTaskUpdatesRequest {
+    string task_id = 1;
+}
+
+message TaskUpdate {
+    string task_id = 1;
+    string status = 2;
+    TaskResult result = 3;
+}
+
+// Statistics
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    uint64 pending_count = 1;
+    uint64 in_progress_count = 2;
+    uint64 completed_last_hour = 3;
+    uint64 failed_last_hour = 4;
+    uint64 worker_count = 5;
+    double avg_processing_time_ms = 6;
+    QueueDepthByPriority queue_depth_by_priority = 7;
+}
+
+message QueueDepthByPriority {
+    uint64 high = 1;
+    uint64 normal = 2;
+    uint64 low = 3;
+}

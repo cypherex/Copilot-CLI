@@ -1,0 +1,72 @@
+{
+  "name": "copilot-cli",
+  "version": "0.1.0",
+  "description": "AI-powered CLI agent using Microsoft 365 Copilot",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "copilot-cli": "./dist/index.js",
+    "cc": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "copilot",
+    "microsoft-365",
+    "agent",
+    "coding-assistant"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@azure/identity": "^4.0.0",
+    "@azure/identity-broker": "^1.0.0",
+    "@azure/msal-node": "^2.6.0",
+    "@azure/msal-node-extensions": "^1.0.10",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "commander": "^11.1.0",
+    "execa": "^8.0.1",
+    "fs-extra": "^11.2.0",
+    "graceful-fs": "^4.2.11",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "inquirer": "^9.2.12",
+    "@inquirer/prompts": "^4.0.0",
+    "marked": "^11.1.0",
+    "marked-terminal": "^7.0.0",
+    "fast-glob": "^3.3.2",
+    "minimatch": "^9.0.3",
+    "zod": "^3.22.4",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "date-fns": "^3.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/uuid": "^9.0.7",
+    "@types/inquirer": "^9.0.7",
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "ts-jest": "^29.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

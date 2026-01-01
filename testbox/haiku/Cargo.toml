@@ -1,0 +1,54 @@
+[workspace]
+members = [
+    "crates/task-queue-core",
+    "crates/task-queue-broker",
+    "crates/task-queue-worker",
+    "crates/task-queue-client",
+    "crates/task-queue-cli",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rocksdb = "0.21"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+prometheus = "0.13"
+axum = "0.7"
+tonic = "0.12"
+tonic-build = "0.12"
+hyper = "1"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "1"
+bytes = "1"
+parking_lot = "0.12"
+dashmap = "5"
+crossbeam-channel = "0.5"
+futures = "0.3"
+proptest = "1"
+quickcheck = "1"
+quickcheck_macros = "1"
+mockall = "0.12"
+tempfile = "3"
+regex = "1"
+log = "0.4"
+env_logger = "0.11"
+base64 = "0.22"
+bcrypt = "0.15"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true

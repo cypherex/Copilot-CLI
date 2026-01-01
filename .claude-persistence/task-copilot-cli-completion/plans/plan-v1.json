@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "created": "2026-01-01T15:45:00Z",
+  "goal": "Complete the Copilot CLI Agent implementation by fixing gaps identified in review: authentication security (DPAPI encryption, Windows WAM), LLM client robustness (Graph SDK, retry logic), and validation",
+  "phases": [
+    {
+      "id": 1,
+      "name": "Security & Authentication Fixes",
+      "description": "Implement Windows WAM as primary auth with Device Code fallback, add DPAPI token encryption",
+      "approach": [
+        "Implement BrokerCredential from @azure/identity-broker as primary auth",
+        "Refactor DeviceCodeCredential as fallback when WAM fails",
+        "Use @azure/msal-node-extensions PersistenceCreator for DPAPI encryption",
+        "Change cache path to %LOCALAPPDATA%/copilot-cli/cache/msal.cache",
+        "Extract real account info from credentials instead of hardcoding"
+      ],
+      "success_criteria": [
+        "Windows users authenticate silently via WAM",
+        "Device code flow works when WAM unavailable",
+        "Tokens are encrypted at rest using DPAPI",
+        "Cache stored in Windows standard location"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 2,
+      "name": "LLM Client Robustness",
+      "description": "Use Microsoft Graph SDK, add retry logic, response validation, and beta API fallback",
+      "approach": [
+        "Refactor copilot-client.ts to use @microsoft/microsoft-graph-client",
+        "Add exponential backoff retry logic for transient failures",
+        "Add Zod schema validation for API responses",
+        "Implement /beta/copilot fallback if v1.0 fails",
+        "Add proper logging for debugging"
+      ],
+      "success_criteria": [
+        "Graph SDK properly integrated for API calls",
+        "Transient failures retry automatically",
+        "Invalid responses caught with helpful errors",
+        "Beta endpoint fallback works if needed"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 3,
+      "name": "Validation & Polish",
+      "description": "Add missing validation, improve error messages, verify complete implementation",
+      "approach": [
+        "Add Zod validation to tool-schema.ts converter",
+        "Improve error messages with actionable guidance",
+        "Test complete flow with real M365 Copilot API",
+        "Update README with accurate setup instructions",
+        "Final code review against plan"
+      ],
+      "success_criteria": [
+        "All tool schemas validated before API calls",
+        "Error messages help users resolve issues",
+        "End-to-end flow works with real API",
+        "Documentation accurate and complete"
+      ],
+      "status": "pending"
+    }
+  ],
+  "constraints": {
+    "forbidden": [
+      "Storing tokens in plain text",
+      "Skipping Windows WAM for Windows users",
+      "Ignoring API errors silently"
+    ],
+    "required": [
+      "Use existing npm dependencies already in package.json",
+      "Maintain TypeScript strict mode",
+      "Keep CLI interface backward compatible"
+    ]
+  }
+}

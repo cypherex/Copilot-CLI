@@ -1,0 +1,41 @@
+# Task Queue Broker Configuration
+
+broker:
+  host: 0.0.0.0
+  port: 6379
+  max_connections: 1000
+  queue_depth_threshold: 100000
+
+persistence:
+  data_dir: ./data
+  wal_sync_interval_ms: 100
+  completed_task_retention_days: 7
+
+raft:
+  enabled: false
+  node_id: node1
+  peers: []
+  election_timeout_ms: 1000
+  heartbeat_interval_ms: 300
+  snapshot_interval: 10000
+
+api:
+  rest_port: 8080
+  grpc_port: 9090
+  enable_tls: false
+  tls_cert_path: null
+  tls_key_path: null
+
+auth:
+  enabled: false
+  api_keys: []
+
+monitoring:
+  prometheus_port: 9091
+  log_level: info
+
+worker:
+  concurrency: 4
+  heartbeat_interval_secs: 15
+  lease_timeout_secs: 30
+  graceful_shutdown_timeout_secs: 60

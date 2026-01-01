@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  broker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - broker_data:/data
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: tq-worker --broker-addr broker:6379
+    depends_on:
+      - broker
+    environment:
+      - RUST_LOG=info
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: tq-worker --broker-addr broker:6379
+    depends_on:
+      - broker
+    environment:
+      - RUST_LOG=info
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: tq-worker --broker-addr broker:6379
+    depends_on:
+      - broker
+    environment:
+      - RUST_LOG=info
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - broker
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+    depends_on:
+      - prometheus
+
+volumes:
+  broker_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: task-queue-network

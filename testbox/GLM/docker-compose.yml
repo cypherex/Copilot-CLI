@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  broker1:
+    build: .
+    command: ["./target/release/tq-broker", "--config", "/config/node1.yaml"]
+    ports:
+      - "6379:6379"
+      - "8080:8080"
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./data/node1:/data
+    networks:
+      - task-queue
+    environment:
+      - RUST_LOG=info
+
+  broker2:
+    build: .
+    command: ["./target/release/tq-broker", "--config", "/config/node2.yaml"]
+    ports:
+      - "6380:6379"
+      - "8081:8080"
+      - "9092:9091"
+    volumes:
+      - ./config:/config
+      - ./data/node2:/data
+    networks:
+      - task-queue
+    depends_on:
+      - broker1
+    environment:
+      - RUST_LOG=info
+
+  broker3:
+    build: .
+    command: ["./target/release/tq-broker", "--config", "/config/node3.yaml"]
+    ports:
+      - "6381:6379"
+      - "8082:8080"
+      - "9093:9091"
+    volumes:
+      - ./config:/config
+      - ./data/node3:/data
+    networks:
+      - task-queue
+    depends_on:
+      - broker1
+    environment:
+      - RUST_LOG=info
+
+  worker1:
+    build: .
+    command: ["./target/release/tq-worker", "--broker-addr", "broker1:6379", "--concurrency", "4"]
+    networks:
+      - task-queue
+    depends_on:
+      - broker1
+    environment:
+      - RUST_LOG=info
+
+  worker2:
+    build: .
+    command: ["./target/release/tq-worker", "--broker-addr", "broker1:6379", "--concurrency", "4"]
+    networks:
+      - task-queue
+    depends_on:
+      - broker1
+    environment:
+      - RUST_LOG=info
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - task-queue
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana:/var/lib/grafana
+    networks:
+      - task-queue
+    depends_on:
+      - prometheus
+
+networks:
+  task-queue:
+    driver: bridge

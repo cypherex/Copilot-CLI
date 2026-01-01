@@ -1,0 +1,28 @@
+[package]
+name = "task-queue-admin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "tq-admin"
+path = "src/main.rs"
+
+[dependencies]
+task-queue-core = { path = "../task-queue-core" }
+task-queue-client = { path = "../task-queue-client" }
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+base64 = "0.21"
+chrono.workspace = true
+uuid.workspace = true
+serde_yaml = "0.9"
+
+# Table output
+comfy-table = "7.1"
+indicatif = "0.17"

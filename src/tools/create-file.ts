@@ -1,0 +1,54 @@
+// Create File Tool
+
+import { z } from 'zod';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { BaseTool } from './base-tool.js';
+import type { ToolDefinition } from './types.js';
+
+const createFileSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+  overwrite: z.boolean().optional().default(false),
+});
+
+export class CreateFileTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'create_file',
+    description: 'Create a new file with specified content. Creates parent directories if needed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or relative file path' },
+        content: { type: 'string', description: 'File content to write' },
+        overwrite: { type: 'boolean', description: 'Whether to overwrite if file exists', default: false },
+      },
+      required: ['path', 'content'],
+    },
+  };
+
+  protected readonly schema = createFileSchema;
+
+  protected async executeInternal(args: z.infer<typeof createFileSchema>): Promise<string> {
+    const absolutePath = path.resolve(args.path);
+
+    // Check if file exists
+    try {
+      await fs.access(absolutePath);
+      if (!args.overwrite) {
+        throw new Error(`File already exists: ${absolutePath}. Use overwrite: true to replace.`);
+      }
+    } catch (e) {
+      // File doesn't exist, continue (unless it's our own error)
+      if (e instanceof Error && e.message.includes('File already exists')) throw e;
+    }
+
+    // Create parent directories
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+
+    // Write file
+    await fs.writeFile(absolutePath, args.content, 'utf-8');
+
+    return `Successfully created file: ${absolutePath}`;
+  }
+}

@@ -1,0 +1,12 @@
+[package]
+name = "task-queue-raft"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+raft = { workspace = true }
+raft-proto = { workspace = true }
+protobuf = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
