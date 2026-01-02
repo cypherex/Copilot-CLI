@@ -133,9 +133,13 @@ export class CopilotAgent {
       planningValidator,
       proactiveContextMonitor,
       incompleteWorkDetector,
-      fileRelationshipTracker
+      fileRelationshipTracker,
+      llmConfig.model // Pass model name for context limit configuration
     );
     this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
+
+    // Set execution context for parallel tool (hooks + file tracking)
+    this.toolRegistry.setExecutionContext(this.hookRegistry, this.conversation);
 
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);

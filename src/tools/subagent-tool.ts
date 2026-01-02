@@ -46,19 +46,26 @@ export class SpawnAgentTool extends BaseTool {
     name: 'spawn_agent',
     description: `Spawn an autonomous subagent to handle a focused, specific task.
 
-KEY PRINCIPLE: LLMs work best on FOCUSED, SPECIFIC tasks with bounded context. Use subagents to break complex work into manageable pieces.
+⭐ CRITICAL CONTEXT PRINCIPLE: Subagents are INCREDIBLE for containing context of a specific task and preventing context flooding in the main orchestrator. They keep your working memory clean and focused. USE THEM AGGRESSIVELY!
+
+KEY BENEFITS:
+🧠 Context Containment - Each subagent has isolated, focused context for its specific task
+🚀 Performance - Main orchestrator stays lean and efficient without context bloat
+🎯 Focus - Work on specific problems without distraction from unrelated details
+♻️ Reusability - Subagents can iterate thousands of times without polluting main context
 
 WHEN TO USE (MANDATORY):
 ⚠️ You MUST use spawn_agent for these patterns:
 - "for each file/module/service" - Multiple independent items require parallel subagents
 - "across all files/modules" - Cross-module operations need parallel processing
 
-WHEN TO USE (HIGHLY RECOMMENDED):
-📊 Context Management:
-- The conversation is getting long (> 10 messages)
-- Context is becoming overloaded with irrelevant information
-- You need to step back and see the big picture
-- Complex problem with many moving parts
+WHEN TO USE (STRONGLY RECOMMENDED - Use More Aggressively):
+📊 Context Management (PRIMARY USE CASE):
+- The conversation is getting long (> 10 messages) → SPAWN NOW
+- Context is becoming overloaded with irrelevant information → SPAWN NOW
+- You're tracking multiple concepts/files/changes → SPAWN NOW to isolate each concern
+- Complex problem with many moving parts → DELEGATE to keep main orchestrator clean
+- Working on a specific feature/bug → ISOLATE in subagent to prevent context pollution
 
 🔄 Parallel Execution (spawn multiple subagents with background=true):
 - Writing tests for multiple files or modules
@@ -72,6 +79,8 @@ WHEN TO USE (HIGHLY RECOMMENDED):
 - Refactoring a large module (section-by-section)
 - Writing documentation while understanding code
 - Any focused, bounded task that benefits from isolation
+
+💡 AGGRESSIVE DELEGATION MINDSET: When in doubt, delegate! Subagents are cheap, context pollution is expensive.
 
 Available Roles:
 - investigator: Diagnose bugs and trace execution (deep analysis)

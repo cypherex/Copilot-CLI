@@ -70,7 +70,8 @@ export class SubAgentQueue extends EventEmitter {
     planningValidator?: PlanningValidator,
     proactiveContextMonitor?: ProactiveContextMonitor,
     incompleteWorkDetector?: IncompleteWorkDetector,
-    fileRelationshipTracker?: FileRelationshipTracker
+    fileRelationshipTracker?: FileRelationshipTracker,
+    private modelName?: string
   ) {
     super();
     this.maxConcurrency = maxConcurrency;
@@ -145,7 +146,8 @@ export class SubAgentQueue extends EventEmitter {
         this.planningValidator,
         this.proactiveContextMonitor,
         this.incompleteWorkDetector,
-        this.fileRelationshipTracker
+        this.fileRelationshipTracker,
+        this.modelName
       );
 
       const promise = agent.execute()
@@ -289,7 +291,8 @@ class SubAgent extends EventEmitter {
     planningValidator?: PlanningValidator,
     proactiveContextMonitor?: ProactiveContextMonitor,
     incompleteWorkDetector?: IncompleteWorkDetector,
-    fileRelationshipTracker?: FileRelationshipTracker
+    fileRelationshipTracker?: FileRelationshipTracker,
+    private modelName?: string
   ) {
     super();
     this.abortSignal = abortSignal;
@@ -302,12 +305,18 @@ class SubAgent extends EventEmitter {
 
     const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
     this.conversation = new ConversationManager(systemPrompt, {
-      maxHistoryLength: 30,
+      // Use same max history as main agent (defaults to 50)
+      enableSmartMemory: true,
       contextConfig: {
         verbose: false,
       },
     });
     this.conversation.setLLMClient(llmClient);
+
+    // Set model-specific context limits (same as main agent)
+    if (modelName) {
+      this.conversation.setModelContextLimit(modelName);
+    }
     this.maxIterations = config.maxIterations || 1000;
   }
 
@@ -480,6 +489,20 @@ Remember: You are responsible for delivering complete, production-ready work. No
           continueLoop = true;
         } else {
           this.conversation.addAssistantMessage(response.content || '');
+
+          // Check if we need compression before ending the loop
+          const contextManager = this.conversation.getContextManager();
+          contextManager.updateUsage(this.conversation.getMessages());
+          const needsCompression = contextManager.needsCompression();
+
+          if (needsCompression) {
+            // Compression will happen, continue loop after compression
+            await this.conversation.trimHistory();
+            // Note: subagents run in background, no console logging
+            continueLoop = true;
+            continue;
+          }
+
           continueLoop = false;
 
           // Detect incomplete work - if LLM says it's done but left things undone

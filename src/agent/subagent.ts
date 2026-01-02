@@ -51,18 +51,26 @@ export class SubAgent extends EventEmitter {
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry,
-    private config: SubAgentConfig
+    private config: SubAgentConfig,
+    private modelName?: string
   ) {
     super();
     this.config = config;
     const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
     this.conversation = new ConversationManager(systemPrompt, {
-      maxHistoryLength: 30,
+      // Use same max history as main agent (defaults to 50)
+      enableSmartMemory: true,
       contextConfig: {
         verbose: false,
       },
     });
     this.conversation.setLLMClient(llmClient);
+
+    // Set model-specific context limits (same as main agent)
+    if (modelName) {
+      this.conversation.setModelContextLimit(modelName);
+    }
+
     this.maxIterations = config.maxIterations || 10000;
   }
 
@@ -390,7 +398,8 @@ export class SubAgentManager extends EventEmitter {
     planningValidator?: PlanningValidator,
     proactiveContextMonitor?: ProactiveContextMonitor,
     incompleteWorkDetector?: IncompleteWorkDetector,
-    fileRelationshipTracker?: FileRelationshipTracker
+    fileRelationshipTracker?: FileRelationshipTracker,
+    private modelName?: string
   ) {
     super();
     // Create the queue with concurrency limit and all infrastructure
@@ -403,7 +412,8 @@ export class SubAgentManager extends EventEmitter {
       planningValidator,
       proactiveContextMonitor,
       incompleteWorkDetector,
-      fileRelationshipTracker
+      fileRelationshipTracker,
+      modelName
     );
 
     // Forward queue events
@@ -427,7 +437,7 @@ export class SubAgentManager extends EventEmitter {
     const agent = new SubAgent(this.llmClient, this.toolRegistry, {
       ...config,
       name: agentId,
-    });
+    }, this.modelName);
 
     // Store agent instance for progress tracking and user messages
     this.agentInstances.set(agentId, agent);

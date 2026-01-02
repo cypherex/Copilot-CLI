@@ -547,9 +547,11 @@ export function buildSubagentHint(opportunity: SubagentOpportunity): string {
       ``,
     );
   } else {
-    // SUGGESTION MODE - Use polite recommendation language
+    // SUGGESTION MODE - Use strong recommendation language with context benefits
     lines.push(
       `[SUBAGENT SUGGESTION]`,
+      ``,
+      `⭐ STRONGLY RECOMMENDED - This is an excellent opportunity for delegation!`,
       ``,
       `${opportunity.reason}`,
       ``,
@@ -557,17 +559,25 @@ export function buildSubagentHint(opportunity: SubagentOpportunity): string {
     );
 
     if (opportunity.roleId) {
-      lines.push(`Suggested Role: ${opportunity.roleId}`);
+      lines.push(`Recommended Role: ${opportunity.roleId}`);
     }
 
     if (opportunity.taskCount && opportunity.taskCount > 1) {
-      lines.push(`Detected Tasks: ${opportunity.taskCount} (consider parallel processing)`);
+      lines.push(`Detected Tasks: ${opportunity.taskCount} (parallel processing strongly recommended)`);
     }
 
     lines.push(
       ``,
-      `Consider spawning a subagent if this task is large or complex.`,
-      `You may also spawn multiple parallel subagents for independent work items.`,
+      `🧠 CONTEXT BENEFIT: Delegating this to a subagent will:`,
+      `   • Keep the main orchestrator focused and clean`,
+      `   • Prevent context flooding with task-specific details`,
+      `   • Allow the subagent to iterate thousands of times in isolation`,
+      `   • Improve overall performance by containing complexity`,
+      ``,
+      `💡 STRONG RECOMMENDATION: Spawn a subagent for this task to maintain clean context separation.`,
+      `   Use background=true for parallel work items to maximize efficiency.`,
+      ``,
+      `⚡ When in doubt, delegate! Subagents are cheap, context pollution is expensive.`,
       ``,
     );
   }

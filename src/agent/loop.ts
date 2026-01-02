@@ -379,6 +379,20 @@ export class AgenticLoop {
           continueLoop = true;
         } else {
           this.conversation.addAssistantMessage(response.content || '');
+
+          // Check if we need compression before ending the loop
+          const contextManager = this.conversation.getContextManager();
+          contextManager.updateUsage(this.conversation.getMessages());
+          const needsCompression = contextManager.needsCompression();
+
+          if (needsCompression) {
+            // Compression will happen, continue loop after compression
+            await this.conversation.trimHistory();
+            console.log(chalk.cyan('\n💾 Context compressed - continuing work...\n'));
+            continueLoop = true;
+            continue;
+          }
+
           continueLoop = false;
 
           // Detect incomplete work - if LLM says it's done but left things undone

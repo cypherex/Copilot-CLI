@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition, Tool } from './types.js';
 import type { ToolRegistry } from './index.js';
+import type { HookRegistry } from '../hooks/registry.js';
+import type { ConversationManager } from '../agent/conversation.js';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -99,10 +101,18 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
 
   protected readonly schema = ParallelSchema;
   private toolRegistry: ToolRegistry;
+  private hookRegistry?: HookRegistry;
+  private conversation?: ConversationManager;
 
   constructor(toolRegistry: ToolRegistry) {
     super();
     this.toolRegistry = toolRegistry;
+  }
+
+  // Set execution context for hook and tracking support
+  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager): void {
+    this.hookRegistry = hookRegistry;
+    this.conversation = conversation;
   }
 
   protected async executeInternal(args: z.infer<typeof ParallelSchema>): Promise<string> {
@@ -131,24 +141,90 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
     // Execute all tools in parallel
     const toolPromises = toolCalls.map(async (toolCall): Promise<ParallelToolResult> => {
       const toolStartTime = Date.now();
+      const toolName = toolCall.tool;
+      let toolArgs = toolCall.parameters;
 
       try {
-        const tool = this.toolRegistry.get(toolCall.tool);
+        // Execute tool:pre-execute hook
+        if (this.hookRegistry) {
+          const preResult = await this.hookRegistry.execute('tool:pre-execute', {
+            toolName,
+            toolArgs,
+          });
+          if (!preResult.continue) {
+            const toolExecutionTime = Date.now() - toolStartTime;
+            return {
+              tool: toolName,
+              success: false,
+              error: 'Execution cancelled by hook',
+              executionTime: toolExecutionTime,
+            };
+          }
+          if (preResult.modifiedArgs) {
+            toolArgs = preResult.modifiedArgs;
+          }
+        }
+
+        const tool = this.toolRegistry.get(toolName);
         if (!tool) {
           const toolExecutionTime = Date.now() - toolStartTime;
           return {
-            tool: toolCall.tool,
+            tool: toolName,
             success: false,
-            error: `Tool not found: ${toolCall.tool}`,
+            error: `Tool not found: ${toolName}`,
             executionTime: toolExecutionTime,
           };
         }
 
-        const result = await tool.execute(toolCall.parameters);
+        const result = await tool.execute(toolArgs);
         const toolExecutionTime = Date.now() - toolStartTime;
 
+        // Track file operations in conversation
+        if (this.conversation && result.success) {
+          // Track file reads
+          if (toolName === 'read_file' && toolArgs.path) {
+            this.conversation.trackFileRead(toolArgs.path, 'Read by parallel tool');
+          }
+
+          // Track file edits
+          const memoryStore = this.conversation.getMemoryStore();
+          const activeTask = memoryStore.getActiveTask();
+
+          if (toolName === 'create_file' && toolArgs.path) {
+            memoryStore.addEditRecord({
+              file: toolArgs.path || 'unknown',
+              description: toolArgs.overwrite ? 'Overwrote file (parallel)' : 'Created new file (parallel)',
+              changeType: toolArgs.overwrite ? 'modify' : 'create',
+              afterSnippet: toolArgs.content?.slice(0, 200),
+              relatedTaskId: activeTask?.id,
+            });
+            memoryStore.addActiveFile({
+              path: toolArgs.path,
+              purpose: 'Created in parallel block',
+            });
+          } else if (toolName === 'patch_file' && toolArgs.path) {
+            memoryStore.addEditRecord({
+              file: toolArgs.path || 'unknown',
+              description: `Patched (parallel): ${toolArgs.search?.slice(0, 50)}...`,
+              changeType: 'modify',
+              beforeSnippet: toolArgs.search?.slice(0, 100),
+              afterSnippet: toolArgs.replace?.slice(0, 100),
+              relatedTaskId: activeTask?.id,
+            });
+          }
+        }
+
+        // Execute tool:post-execute hook
+        if (this.hookRegistry) {
+          await this.hookRegistry.execute('tool:post-execute', {
+            toolName,
+            toolArgs,
+            toolResult: result,
+          });
+        }
+
         return {
-          tool: toolCall.tool,
+          tool: toolName,
           success: result.success,
           output: result.success ? result.output : undefined,
           error: result.success ? undefined : result.error,
@@ -156,12 +232,23 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
         };
       } catch (error) {
         const toolExecutionTime = Date.now() - toolStartTime;
-        return {
-          tool: toolCall.tool,
+        const errorResult = {
+          tool: toolName,
           success: false,
           error: error instanceof Error ? error.message : String(error),
           executionTime: toolExecutionTime,
         };
+
+        // Execute tool:post-execute hook even on error
+        if (this.hookRegistry) {
+          await this.hookRegistry.execute('tool:post-execute', {
+            toolName,
+            toolArgs,
+            toolResult: errorResult,
+          });
+        }
+
+        return errorResult;
       }
     });
 
