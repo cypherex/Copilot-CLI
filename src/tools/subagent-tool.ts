@@ -131,9 +131,98 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
   protected async executeInternal(args: z.infer<typeof SpawnAgentSchema>): Promise<string> {
     const { task, name, role, files, success_criteria, background } = args;
 
+    const warnings: string[] = [];
+
+    // Validate task scope - encourage hierarchical breakdown for complex tasks
+    if (this.memoryStore) {
+      const complexityIndicators = [
+        /implement (a |the )?[\w\s]+(system|feature|module|service)/i,
+        /build (a |the )?[\w\s]+(system|feature|module|service|app)/i,
+        /create (a |the )?[\w\s]+(system|feature|module|service)/i,
+        /add (a |the )?[\w\s]+(system|authentication|authorization|integration)/i,
+        /refactor (all|the) [\w\s]+/i,
+      ];
+
+      const isComplexTask = complexityIndicators.some(pattern => pattern.test(task));
+
+      if (isComplexTask) {
+        const currentTask = this.memoryStore.getActiveTask();
+        const allTasks = this.memoryStore.getTasks();
+
+        // Check if current task has subtasks that could be delegated instead
+        if (currentTask) {
+          const subtasks = allTasks.filter(t => t.parentId === currentTask.id);
+
+          if (subtasks.length === 0) {
+            const warning = [
+              '⚠️  WARNING: Delegating a complex task without breaking it down first',
+              'Task appears complex: ' + task,
+              'Consider:',
+              '  1. Use break_down_task to decompose into 3-7 focused subtasks',
+              '  2. Then delegate individual MICRO/MICRO-MICRO tasks to subagents',
+              '  3. This enables better focus and higher quality results',
+              'Proceeding with delegation anyway...',
+            ].join('\n');
+            warnings.push(warning);
+            console.log(chalk.yellow('\n' + warning + '\n'));
+          }
+        } else {
+          // No current task set - suggest creating and breaking down
+          const warning = [
+            '⚠️  WARNING: Delegating complex task without task hierarchy',
+            'Recommended workflow:',
+            '  1. create_task({ description: "' + task + '", priority: "high" })',
+            '  2. break_down_task({ task_id: "<task_id>", subtasks: [...] })',
+            '  3. Delegate individual subtasks to subagents',
+            'Proceeding with delegation anyway...',
+          ].join('\n');
+          warnings.push(warning);
+          console.log(chalk.yellow('\n' + warning + '\n'));
+        }
+      }
+    }
+
     let systemPrompt: string | undefined;
     let maxIterations: number | undefined;
     let focusedTask = task;
+
+    // Enrich task with hierarchical context
+    if (this.memoryStore) {
+      const currentTask = this.memoryStore.getActiveTask();
+      const goal = this.memoryStore.getGoal();
+      const allTasks = this.memoryStore.getTasks();
+
+      let enrichedTask = task;
+      const contextParts: string[] = [];
+
+      // Add goal context
+      if (goal) {
+        contextParts.push(`Overall Goal: ${goal.description}`);
+      }
+
+      // Add parent task context if current task exists
+      if (currentTask) {
+        contextParts.push(`Parent Task: ${currentTask.description}`);
+
+        // Check if current task has subtasks
+        const subtasks = allTasks.filter(t => t.parentId === currentTask.id);
+        if (subtasks.length > 0) {
+          const completedSubtasks = subtasks.filter(t => t.status === 'completed');
+          contextParts.push(`Task Progress: ${completedSubtasks.length}/${subtasks.length} subtasks completed`);
+        }
+
+        // Add related files from parent task
+        if (currentTask.relatedFiles && currentTask.relatedFiles.length > 0 && !files) {
+          contextParts.push(`Related Files: ${currentTask.relatedFiles.join(', ')}`);
+        }
+      }
+
+      // Build enriched task description
+      if (contextParts.length > 0) {
+        enrichedTask = `# Task Context\n\n${contextParts.join('\n')}\n\n# Your Specific Task\n\n${task}`;
+        focusedTask = enrichedTask;
+      }
+    }
 
     // If a role is provided and memoryStore is available, build a brief and convert to system prompt
     if (role && this.memoryStore) {
@@ -143,7 +232,7 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
 
         // Build focused context with communication patterns
         const pattern = getRecommendedPattern(task, files);
-        focusedTask = buildSubagentTask(role, task, files, pattern);
+        focusedTask = buildSubagentTask(role, focusedTask, files, pattern);
 
         // Build dispatch message for orchestrator
         const dispatchMessage = buildOrchestratorDispatchMessage(pattern, [{
@@ -167,30 +256,42 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
 
     const agentId = this.subAgentManager.spawn({
       name: name || `SubAgent for: ${task.slice(0, 30)}...`,
-      task,
+      task: focusedTask,
       systemPrompt,
       maxIterations,
     });
 
     if (background) {
-      return JSON.stringify({
+      const response: any = {
         status: 'spawned',
         agent_id: agentId,
         message: `Subagent spawned in background. Use wait_agent to get results.`,
-      }, null, 2);
+      };
+
+      if (warnings.length > 0) {
+        response.warnings = warnings;
+      }
+
+      return JSON.stringify(response, null, 2);
     }
 
     // Wait for completion
     const result = await this.subAgentManager.wait(agentId);
 
-    return JSON.stringify({
+    const response: any = {
       status: result.success ? 'completed' : 'failed',
       agent_id: agentId,
       output: result.output,
       error: result.error,
       iterations: result.iterations,
       tools_used: result.toolsUsed,
-    }, null, 2);
+    };
+
+    if (warnings.length > 0) {
+      response.warnings = warnings;
+    }
+
+    return JSON.stringify(response, null, 2);
   }
 }
 

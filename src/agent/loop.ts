@@ -158,6 +158,11 @@ export class AgenticLoop {
         const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
         this.conversation.addUserMessage(messageToProcess + '\n\n' + validationMessage);
         // Don't return early - let the agent respond and create tasks!
+      } else if (validation.suggestions && validation.suggestions.length > 0) {
+        // Validation passed but has suggestions (e.g., complex task should be broken down)
+        // Inject suggestions so LLM is aware
+        const suggestionsMessage = `[Planning Suggestions]\n${validation.suggestions.join('\n')}`;
+        this.conversation.addUserMessage(messageToProcess + '\n\n' + suggestionsMessage);
       } else {
         this.conversation.addUserMessage(messageToProcess);
       }

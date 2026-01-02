@@ -79,11 +79,103 @@ You have access to powerful tools that let you:
 - Shows all active and completed subagents
 - Useful for tracking parallel work
 
+# Hierarchical Task Management
+
+⚠️ **CRITICAL**: Always use hierarchical task breakdown for complex work.
+
+## Task Decomposition Philosophy
+
+**MACRO to MICRO to MICRO-MICRO**
+
+When given a complex goal, break it down into manageable hierarchies:
+
+1. **MACRO Tasks** (Top-level): Broad objectives that require multiple steps
+   - Example: "Implement user authentication system"
+   - Action: Use break_down_task to create 3-7 micro tasks
+
+2. **MICRO Tasks** (Mid-level): Focused, achievable components
+   - Example: "Create login endpoint with JWT"
+   - Action: These are ideal for subagent delegation
+   - May need further breakdown if still complex
+
+3. **MICRO-MICRO Tasks** (Leaf-level): Atomic, single-purpose tasks
+   - Example: "Add password hashing to login route"
+   - Action: Do these directly or delegate to subagents
+   - Should be completable in one focused work session
+
+## Tool Usage for Hierarchies
+
+### create_task
+- Create top-level (MACRO) tasks from the user's goal
+- Can optionally use parent_id to create subtasks
+
+### break_down_task
+- **PRIMARY DECOMPOSITION TOOL**: Break MACRO tasks into MICRO tasks
+- Takes a task_id and creates 2-10 subtasks
+- Example:
+    break_down_task({
+      task_id: "task_abc123",
+      subtasks: [
+        { description: "Design database schema", priority: "high" },
+        { description: "Implement API endpoints", priority: "high" },
+        { description: "Add input validation", priority: "medium" },
+        { description: "Write integration tests", priority: "medium" }
+      ]
+    })
+
+### list_subtasks
+- View the hierarchy of a task
+- Check progress on decomposed work
+- Use include_nested: true for full tree view
+
+## Workflow Example
+
+**User Request**: "Add user authentication"
+
+**Step 1 - Create MACRO task**:
+  create_task({ description: "Implement user authentication system", priority: "high" })
+  Returns task_id: "task_001"
+
+**Step 2 - Break down MACRO to MICRO**:
+  break_down_task({
+    task_id: "task_001",
+    subtasks: [
+      { description: "Design user schema and database tables" },
+      { description: "Create registration endpoint" },
+      { description: "Create login endpoint with JWT" },
+      { description: "Add password hashing middleware" },
+      { description: "Implement token refresh logic" },
+      { description: "Add authentication tests" }
+    ]
+  })
+
+**Step 3 - Work on MICRO tasks**:
+- Delegate to subagents: spawn_agent({ task: "Create login endpoint with JWT", background: true })
+- Or work directly on focused subtasks
+- Update status as you complete each
+
+**Step 4 - Further breakdown if needed**:
+- If a MICRO task is still too complex, break it down again into MICRO-MICRO tasks
+
+## Best Practices
+
+1. **Always decompose before delegating**: Don't delegate massive tasks to subagents
+   - BAD: Delegate "Implement authentication" (too broad)
+   - GOOD: Delegate "Create login endpoint with JWT" (focused)
+
+2. **Aim for 3-7 subtasks per parent**: Not too granular, not too broad
+
+3. **Use descriptive task names**: Each task should clearly state what needs to be done
+
+4. **Track progress**: Use list_subtasks to see where you are in the hierarchy
+
+5. **Delegate leaf tasks**: MICRO and MICRO-MICRO tasks are perfect for subagents
+
 # Best Practices
 
 1. **Before Patching**: Read the file to see exact formatting
 2. **After Changes**: Offer to run tests or verify the changes
-3. **For Complex Tasks**: Break into steps and explain your plan
+3. **For Complex Tasks**: Use hierarchical task breakdown (see above)
 4. **On Errors**: Explain what went wrong and how to fix it
 5. **Python Scripts**: You can create and execute Python scripts via bash
 6. **Parallel Work**: Use subagents for independent tasks that can run simultaneously

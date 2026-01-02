@@ -146,7 +146,33 @@ export class PlanningValidator {
       suggestions.push('Use update_task_status to set current task to active');
     }
 
-    // Check 5: Should have active tasks (unless all done)
+    // Check 5: Detect complex tasks that should be broken down
+    if (isWriteOperation && state.currentTask) {
+      const task = state.currentTask;
+      const subtasks = this.memoryStore.getTasks().filter(t => t.parentId === task.id);
+
+      // Check if task description indicates complexity (uses words like "implement", "build", "create system", etc.)
+      const complexityIndicators = [
+        /implement (a |the )?[\w\s]+(system|feature|module|service)/i,
+        /build (a |the )?[\w\s]+(system|feature|module|service|app)/i,
+        /create (a |the )?[\w\s]+(system|feature|module|service)/i,
+        /add (a |the )?[\w\s]+(system|authentication|authorization|integration)/i,
+        /refactor (all|the) [\w\s]+/i,
+      ];
+
+      const isComplexTask = complexityIndicators.some(pattern => pattern.test(task.description));
+
+      if (isComplexTask && subtasks.length === 0) {
+        suggestions.push(
+          `⚠️ Current task appears complex: "${task.description}"`,
+          `Consider using break_down_task to decompose it into 3-7 focused subtasks`,
+          `Example: break_down_task({ task_id: "${task.id}", subtasks: [...] })`,
+          `This enables better subagent delegation and focused work`
+        );
+      }
+    }
+
+    // Check 6: Should have active tasks (unless all done)
     if (state.taskCount > 0 && !state.hasPendingTasks) {
       const completedCount = this.memoryStore.getTasks().filter(t => t.status === 'completed').length;
       if (completedCount < state.taskCount) {
@@ -252,6 +278,13 @@ export class PlanningValidator {
     parts.push('• Review task list regularly with list_tasks');
     parts.push('• Set current task with set_current_task before working');
 
+    parts.push('\nHierarchical Task Management:');
+    parts.push('• Break complex (MACRO) tasks into focused (MICRO) subtasks with break_down_task');
+    parts.push('• Aim for 3-7 subtasks per parent for manageable scope');
+    parts.push('• Use list_subtasks to view task hierarchy and progress');
+    parts.push('• Delegate LEAF tasks (MICRO/MICRO-MICRO) to subagents, not MACRO tasks');
+    parts.push('• Example: Instead of delegating "Implement auth", break it down and delegate "Create login endpoint"');
+
     parts.push('\n[End Planning Reminders]');
     return parts.join('\n');
   }
@@ -281,6 +314,17 @@ export function buildSubagentReminder(iteration: number): string | null {
     `\n[Subagent Reminder]`,
     ``,
     `🎯 LLMs work best on FOCUSED, SPECIFIC tasks`,
+    ``,
+    `⚠️ CRITICAL: Delegate LEAF tasks, not MACRO tasks`,
+    `• BAD: spawn_agent("Implement authentication system") - too broad`,
+    `• GOOD: First use break_down_task to decompose, then delegate subtasks`,
+    `• GOOD: spawn_agent("Create login endpoint with JWT") - focused and specific`,
+    ``,
+    `Hierarchical Delegation Pattern:`,
+    `1. Create MACRO task with create_task`,
+    `2. Break down with break_down_task into 3-7 MICRO tasks`,
+    `3. Delegate MICRO/MICRO-MICRO tasks to subagents`,
+    `4. Use list_subtasks to track progress`,
     ``,
     `Use spawn_agent when:`,
     ``,

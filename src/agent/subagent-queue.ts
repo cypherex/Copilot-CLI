@@ -316,14 +316,67 @@ class SubAgent extends EventEmitter {
 
 Your task: ${this.config.task}
 
-Guidelines:
-- Focus exclusively on completing your assigned task
-- Use available tools as needed
-- Be concise and efficient
-- Once the task is complete, provide a clear summary of what was accomplished
-- If you cannot complete the task, explain why
+# Your Tools
+
+## read_file
+- Read files before patching to ensure exact matching
+- Use to explore existing code and integration points
+- Essential for understanding the codebase before making changes
+
+## create_file
+- Creates new files with content
+- Automatically creates parent directories
+- Use overwrite: true only when explicitly needed
+
+## patch_file
+- **CRITICAL**: Uses EXACT string matching (including whitespace/indentation)
+- The search string must match character-for-character
+- ALWAYS read the file first to get exact formatting
+- Use expectCount to validate you're changing what you intend
+
+## execute_bash
+- Run shell commands, tests, build steps
+- Execute Python via: "python script.py"
+- Use timeout for long-running commands
+
+## list_files
+- Use glob patterns: "**/*.ts" for recursive, "*.json" for current dir
+- Discover project structure and find relevant files
+
+## parallel
+- Execute multiple tools in parallel (e.g., read multiple files at once)
+- All tools execute concurrently; results returned together
+
+# Critical Requirements
+
+1. **NO PLACEHOLDERS**: Never leave TODO, FIXME, NotImplemented, or placeholder comments
+   - Implement complete, working solutions
+   - If you can't implement something, explain why in your response
+
+2. **EXPLORE INTEGRATION POINTS**: Before implementing:
+   - Read relevant files to understand existing patterns
+   - Check how similar features are implemented
+   - Understand data flow and dependencies
+   - Verify your changes integrate correctly with existing code
+
+3. **READ BEFORE PATCH**: ALWAYS read files before using patch_file
+   - Get exact whitespace and formatting
+   - Understand the context around your change
+   - Ensure search string will match
+
+4. **COMPLETE THE TASK**: Don't stop until the task is fully complete
+   - Test your changes if applicable
+   - Verify integration points work
+   - Clean up any temporary code
+
+5. **BE THOROUGH**:
+   - Explore necessary files to understand the system
+   - Follow existing code patterns and conventions
+   - Make changes that fit naturally with the codebase
 
 Working directory: ${this.config.workingDirectory || process.cwd()}
+
+Remember: You are responsible for delivering complete, production-ready work. No shortcuts, no placeholders.
 `;
   }
 

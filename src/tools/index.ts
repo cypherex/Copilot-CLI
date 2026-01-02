@@ -8,7 +8,7 @@ import { ExecuteBashTool } from './execute-bash.js';
 import { ListFilesTool } from './list-files.js';
 import { ParallelTool } from './parallel-tool.js';
 import { SpawnAgentTool, WaitAgentTool, ListAgentsTool, GetAgentQueueStatusTool } from './subagent-tool.js';
-import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool } from './task-management-tool.js';
+import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool, ListSubtasksTool, BreakDownTaskTool } from './task-management-tool.js';
 import { SummarizeContextTool, ExtractFocusTool, MergeContextTool } from './context-management-tool.js';
 import { AddDecisionTool, GetDecisionsTool, SupersedeDecisionTool } from './decision-management-tool.js';
 import { SetTaskComplexityTool, ReportTaskComplexityTool, GetComplexityInsightsTool } from './task-complexity-tool.js';
@@ -51,6 +51,8 @@ export class ToolRegistry {
     this.register(new UpdateTaskStatusTool(memoryStore));
     this.register(new SetCurrentTaskTool(memoryStore));
     this.register(new ListTasksTool(memoryStore));
+    this.register(new ListSubtasksTool(memoryStore));
+    this.register(new BreakDownTaskTool(memoryStore));
   }
 
   // Register context management tools once memory store is available
