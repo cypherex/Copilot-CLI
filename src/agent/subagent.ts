@@ -7,6 +7,12 @@ import { ConversationManager } from './conversation.js';
 import { StreamAccumulator } from '../llm/streaming.js';
 import ora from 'ora';
 import chalk from 'chalk';
+import type { HookRegistry } from '../hooks/registry.js';
+import type { CompletionTracker } from '../audit/index.js';
+import type { PlanningValidator } from './planning-validator.js';
+import type { ProactiveContextMonitor } from './proactive-context-monitor.js';
+import type { IncompleteWorkDetector } from './incomplete-work-detector.js';
+import type { FileRelationshipTracker } from './file-relationship-tracker.js';
 
 export interface SubAgentConfig {
   name: string;
@@ -300,11 +306,27 @@ export class SubAgentManager extends EventEmitter {
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry,
-    maxConcurrency: number = 5
+    maxConcurrency: number = 5,
+    hookRegistry?: HookRegistry,
+    completionTracker?: CompletionTracker,
+    planningValidator?: PlanningValidator,
+    proactiveContextMonitor?: ProactiveContextMonitor,
+    incompleteWorkDetector?: IncompleteWorkDetector,
+    fileRelationshipTracker?: FileRelationshipTracker
   ) {
     super();
-    // Create the queue with concurrency limit
-    this.agentQueue = new SubAgentQueue(maxConcurrency, llmClient, toolRegistry);
+    // Create the queue with concurrency limit and all infrastructure
+    this.agentQueue = new SubAgentQueue(
+      maxConcurrency,
+      llmClient,
+      toolRegistry,
+      hookRegistry,
+      completionTracker,
+      planningValidator,
+      proactiveContextMonitor,
+      incompleteWorkDetector,
+      fileRelationshipTracker
+    );
 
     // Forward queue events
     this.agentQueue.on('agent_queued', (data) => {
@@ -448,5 +470,10 @@ export class SubAgentManager extends EventEmitter {
 
   getQueueStatus() {
     return this.agentQueue.getStatus();
+  }
+
+  // Shutdown all running subagents
+  async shutdown(): Promise<void> {
+    await this.agentQueue.shutdown();
   }
 }

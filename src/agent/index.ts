@@ -73,10 +73,6 @@ export class CopilotAgent {
       this.conversation.setModelContextLimit(llmConfig.model);
     }
 
-    // Create SubAgentManager and register subagent tools
-    this.subAgentManager = new SubAgentManager(this.llmClient, this.toolRegistry, 5);
-    this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
-
     // Register task management tools
     this.toolRegistry.registerTaskManagementTools(this.conversation.getMemoryStore());
 
@@ -127,6 +123,20 @@ export class CopilotAgent {
     // Initialize work continuity manager for session resume
     const workContinuityManager = new WorkContinuityManager(this.conversation.getMemoryStore());
 
+    // Create SubAgentManager with all infrastructure and register subagent tools
+    this.subAgentManager = new SubAgentManager(
+      this.llmClient,
+      this.toolRegistry,
+      5, // maxConcurrency
+      this.hookRegistry,
+      this.completionTracker,
+      planningValidator,
+      proactiveContextMonitor,
+      incompleteWorkDetector,
+      fileRelationshipTracker
+    );
+    this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
+
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);
     this.loop.setCompletionTracker(this.completionTracker);
@@ -169,6 +179,9 @@ export class CopilotAgent {
   }
 
   async shutdown(): Promise<void> {
+    // Shutdown all running subagents first
+    await this.subAgentManager.shutdown();
+
     // Save memory before shutdown
     await this.conversation.saveMemory();
 

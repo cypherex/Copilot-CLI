@@ -324,17 +324,50 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   const originalSigintListener = process.listeners('SIGINT')[0];
   process.removeAllListeners('SIGINT');
 
-  process.on('SIGINT', () => {
+  let agentInstance: any = null; // Store agent reference for cleanup
+
+  const cleanupAndExit = async (signal: string) => {
+    console.log(chalk.yellow(`\n${signal} received - cleaning up...`));
+    if (agentInstance) {
+      // Set timeout to force exit if shutdown hangs
+      const forceExitTimeout = setTimeout(() => {
+        console.log(chalk.red('Shutdown timeout - forcing exit'));
+        process.exit(1);
+      }, 3000);
+
+      try {
+        await agentInstance.shutdown();
+        clearTimeout(forceExitTimeout);
+      } catch (error) {
+        console.error('Shutdown error:', error);
+        clearTimeout(forceExitTimeout);
+      }
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGINT', async () => {
     if (agentPaused) {
-      // Second Ctrl+C - exit
-      ui.showError('Force exit');
-      process.exit(0);
+      // Second Ctrl+C - cleanup and exit
+      await cleanupAndExit('SIGINT');
     }
 
     // First Ctrl+C - pause
     agentPaused = true;
     pauseReason = 'User interrupted';
     ui.showWarning('Agent paused. Press Enter to continue or type a new message.');
+  });
+
+  // Handle SIGTERM (process kill)
+  process.on('SIGTERM', async () => {
+    await cleanupAndExit('SIGTERM');
+  });
+
+  // Handle process exit
+  process.on('beforeExit', async () => {
+    if (agentInstance) {
+      await agentInstance.shutdown();
+    }
   });
 
   // Initialize session manager
@@ -361,6 +394,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
   try {
     const agent = new CopilotAgent(config.auth, config.llm, options.directory);
+    agentInstance = agent; // Store for cleanup handlers
 
     // Unlimited iterations by default, unless user specifies a limit
     agent.setMaxIterations(options.maxIterations ?? null);

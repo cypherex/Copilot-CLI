@@ -1,0 +1,3 @@
+/ralph-loop
+
+Read the full specification at C:/dev/copilot-cli/testbox/prompt.md and implement the complete distributed task queue system.

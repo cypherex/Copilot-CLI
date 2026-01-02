@@ -39,6 +39,11 @@ export class AgenticLoop {
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
+  // Loop breaker state - prevents infinite validation loops
+  private consecutiveIdenticalDetections = 0;
+  private lastDetectionHash = '';
+  private readonly LOOP_BREAKER_THRESHOLD = 3;
+
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry,
@@ -90,6 +95,9 @@ export class AgenticLoop {
     if (this.workContinuityManager && this.workContinuityManager.isSessionResume()) {
       this.workContinuityManager.displaySessionResume();
     }
+
+    // Track if any file modifications occurred during this user message processing
+    let hadFileModifications = false;
 
     // Execute user:prompt-submit hook
     let messageToProcess = userMessage;
@@ -173,9 +181,15 @@ export class AgenticLoop {
 
     let iteration = 0;
     let continueLoop = true;
+    const ITERATION_DELAY_MS = 35; // Minimal delay to prevent API rate limiting
 
     while (continueLoop && (this.maxIterations === null || iteration < this.maxIterations)) {
       iteration++;
+
+      // Enforce delay between iterations to prevent API rate limiting
+      if (iteration > 1) {
+        await new Promise(resolve => setTimeout(resolve, ITERATION_DELAY_MS));
+      }
 
       // Execute agent:iteration hook
       if (this.hookRegistry) {
@@ -326,6 +340,16 @@ export class AgenticLoop {
 
         if (response.toolCalls && response.toolCalls.length > 0) {
           this.conversation.addAssistantMessage(response.content || '', response.toolCalls);
+
+          // Check if any file modification tools were called
+          const fileModificationTools = ['create_file', 'patch_file'];
+          const hasFileModifications = response.toolCalls.some(tc =>
+            fileModificationTools.includes(tc.function.name)
+          );
+          if (hasFileModifications) {
+            hadFileModifications = true;
+          }
+
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
@@ -358,6 +382,21 @@ export class AgenticLoop {
               this.conversation.addUserMessage(autoDecision);
               continueLoop = true;
               continue;
+            }
+
+            // Check for loop breaker - prevent infinite validation loops
+            const detectionHash = `${detection.completionPhrases.join(',')}_${detection.remainingPhrases.join(',')}`;
+            if (detectionHash === this.lastDetectionHash) {
+              this.consecutiveIdenticalDetections++;
+              if (this.consecutiveIdenticalDetections >= this.LOOP_BREAKER_THRESHOLD) {
+                // Break the loop - stop asking about the same issue
+                console.log(chalk.yellow('\n⚠️ Loop breaker activated - stopping repeated validation\n'));
+                continueLoop = false;
+                continue;
+              }
+            } else {
+              this.consecutiveIdenticalDetections = 0;
+              this.lastDetectionHash = detectionHash;
             }
 
             // Case 1: LLM says it's done but has tracking items (pre-response check)
@@ -403,8 +442,8 @@ export class AgenticLoop {
             await this.trackRetrievalUsefulness(pendingRetrievalIds, response.content);
           }
 
-          // Audit completed response for incomplete scaffolding
-          if (this.completionTracker && response.content) {
+          // Audit completed response for incomplete scaffolding - ONLY if files were modified
+          if (this.completionTracker && response.content && hadFileModifications) {
             const responseId = `response_${++this.responseCounter}`;
             const auditResult = await this.completionTracker.auditResponse(
               response.content,
@@ -415,6 +454,18 @@ export class AgenticLoop {
             // Show audit results
             if (auditResult.newItems.length > 0 || auditResult.resolvedItems.length > 0) {
               this.displayAuditResults(auditResult);
+            }
+
+            // Force completion if new incomplete items found
+            if (auditResult.newItems.length > 0) {
+              const itemDescriptions = auditResult.newItems
+                .map(item => `- ${item.type} in ${item.file}: ${item.description}`)
+                .join('\n');
+              const auditPrompt = `\n\nScaffolding audit detected incomplete work:\n${itemDescriptions}\n\nPlease complete these items before finishing.`;
+
+              this.conversation.addUserMessage(auditPrompt);
+              continueLoop = true;
+              continue;
             }
 
             // Show debt summary if blocking

@@ -1,0 +1,1 @@
+Test query: Create a simple function that adds two numbers and then write a test for it. Keep it minimal.
