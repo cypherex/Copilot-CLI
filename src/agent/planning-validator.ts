@@ -303,6 +303,38 @@ export class PlanningValidator {
 }
 
 /**
+ * Build parallel execution reminder
+ * Injected more frequently to maximize parallel tool usage
+ */
+export function buildParallelExecutionReminder(iteration: number): string | null {
+  // Remind every 2 iterations (very frequent to maximize adoption)
+  if (iteration % 2 !== 0) return null;
+
+  return `
+[⚡ Parallel Execution Reminder]
+
+Are you about to use multiple tools? Use parallel to run them simultaneously!
+
+Common Parallel Patterns:
+• Reading 2+ files → Use parallel tool
+• Running multiple bash commands → Use parallel tool
+• Spawning multiple subagents → Use parallel + background: true
+• ANY independent operations → Use parallel tool
+
+Example:
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "src/a.ts" } },
+    { tool: "read_file", parameters: { path: "src/b.ts" } },
+    { tool: "execute_bash", parameters: { command: "npm test" } }
+  ]})
+
+This is 3-10x faster than sequential execution!
+
+[End Reminder]
+`;
+}
+
+/**
  * Build subagent usage reminder prompt
  * Injected occasionally to encourage subagent consideration
  */

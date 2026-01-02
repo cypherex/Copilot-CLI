@@ -14,7 +14,23 @@ const executeBashSchema = z.object({
 export class ExecuteBashTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'execute_bash',
-    description: 'Execute a shell command. Returns stdout/stderr. Can execute Python scripts via "python script.py".',
+    description: `Execute a shell command. Returns stdout/stderr. Can execute Python scripts via "python script.py".
+
+⚡ PERFORMANCE TIP: Running multiple INDEPENDENT commands? Use the parallel tool to run them simultaneously.
+
+Example - GOOD (parallel for independent commands):
+  parallel({ tools: [
+    { tool: "execute_bash", parameters: { command: "npm run lint" } },
+    { tool: "execute_bash", parameters: { command: "npm run test" } },
+    { tool: "execute_bash", parameters: { command: "npm run build" } }
+  ]})
+
+Example - BAD (sequential when could be parallel):
+  execute_bash({ command: "npm run lint" })
+  execute_bash({ command: "npm run test" })
+  execute_bash({ command: "npm run build" })
+
+Note: Only use parallel for commands that don't depend on each other.`,
     parameters: {
       type: 'object',
       properties: {

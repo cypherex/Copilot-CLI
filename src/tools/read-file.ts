@@ -15,7 +15,21 @@ const readFileSchema = z.object({
 export class ReadFileTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'read_file',
-    description: 'Read file contents. Optionally specify line range to read only part of file.',
+    description: `Read file contents. Optionally specify line range to read only part of file.
+
+⚡ PERFORMANCE TIP: Reading multiple files? Use the parallel tool to read them all at once instead of sequential reads. This is SIGNIFICANTLY faster.
+
+Example - GOOD (parallel):
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "src/a.ts" } },
+    { tool: "read_file", parameters: { path: "src/b.ts" } },
+    { tool: "read_file", parameters: { path: "src/c.ts" } }
+  ]})
+
+Example - BAD (sequential):
+  read_file({ path: "src/a.ts" })
+  read_file({ path: "src/b.ts" })
+  read_file({ path: "src/c.ts" })`,
     parameters: {
       type: 'object',
       properties: {

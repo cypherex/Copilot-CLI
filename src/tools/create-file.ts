@@ -15,7 +15,19 @@ const createFileSchema = z.object({
 export class CreateFileTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'create_file',
-    description: 'Create a new file with specified content. Creates parent directories if needed.',
+    description: `Create a new file with specified content. Creates parent directories if needed.
+
+⚡ PERFORMANCE TIP: Creating multiple files? Use the parallel tool to create them all at once.
+
+Example - GOOD (parallel):
+  parallel({ tools: [
+    { tool: "create_file", parameters: { path: "src/a.ts", content: "..." } },
+    { tool: "create_file", parameters: { path: "src/b.ts", content: "..." } }
+  ]})
+
+Example - BAD (sequential):
+  create_file({ path: "src/a.ts", content: "..." })
+  create_file({ path: "src/b.ts", content: "..." })`,
     parameters: {
       type: 'object',
       properties: {

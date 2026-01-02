@@ -18,7 +18,7 @@ import type { HookRegistry } from '../hooks/registry.js';
 import { CompletionTracker } from '../audit/index.js';
 import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
 import { getRole } from './subagent-roles.js';
-import { PlanningValidator, buildSubagentReminder } from './planning-validator.js';
+import { PlanningValidator, buildSubagentReminder, buildParallelExecutionReminder } from './planning-validator.js';
 import { TaskBarRenderer } from '../ui/task-bar.js';
 import { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import { IncompleteWorkDetector } from './incomplete-work-detector.js';
@@ -250,6 +250,26 @@ export class AgenticLoop {
           ];
         }
       }
+
+      // Remove old parallel execution reminders before injecting new one
+      messages = messages.filter(msg =>
+        !(msg.role === 'system' && typeof msg.content === 'string' && msg.content.includes('[⚡ Parallel Execution Reminder]'))
+      );
+
+      // Inject parallel execution reminder frequently (every 2 iterations)
+      const parallelReminder = buildParallelExecutionReminder(iteration);
+      if (parallelReminder) {
+        messages = [
+          ...messages.slice(0, -1),
+          { role: 'system' as const, content: parallelReminder },
+          messages[messages.length - 1],
+        ];
+      }
+
+      // Remove old subagent reminders before injecting new one
+      messages = messages.filter(msg =>
+        !(msg.role === 'system' && typeof msg.content === 'string' && msg.content.includes('[Subagent Reminder]'))
+      );
 
       // Inject subagent usage reminder occasionally
       const subagentReminder = buildSubagentReminder(iteration);

@@ -14,7 +14,15 @@ const listFilesSchema = z.object({
 export class ListFilesTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'list_files',
-    description: 'List files matching a glob pattern. Supports wildcards like *, **, ?, [abc].',
+    description: `List files matching a glob pattern. Supports wildcards like *, **, ?, [abc].
+
+⚡ PERFORMANCE TIP: Need to list files in multiple directories? Use the parallel tool.
+
+Example - GOOD (parallel):
+  parallel({ tools: [
+    { tool: "list_files", parameters: { pattern: "src/**/*.ts" } },
+    { tool: "list_files", parameters: { pattern: "tests/**/*.test.ts" } }
+  ]})`,
     parameters: {
       type: 'object',
       properties: {

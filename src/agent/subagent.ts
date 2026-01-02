@@ -147,6 +147,31 @@ Your task: ${this.config.task}
 - Execute multiple tools in parallel (e.g., read multiple files at once)
 - All tools execute concurrently; results returned together
 
+# ⚡ MAXIMIZE PARALLEL EXECUTION
+
+**CRITICAL**: ALWAYS use the parallel tool for independent operations. This is a major performance optimization.
+
+Reading 2+ files? Use parallel:
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "src/a.ts" } },
+    { tool: "read_file", parameters: { path: "src/b.ts" } }
+  ]})
+
+Running multiple commands? Use parallel:
+  parallel({ tools: [
+    { tool: "execute_bash", parameters: { command: "npm run lint" } },
+    { tool: "execute_bash", parameters: { command: "npm run test" } }
+  ]})
+
+Mixed operations? Use parallel:
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "config.json" } },
+    { tool: "list_files", parameters: { pattern: "src/**/*.ts" } },
+    { tool: "execute_bash", parameters: { command: "git status" } }
+  ]})
+
+**Default mindset**: If you're about to use the same tool twice, or use multiple different tools for independent operations, use parallel. It's 3-10x faster.
+
 # Critical Requirements
 
 1. **NO PLACEHOLDERS**: Never leave TODO, FIXME, NotImplemented, or placeholder comments
