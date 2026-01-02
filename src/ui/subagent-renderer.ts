@@ -1,6 +1,7 @@
 // Subagent output renderer with hierarchical nesting
 
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import { simpleIndent, separator, statusBadge, BOX_CHARS } from './box-drawer.js';
 import { ToolCallRenderer } from './tool-call-renderer.js';
 
@@ -56,19 +57,19 @@ export class SubagentRenderer {
     this.startTime = Date.now();
 
     const header = chalk.cyan.bold('Launching subagent: ') + chalk.white(event.role);
-    console.log(this.indent(header));
-    console.log();
+    log.log(this.indent(header));
+    log.newline();
 
     const agentBox = chalk.blue(BOX_CHARS.topLeft + BOX_CHARS.horizontal + ' ') +
       chalk.bold(`Agent: ${event.role}`) +
       chalk.dim(` (${event.agentId.slice(0, 8)}...)`) +
       chalk.blue(' ' + BOX_CHARS.horizontal.repeat(20));
-    console.log(this.indent(agentBox));
+    log.log(this.indent(agentBox));
 
     const taskLine = chalk.blue(BOX_CHARS.vertical) + ' ' + chalk.gray('Task: ') + chalk.white(event.task);
-    console.log(this.indent(taskLine));
+    log.log(this.indent(taskLine));
 
-    console.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
+    log.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
   }
 
   /**
@@ -94,7 +95,7 @@ export class SubagentRenderer {
     // Handle multi-line content
     const lines = formatted.split('\n');
     for (const line of lines) {
-      console.log(this.indent(prefix + line));
+      log.log(this.indent(prefix + line));
     }
   }
 
@@ -118,10 +119,10 @@ export class SubagentRenderer {
     // Indent each line
     const lines = rendered.split('\n');
     for (const line of lines) {
-      console.log(this.indent(prefix + line));
+      log.log(this.indent(prefix + line));
     }
 
-    console.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
+    log.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
   }
 
   /**
@@ -145,10 +146,10 @@ export class SubagentRenderer {
     // Indent each line
     const lines = rendered.split('\n');
     for (const line of lines) {
-      console.log(this.indent(prefix + line));
+      log.log(this.indent(prefix + line));
     }
 
-    console.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
+    log.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
   }
 
   /**
@@ -157,20 +158,20 @@ export class SubagentRenderer {
   renderEnd(event: SubagentEndEvent): void {
     const prefix = chalk.blue(BOX_CHARS.vertical) + '  ';
 
-    console.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
+    log.log(this.indent(chalk.blue(BOX_CHARS.vertical)));
 
     const durationStr = (event.duration / 1000).toFixed(2) + 's';
     const completionLine = chalk.green('✓ Agent completed') + ' ' + chalk.dim(`in ${durationStr}`);
-    console.log(this.indent(prefix + completionLine));
+    log.log(this.indent(prefix + completionLine));
 
     if (event.summary) {
       const summaryLine = chalk.gray('Summary: ') + event.summary;
-      console.log(this.indent(prefix + summaryLine));
+      log.log(this.indent(prefix + summaryLine));
     }
 
     const bottomBorder = chalk.blue(BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(50));
-    console.log(this.indent(bottomBorder));
-    console.log();
+    log.log(this.indent(bottomBorder));
+    log.newline();
   }
 
   /**
@@ -178,9 +179,9 @@ export class SubagentRenderer {
    */
   renderError(error: string): void {
     const prefix = chalk.blue(BOX_CHARS.vertical) + '  ';
-    console.log(this.indent(prefix + chalk.red('✗ Error: ') + error));
-    console.log(this.indent(chalk.blue(BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(50))));
-    console.log();
+    log.log(this.indent(prefix + chalk.red('✗ Error: ') + error));
+    log.log(this.indent(chalk.blue(BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(50))));
+    log.newline();
   }
 
   /**

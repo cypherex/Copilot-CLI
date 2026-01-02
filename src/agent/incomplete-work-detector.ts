@@ -19,7 +19,7 @@ export interface DetectionResult {
 }
 
 /**
- * Detects when the LLM says it's complete but left work undone
+ * Detects when LLM says it's complete but left work undone
  */
 export class IncompleteWorkDetector {
   private memoryStore?: MemoryStore;
@@ -185,12 +185,92 @@ export class IncompleteWorkDetector {
   }
 
   /**
+   * Filter out obvious non-work items using heuristics
+   * This removes documentation, examples, explanations, etc. before storage
+   */
+  private filterObviousNonWork(items: TrackingItem[]): TrackingItem[] {
+    return items.filter(item => {
+      const text = item.description;
+
+      // Rule 1: Documentation/file reference markers
+      // Matches: "*File:", "**File:", "→ Lines 463-520", etc.
+      if (/^\*\*?File:|→\s+Lines|^\*[A-Z].*\*\*?/.test(text)) {
+        return false;
+      }
+
+      // Rule 2: Emoji prefixes (indicating examples, summaries, or status)
+      // Matches: ✅, ❌, ⚠️, 📋, 💡, 🎯, 🔍, 📌, etc.
+      if (/^[✅❌⚠️📋💡🎯🔍📌✓✗]/.test(text)) {
+        return false;
+      }
+
+      // Rule 3: Explanatory phrases (past tense, descriptive)
+      // Matches: "This is", "This was", "That was", "What happened", etc.
+      if (/^(?:This|That|What|Which|How|Why) (?:is|was|are|were)|happened|occurred/i.test(text)) {
+        return false;
+      }
+
+      // Rule 4: Workflow arrows with function names
+      // Matches: "create_task()", "close_tracking_item()", etc.
+      if (text.includes('→') && /\b[A-Z][a-zA-Z_]+\(\)/.test(text)) {
+        return false;
+      }
+
+      // Rule 5: Meta-descriptions (review, close, read files)
+      // Matches: "Read files:", "Review:", "Close:", "Stage 1", "Stage 2"
+      if (/^(?:Read files|Review|Close|Store|Prompt|Stage \d+):/i.test(text)) {
+        return false;
+      }
+
+      // Rule 6: Summary/analysis markers
+      // Matches: "detected", "extracted from", "identified as", "found in"
+      if (/detected|extracted from|identified as|found in|contained|consisted of/i.test(text)) {
+        return false;
+      }
+
+      // Rule 7: Example/illustration markers
+      // Matches: "Example:", "E.g.", "For instance:", "Like:", "Such as:"
+      if (/^(?:E\.?xample|E\.?g\.?|For instance|Like|Such as):|^(?:This|That|Which) (?:is an?|was an?) /i.test(text)) {
+        return false;
+      }
+
+      // Rule 8: Code file paths in isolation (not action items)
+      // Matches: "src/agent/loop.ts", "src/ui/chat-ui.ts" (no action verb)
+      if (/^(?:src\/|[a-zA-Z]:\\|\.\/).+\.(?:ts|js|py|json|md|txt)$/i.test(text) &&
+          !/^(?:create|update|modify|fix|add|remove|delete|implement|build)/i.test(text)) {
+        return false;
+      }
+
+      // Rule 9: Explanations of system behavior
+      // Matches: "Requires file verification", "Prompts: LLM", "Stores them as"
+      if (/^(?:Requires|Prompts|Stores|Validates|Enforces|Ensures|Prevents|Allows|Enables)/i.test(text)) {
+        return false;
+      }
+
+      // Include only if it looks like actionable work
+      return true;
+    });
+  }
+
+  /**
    * Store detected tracking items in memory (called after analysis)
+   * NOW WITH PRE-VALIDATION - filters out obvious false positives before storage
    */
   storeDetectedItems(items: TrackingItem[], extractedFrom: string): void {
     if (!this.memoryStore) return;
 
-    for (const item of items) {
+    // Filter out obvious non-work items before storage
+    const validItems = this.filterObviousNonWork(items);
+
+    if (validItems.length < items.length) {
+      // Log filtered items for debugging
+      const filteredCount = items.length - validItems.length;
+      // Note: Can't use chalk here as this module imports it but may be used in non-terminal context
+      // Use console.warn instead
+      console.warn(`[Tracking] Filtered ${filteredCount} non-work items (${validItems.length}/${items.length} kept)`);
+    }
+
+    for (const item of validItems) {
       this.memoryStore.addTrackingItem({
         description: item.description,
         status: 'open',

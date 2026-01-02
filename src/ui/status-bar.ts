@@ -29,6 +29,8 @@ export interface StatusInfo {
   totalTasks: number;
   memoryItems: number;
   sessionId?: string;
+  runningSubagents?: number;
+  queuedSubagents?: number;
 }
 
 export class StatusBar {
@@ -90,6 +92,21 @@ export class StatusBar {
 
       if (taskParts.length > 0) {
         statusParts.push(chalk.gray('tasks:') + ' ' + taskParts.join(' '));
+      }
+    }
+
+    // Subagent status
+    if (info.runningSubagents !== undefined || info.queuedSubagents !== undefined) {
+      const agentParts: string[] = [];
+      if (info.runningSubagents && info.runningSubagents > 0) {
+        agentParts.push(chalk.yellow(`●${info.runningSubagents}`));
+      }
+      if (info.queuedSubagents && info.queuedSubagents > 0) {
+        agentParts.push(chalk.gray(`○${info.queuedSubagents}`));
+      }
+
+      if (agentParts.length > 0) {
+        statusParts.push(chalk.gray('agents:') + ' ' + agentParts.join(' '));
       }
     }
 
@@ -234,6 +251,17 @@ export function getStatusInfo(agent: CopilotAgent): StatusInfo {
     memoryStore.getAllDecisions().length +
     memoryStore.getProjectContext().length;
 
+  // Get subagent manager status if available
+  const subagentManager = (agent as any).subAgentManager;
+  let runningSubagents: number | undefined;
+  let queuedSubagents: number | undefined;
+
+  if (subagentManager) {
+    const queueStatus = subagentManager.getQueueStatus();
+    runningSubagents = queueStatus?.stats?.running;
+    queuedSubagents = queueStatus?.stats?.queued;
+  }
+
   return {
     provider: agent.getProviderName(),
     model: agent.getModelName() || '',
@@ -244,5 +272,7 @@ export function getStatusInfo(agent: CopilotAgent): StatusInfo {
     totalTasks: tasks.length,
     memoryItems: memoryItemCount,
     sessionId: memoryStore.getSessionId(),
+    runningSubagents,
+    queuedSubagents,
   };
 }

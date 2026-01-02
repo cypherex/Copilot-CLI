@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import type { MemoryStore, SessionResume } from '../memory/types.js';
 
 /**
@@ -70,57 +71,57 @@ export class WorkContinuityManager {
 
     const timeSince = this.getTimeSinceString(info.lastActiveTime);
 
-    console.log();
-    console.log(chalk.cyan.bold('[Session Resumed]'));
-    console.log(chalk.gray(`Last active: ${timeSince}`));
-    console.log();
+    log.log('');
+    log.log('[Session Resumed]', chalk.cyan.bold);
+    log.log(`Last active: ${timeSince}`, chalk.gray);
+    log.log('');
 
     // Last work
     if (info.lastGoalDescription || info.goalProgress !== undefined) {
-      console.log(chalk.cyan('📋 You were working on:'));
+      log.log('📋 You were working on:', chalk.cyan);
       if (info.lastGoalDescription) {
-        console.log(`   ${info.lastGoalDescription}`);
+        log.log(`   ${info.lastGoalDescription}`);
       }
       if (info.goalProgress !== undefined) {
         const active = info.activeTasksCount || 0;
         const completed = info.completedTasksCount || 0;
         const total = active + completed;
         const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-        console.log(chalk.gray(`   Status: ${percent}% complete (${completed}/${total} tasks done)`));
+        log.log(`   Status: ${percent}% complete (${completed}/${total} tasks done)`, chalk.gray);
       }
-      console.log();
+      log.log('');
     }
 
     // Paused at
     if (info.pausedAtDescription) {
-      console.log(chalk.cyan('⏸️  Paused at:'));
-      console.log(`   ${info.pausedAtDescription}`);
+      log.log('⏸️  Paused at:', chalk.cyan);
+      log.log(`   ${info.pausedAtDescription}`);
       if (info.lastFileEdited) {
-        console.log(chalk.gray(`   Last file: ${this.shortPath(info.lastFileEdited)}`));
+        log.log(`   Last file: ${this.shortPath(info.lastFileEdited)}`, chalk.gray);
       }
-      console.log();
+      log.log('');
     }
 
     // Pending decisions
     if (info.pendingDecisionsCount && info.pendingDecisionsCount > 0) {
-      console.log(chalk.cyan('🔄 Pending decisions:'));
+      log.log('🔄 Pending decisions:', chalk.cyan);
       const decisions = this.memoryStore.getDecisions();
       if (decisions.length > 0) {
         decisions.slice(0, 3).forEach((decision, index) => {
-          console.log(chalk.dim(`   - ${decision.description}`));
+          log.log(`   - ${decision.description}`, chalk.dim);
           if (decision.revisitCondition) {
-            console.log(chalk.dim(`     Revisit: ${decision.revisitCondition}`));
+            log.log(`     Revisit: ${decision.revisitCondition}`, chalk.dim);
           }
         });
         if (decisions.length > 3) {
-          console.log(chalk.dim(`   ... and ${decisions.length - 3} more`));
+          log.log(`   ... and ${decisions.length - 3} more`, chalk.dim);
         }
       }
-      console.log();
+      log.log('');
     }
 
-    console.log(chalk.green('💡 Ready to continue where you left off!'));
-    console.log();
+    log.log('💡 Ready to continue where you left off!', chalk.green);
+    log.log('');
   }
 
   /**

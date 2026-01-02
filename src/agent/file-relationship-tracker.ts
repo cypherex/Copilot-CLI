@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join, normalize } from 'path';
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 
 export interface FileRelationship {
   file: string;
@@ -151,9 +152,9 @@ export class FileRelationshipTracker {
     const relationship = this.relationships.get(normalizedPath);
     if (!relationship) return;
 
-    console.log();
-    console.log(chalk.cyan('📁 Related Files:'));
-    console.log(chalk.dim(`   Last time you edited ${this.shortPath(normalizedPath)} with:`));
+    log.newline();
+    log.log(chalk.cyan('📁 Related Files:'));
+    log.log(chalk.dim(`   Last time you edited ${this.shortPath(normalizedPath)} with:`));
 
     suggestions.forEach((suggestion, index) => {
       const coEditCount = this.getCoEditCount(normalizedPath, suggestion);
@@ -165,13 +166,13 @@ export class FileRelationshipTracker {
       else if (isDependent) label = chalk.dim('[imported by]');
       else label = chalk.dim(`[${coEditCount} edits]`);
 
-      console.log(chalk.dim(`   ${index + 1}. ${label} ${this.shortPath(suggestion)}`));
+      log.log(chalk.dim(`   ${index + 1}. ${label} ${this.shortPath(suggestion)}`));
     });
 
-    console.log();
-    console.log(chalk.green('💡 Suggestion:'));
-    console.log(chalk.dim('   Consider loading these files for context or editing them together.'));
-    console.log();
+    log.newline();
+    log.log(chalk.green('💡 Suggestion:'));
+    log.log(chalk.dim('   Consider loading these files for context or editing them together.'));
+    log.newline();
   }
 
   /**

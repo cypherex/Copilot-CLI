@@ -1,6 +1,7 @@
 // Enhanced chat UI with persistent status and input
 
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import type { CopilotAgent } from '../agent/index.js';
 import { Input } from './input.js';
 import { StatusBar, getStatusInfo, type StatusInfo } from './status-bar.js';
@@ -8,6 +9,10 @@ import { TaskDisplay } from '../cli/ui/task-display.js';
 import { MessageQueue } from './message-queue.js';
 import { PersistentInput } from './persistent-input.js';
 import { SplitScreen } from './split-screen.js';
+import { SubAgentDashboard } from './subagent-dashboard.js';
+import type { SubAgentManager } from '../agent/subagent.js';
+import { BottomBar, type BottomBarConfig } from './bottom-bar.js';
+import { OutputManager, type OutputManagerConfig } from './output-manager.js';
 
 export interface ChatUIConfig {
   showStatusBar: boolean;
@@ -15,6 +20,7 @@ export interface ChatUIConfig {
   updateInterval: number; // ms between status updates
   maxMessageLength: number;
   useSplitScreen: boolean; // Enable persistent input with split-screen layout
+  usePersistentBottomBar: boolean; // Enable persistent bottom bar with taskbar and input
 }
 
 export const DEFAULT_CHAT_UI_CONFIG: ChatUIConfig = {
@@ -23,6 +29,7 @@ export const DEFAULT_CHAT_UI_CONFIG: ChatUIConfig = {
   updateInterval: 1000,
   maxMessageLength: 10000,
   useSplitScreen: false, // Off by default for backwards compatibility
+  usePersistentBottomBar: true, // On by default for better UX
 };
 
 export class ChatUI {
@@ -38,6 +45,14 @@ export class ChatUI {
   private messageQueue?: MessageQueue;
   private persistentInput?: PersistentInput;
   private splitScreen?: SplitScreen;
+
+  // Subagent dashboard
+  private subagentDashboard?: SubAgentDashboard;
+
+  // Persistent bottom bar components
+  private bottomBar?: BottomBar;
+  private outputManager?: OutputManager;
+  private resizeHandler?: () => void;
 
   private static AVAILABLE_COMMANDS = [
     'help',
@@ -73,6 +88,16 @@ export class ChatUI {
       this.persistentInput.setCommands(ChatUI.AVAILABLE_COMMANDS);
       this.splitScreen = new SplitScreen(this.messageQueue, this.persistentInput);
     }
+
+    // Initialize persistent bottom bar if enabled
+    if (this.config.usePersistentBottomBar) {
+      this.bottomBar = new BottomBar({
+        height: 3,
+        showSeparator: true,
+        updateInterval: this.config.updateInterval,
+      });
+      this.outputManager = new OutputManager(this.bottomBar);
+    }
   }
 
   /**
@@ -82,6 +107,13 @@ export class ChatUI {
     this.agent = agent;
     this.taskDisplay.initialize();
     this.isActive = true;
+
+    // Initialize subagent dashboard if subagent manager is available
+    const subagentManager = (agent as any).subAgentManager as SubAgentManager;
+    if (subagentManager) {
+      this.subagentDashboard = new SubAgentDashboard(subagentManager);
+      this.subagentDashboard.show();
+    }
 
     // Start update timer if status bar is enabled
     if (this.config.showStatusBar) {
@@ -93,6 +125,15 @@ export class ChatUI {
     // Initialize split-screen if enabled
     if (this.config.useSplitScreen && this.splitScreen) {
       this.splitScreen.initialize();
+    }
+
+    // Initialize persistent bottom bar if enabled
+    if (this.config.usePersistentBottomBar && this.bottomBar && this.outputManager) {
+      this.bottomBar.initialize();
+
+      // Set up resize handler
+      this.resizeHandler = this.handleResize.bind(this);
+      process.stdout.on('resize', this.resizeHandler);
     }
   }
 
@@ -109,9 +150,24 @@ export class ChatUI {
 
     this.statusBar.hide();
 
+    // Hide subagent dashboard
+    if (this.subagentDashboard) {
+      this.subagentDashboard.hide();
+    }
+
     // Shutdown split-screen if active
     if (this.splitScreen) {
       this.splitScreen.shutdown();
+    }
+
+    // Shutdown persistent bottom bar if active
+    if (this.bottomBar) {
+      this.bottomBar.clear();
+    }
+
+    // Remove resize handler
+    if (this.resizeHandler) {
+      process.stdout.removeListener('resize', this.resizeHandler);
     }
   }
 
@@ -121,25 +177,25 @@ export class ChatUI {
   showWelcome(providerInfo: string, directory: string, sessionId?: string, sessionTitle?: string): void {
     const width = process.stdout.columns || 80;
 
-    console.log();
-    console.log(chalk.blue.bold('┌' + '─'.repeat(width - 2) + '┐'));
-    console.log(this.padLine(chalk.blue.bold('│ ') + chalk.cyan.bold('🤖 Copilot CLI Agent') + chalk.gray(' v0.1.0'), width, chalk.blue.bold('│')));
-    console.log(chalk.blue.bold('├' + '─'.repeat(width - 2) + '┤'));
-    console.log(this.padLine(chalk.blue.bold('│ ') + chalk.gray('Provider: ') + chalk.white(providerInfo), width, chalk.blue.bold('│')));
-    console.log(this.padLine(chalk.blue.bold('│ ') + chalk.gray('Directory: ') + chalk.white(directory), width, chalk.blue.bold('│')));
+    log.newline();
+    log.log(chalk.blue.bold('┌' + '─'.repeat(width - 2) + '┐'));
+    log.log(this.padLine(chalk.blue.bold('│ ') + chalk.cyan.bold('🤖 Copilot CLI Agent') + chalk.gray(' v0.1.0'), width, chalk.blue.bold('│')));
+    log.log(chalk.blue.bold('├' + '─'.repeat(width - 2) + '┤'));
+    log.log(this.padLine(chalk.blue.bold('│ ') + chalk.gray('Provider: ') + chalk.white(providerInfo), width, chalk.blue.bold('│')));
+    log.log(this.padLine(chalk.blue.bold('│ ') + chalk.gray('Directory: ') + chalk.white(directory), width, chalk.blue.bold('│')));
 
     if (sessionId && sessionTitle) {
-      console.log(this.padLine(
+      log.log(this.padLine(
         chalk.blue.bold('│ ') + chalk.gray('Session: ') + chalk.white(sessionTitle) + chalk.dim(` (${sessionId.slice(0, 8)}...)`),
         width,
         chalk.blue.bold('│')
       ));
     }
 
-    console.log(chalk.blue.bold('└' + '─'.repeat(width - 2) + '┘'));
-    console.log();
-    console.log(chalk.dim('💡 Type /help for commands, Ctrl+C to interrupt, /exit to quit'));
-    console.log();
+    log.log(chalk.blue.bold('└' + '─'.repeat(width - 2) + '┘'));
+    log.newline();
+    log.log(chalk.dim('💡 Type /help for commands, Ctrl+C to interrupt, /exit to quit'));
+    log.newline();
   }
 
   /**
@@ -161,7 +217,7 @@ export class ChatUI {
       this.taskDisplay.updateTasks(tasks);
       const taskPanel = this.taskDisplay.render();
       if (taskPanel) {
-        console.log(taskPanel);
+        log.log(taskPanel);
       }
     }
   }
@@ -177,6 +233,17 @@ export class ChatUI {
       const memoryStore = this.agent.getMemoryStore();
       const tasks = memoryStore.getTasks();
       this.taskDisplay.updateTasks(tasks);
+    }
+
+    // Update bottom bar if enabled
+    if (this.config.usePersistentBottomBar && this.bottomBar) {
+      const statusInfo = getStatusInfo(this.agent);
+      const memoryStore = this.agent.getMemoryStore();
+      const tasks = memoryStore.getTasks();
+      const activeTask = memoryStore.getActiveTask();
+
+      this.bottomBar.updateStatusInfo(statusInfo);
+      this.bottomBar.updateTasks(activeTask || null, tasks);
     }
   }
 
@@ -228,9 +295,9 @@ export class ChatUI {
     if (this.splitScreen) {
       this.splitScreen.writeOutput(output);
     } else {
-      console.log(chalk.cyan('Assistant:'));
-      console.log(message);
-      console.log();
+      log.log(chalk.cyan('Assistant:'));
+      log.log(message);
+      log.newline();
     }
   }
 
@@ -239,7 +306,7 @@ export class ChatUI {
    */
   showToolExecution(toolName: string, params?: any): void {
     const paramsStr = params ? chalk.dim(` ${JSON.stringify(params).slice(0, 60)}...`) : '';
-    console.log(chalk.blue(`→ ${toolName}`) + paramsStr);
+    log.log(chalk.blue(`→ ${toolName}`) + paramsStr, chalk.blue);
   }
 
   /**
@@ -247,35 +314,35 @@ export class ChatUI {
    */
   showError(error: Error | string, hint?: string): void {
     const message = error instanceof Error ? error.message : error;
-    console.log(chalk.red('✗ Error: ') + message);
+    log.error('✗ Error: ' + message);
     if (hint) {
-      console.log(hint);
+      log.log(hint);
     }
-    console.log();
+    log.newline();
   }
 
   /**
    * Show a success message
    */
   showSuccess(message: string): void {
-    console.log(chalk.green('✓ ') + message);
-    console.log();
+    log.success('✓ ' + message);
+    log.newline();
   }
 
   /**
    * Show an info message
    */
   showInfo(message: string): void {
-    console.log(chalk.blue('ℹ ') + message);
-    console.log();
+    log.log(chalk.blue('ℹ ') + message);
+    log.newline();
   }
 
   /**
    * Show a warning message
    */
   showWarning(message: string): void {
-    console.log(chalk.yellow('⚠ ') + message);
-    console.log();
+    log.warn('⚠ ' + message);
+    log.newline();
   }
 
   /**
@@ -297,7 +364,7 @@ export class ChatUI {
    */
   showSeparator(): void {
     const width = process.stdout.columns || 80;
-    console.log(chalk.dim('─'.repeat(width)));
+    log.log(chalk.dim('─'.repeat(width)));
   }
 
   /**
@@ -306,10 +373,10 @@ export class ChatUI {
   showHelp(): void {
     const width = process.stdout.columns || 80;
 
-    console.log();
-    console.log(chalk.bold.blue('📖 Available Commands'));
-    console.log(chalk.dim('─'.repeat(width)));
-    console.log();
+    log.newline();
+    log.log(chalk.bold.blue('📖 Available Commands'));
+    log.log(chalk.dim('─'.repeat(width)));
+    log.newline();
 
     const commands = [
       { cmd: '/help', desc: 'Show this help message' },
@@ -327,30 +394,30 @@ export class ChatUI {
     ];
 
     for (const { cmd, desc } of commands) {
-      console.log(`  ${chalk.cyan(cmd.padEnd(15))} ${chalk.gray(desc)}`);
+      log.log(`  ${chalk.cyan(cmd.padEnd(15))} ${chalk.gray(desc)}`);
     }
 
-    console.log();
-    console.log(chalk.bold.blue('Plugin Commands'));
-    console.log(chalk.dim('─'.repeat(width)));
-    console.log();
-    console.log(`  ${chalk.cyan('/ralph-loop'.padEnd(15))} ${chalk.gray('Start autonomous agent loop')}`);
-    console.log(`  ${chalk.cyan('/cancel-ralph'.padEnd(15))} ${chalk.gray('Cancel active Ralph loop')}`);
-    console.log();
+    log.newline();
+    log.log(chalk.bold.blue('Plugin Commands'));
+    log.log(chalk.dim('─'.repeat(width)));
+    log.newline();
+    log.log(`  ${chalk.cyan('/ralph-loop'.padEnd(15))} ${chalk.gray('Start autonomous agent loop')}`);
+    log.log(`  ${chalk.cyan('/cancel-ralph'.padEnd(15))} ${chalk.gray('Cancel active Ralph loop')}`);
+    log.newline();
 
-    console.log(chalk.bold.blue('Keyboard Shortcuts'));
-    console.log(chalk.dim('─'.repeat(width)));
-    console.log();
-    console.log(`  ${chalk.cyan('↑/↓ arrows'.padEnd(15))} ${chalk.gray('Navigate command history')}`);
-    console.log(`  ${chalk.cyan('←/→ arrows'.padEnd(15))} ${chalk.gray('Move cursor in input')}`);
-    console.log(`  ${chalk.cyan('Tab'.padEnd(15))} ${chalk.gray('Autocomplete commands')}`);
-    console.log(`  ${chalk.cyan('Ctrl+A'.padEnd(15))} ${chalk.gray('Move to start of line')}`);
-    console.log(`  ${chalk.cyan('Ctrl+E'.padEnd(15))} ${chalk.gray('Move to end of line')}`);
-    console.log(`  ${chalk.cyan('Ctrl+U'.padEnd(15))} ${chalk.gray('Clear line')}`);
-    console.log(`  ${chalk.cyan('Ctrl+K'.padEnd(15))} ${chalk.gray('Delete to end of line')}`);
-    console.log(`  ${chalk.cyan('Ctrl+W'.padEnd(15))} ${chalk.gray('Delete word backward')}`);
-    console.log(`  ${chalk.cyan('Ctrl+C'.padEnd(15))} ${chalk.gray('Interrupt/pause agent')}`);
-    console.log();
+    log.log(chalk.bold.blue('Keyboard Shortcuts'));
+    log.log(chalk.dim('─'.repeat(width)));
+    log.newline();
+    log.log(`  ${chalk.cyan('↑/↓ arrows'.padEnd(15))} ${chalk.gray('Navigate command history')}`);
+    log.log(`  ${chalk.cyan('←/→ arrows'.padEnd(15))} ${chalk.gray('Move cursor in input')}`);
+    log.log(`  ${chalk.cyan('Tab'.padEnd(15))} ${chalk.gray('Autocomplete commands')}`);
+    log.log(`  ${chalk.cyan('Ctrl+A'.padEnd(15))} ${chalk.gray('Move to start of line')}`);
+    log.log(`  ${chalk.cyan('Ctrl+E'.padEnd(15))} ${chalk.gray('Move to end of line')}`);
+    log.log(`  ${chalk.cyan('Ctrl+U'.padEnd(15))} ${chalk.gray('Clear line')}`);
+    log.log(`  ${chalk.cyan('Ctrl+K'.padEnd(15))} ${chalk.gray('Delete to end of line')}`);
+    log.log(`  ${chalk.cyan('Ctrl+W'.padEnd(15))} ${chalk.gray('Delete word backward')}`);
+    log.log(`  ${chalk.cyan('Ctrl+C'.padEnd(15))} ${chalk.gray('Interrupt/pause agent')}`);
+    log.newline();
   }
 
   /**
@@ -412,11 +479,76 @@ export class ChatUI {
    * Write output to either console or split-screen
    */
   private writeOutput(content: string): void {
-    if (this.splitScreen) {
+    if (this.outputManager) {
+      // Persistent bottom bar mode: write through output manager
+      this.outputManager.write(content);
+    } else if (this.splitScreen) {
+      // Split-screen mode: write through split screen
       this.splitScreen.writeOutput(content);
     } else {
-      console.log(content);
+      // Traditional mode: use log
+      log.log(content);
     }
+  }
+
+  /**
+   * Handle terminal resize
+   */
+  private handleResize(): void {
+    if (this.bottomBar) {
+      this.bottomBar.handleResize();
+    }
+    if (this.outputManager) {
+      this.outputManager.handleResize();
+    }
+  }
+
+  /**
+   * Update bottom bar with status info
+   */
+  updateBottomBarStatus(statusInfo: StatusInfo): void {
+    if (this.bottomBar) {
+      this.bottomBar.updateStatusInfo(statusInfo);
+    }
+  }
+
+  /**
+   * Update bottom bar with task info
+   */
+  updateBottomBarTasks(currentTask: any, allTasks: any[]): void {
+    if (this.bottomBar) {
+      this.bottomBar.updateTasks(currentTask, allTasks);
+    }
+  }
+
+  /**
+   * Update bottom bar input
+   */
+  updateBottomBarInput(input: string, cursorPosition: number = 0): void {
+    if (this.bottomBar) {
+      this.bottomBar.updateInput(input, cursorPosition);
+    }
+  }
+
+  /**
+   * Get bottom bar instance (for advanced usage)
+   */
+  getBottomBar(): BottomBar | undefined {
+    return this.bottomBar;
+  }
+
+  /**
+   * Get output manager instance (for advanced usage)
+   */
+  getOutputManager(): OutputManager | undefined {
+    return this.outputManager;
+  }
+
+  /**
+   * Check if using persistent bottom bar mode
+   */
+  isPersistentBottomBarMode(): boolean {
+    return this.config.usePersistentBottomBar && this.bottomBar !== undefined;
   }
 
   /**

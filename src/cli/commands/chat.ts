@@ -7,6 +7,7 @@ import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { SessionManager } from '../../session/index.js';
 import { ChatUI } from '../../ui/index.js';
+import { log } from '../../utils/index.js';
 
 // Find all commands that start with the given prefix
 function findMatchingCommands(prefix: string): string[] {
@@ -91,9 +92,9 @@ async function readMultilineInput(promptText: string): Promise<string> {
     const showCommandSuggestions = () => {
       if (shownSuggestions) return;
       shownSuggestions = true;
-      console.log();
-      console.log(chalk.dim('Available commands:'));
-      console.log(chalk.dim('  ' + AVAILABLE_COMMANDS.join('  ')));
+      log.newline();
+      log.info(chalk.dim('Available commands:'));
+      log.info(chalk.dim('  ' + AVAILABLE_COMMANDS.join('  ')));
       // Redraw current input
       process.stdout.write(promptText + inputBuffer);
     };
@@ -192,9 +193,9 @@ async function readMultilineInput(promptText: string): Promise<string> {
                 inputBuffer = '/' + commonPrefix;
               } else {
                 // Show available options
-                console.log();
-                console.log(chalk.dim('Possible commands:'));
-                console.log(chalk.dim('  ' + matches.join('  ')));
+                log.newline();
+                log.info(chalk.dim('Possible commands:'));
+                log.info(chalk.dim('  ' + matches.join('  ')));
                 // Redraw current input
                 process.stdout.write(promptText + inputBuffer);
               }
@@ -314,11 +315,12 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   let agentPaused = false;
   let pauseReason = '';
 
-  // Initialize UI with traditional mode - split-screen has streaming conflicts
+  // Initialize UI with persistent bottom bar - taskbar and input always visible
   const ui = new ChatUI({
     showStatusBar: true,
     showTaskPanel: true,
     useSplitScreen: false, // Disabled - causes word-per-line streaming issues
+    usePersistentBottomBar: true, // Enable persistent bottom bar with taskbar and input
   });
 
   // Setup interrupt handler (Ctrl+C)
@@ -328,11 +330,11 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   let agentInstance: any = null; // Store agent reference for cleanup
 
   const cleanupAndExit = async (signal: string) => {
-    console.log(chalk.yellow(`\n${signal} received - cleaning up...`));
+    log.info(chalk.yellow(`\n${signal} received - cleaning up...`));
     if (agentInstance) {
       // Set timeout to force exit if shutdown hangs
       const forceExitTimeout = setTimeout(() => {
-        console.log(chalk.red('Shutdown timeout - forcing exit'));
+        log.info(chalk.red('Shutdown timeout - forcing exit'));
         process.exit(1);
       }, 3000);
 
@@ -340,7 +342,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
         await agentInstance.shutdown();
         clearTimeout(forceExitTimeout);
       } catch (error) {
-        console.error('Shutdown error:', error);
+        log.error('Shutdown error: ' + error);
         clearTimeout(forceExitTimeout);
       }
     }
@@ -377,17 +379,17 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
   // Provider-specific validation
   if (config.llm.provider === 'copilot' && !config.auth.clientId) {
-    console.log(chalk.yellow('⚠️  No Azure Client ID configured.'));
-    console.log(chalk.gray('Set AZURE_CLIENT_ID environment variable or run:'));
-    console.log(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_CLIENT_ID\n'));
+    log.info(chalk.yellow('⚠️  No Azure Client ID configured.'));
+    log.info(chalk.gray('Set AZURE_CLIENT_ID environment variable or run:'));
+    log.info(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_CLIENT_ID\n'));
     return;
   }
 
   if (config.llm.provider === 'zai' && !config.llm.apiKey) {
-    console.log(chalk.yellow('⚠️  No Z.ai API key configured.'));
-    console.log(chalk.gray('Get your API key at https://z.ai/subscribe'));
-    console.log(chalk.gray('Then set ZAI_API_KEY environment variable or run:'));
-    console.log(chalk.gray('  copilot-cli config --set llm.apiKey=YOUR_API_KEY\n'));
+    log.info(chalk.yellow('⚠️  No Z.ai API key configured.'));
+    log.info(chalk.gray('Get your API key at https://z.ai/subscribe'));
+    log.info(chalk.gray('Then set ZAI_API_KEY environment variable or run:'));
+    log.info(chalk.gray('  copilot-cli config --set llm.apiKey=YOUR_API_KEY\n'));
     return;
   }
 
@@ -422,7 +424,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
     if (recentSession && !currentSession) {
       ui.showInfo(`Recent session available: ${recentSession.title.slice(0, 40)}...`);
-      console.log(chalk.dim('   Use /sessions to browse and load saved sessions\n'));
+      log.info(chalk.dim('   Use /sessions to browse and load saved sessions\n'));
     }
 
     // Show initial status
@@ -441,13 +443,13 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
         if (agentPaused && userInput.toLowerCase().trim() === '/resume') {
           agentPaused = false;
           pauseReason = '';
-          console.log(chalk.green('▶️  Agent resumed\n'));
+          log.info(chalk.green('▶️  Agent resumed\n'));
           continue;
         }
 
         // If paused and user sends a non-resume message, just continue
         if (agentPaused) {
-          console.log(chalk.gray('Agent is paused. Use /resume to continue the current task.\n'));
+          log.info(chalk.gray('Agent is paused. Use /resume to continue the current task.\n'));
           continue;
         }
 
@@ -476,20 +478,20 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
           if (command === 'paste' || command === 'editor') {
             // Open editor for long content
-            console.log(chalk.gray('Opening editor for multiline input...'));
+            log.info(chalk.gray('Opening editor for multiline input...'));
             try {
               const content = await editor({
                 message: 'Enter your message (save and close editor when done):',
                 postfix: '.md',
               });
               if (content.trim()) {
-                console.log(chalk.green('You:'), content.slice(0, 100) + (content.length > 100 ? '...' : ''));
+                log.info(chalk.green('You:') + ' ' + (content.slice(0, 100) + (content.length > 100 ? '...' : '')));
                 await agent.chat(content);
               }
             } catch {
-              console.log(chalk.yellow('Editor cancelled.\n'));
+              log.info(chalk.yellow('Editor cancelled.\n'));
             }
-            console.log();
+            log.newline();
             continue;
           }
 
@@ -526,7 +528,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
               // Default to interactive load instead of list
               await handleSessionsCommand(agent, sessionManager, { action: 'load' });
             }
-            console.log();
+            log.newline();
             continue;
           }
 
@@ -557,7 +559,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
                 pluginCmd.args
               );
               if (result) {
-                console.log(chalk.cyan(result));
+                log.info(chalk.cyan(result));
               }
             } catch (error) {
               const hint = getErrorHint(error);
@@ -618,23 +620,23 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 }
 
 function showHelp(agent: CopilotAgent): void {
-  console.log(chalk.bold('\n📖 Available Commands:'));
-  console.log(chalk.gray('  /help        - Show this help message'));
-  console.log(chalk.gray('  /paste       - Open editor for long/multiline input'));
-  console.log(chalk.gray('  /clear       - Clear conversation history'));
-  console.log(chalk.gray('  /context     - Show context/token usage'));
-  console.log(chalk.gray('  /memory      - Show memory status (preferences, tasks, etc.)'));
-  console.log(chalk.gray('  /debt        - Show scaffolding debt (incomplete items)'));
-  console.log(chalk.gray('  /tasks       - Show task list with statuses'));
-  console.log(chalk.gray('  /sessions    - Interactive session browser (or: list, load <id>, export <id>, delete <id>, clear)'));
-  console.log(chalk.gray('  /new-session - Start a fresh session'));
-  console.log(chalk.gray('  /resume      - Resume a paused agent'));
-  console.log(chalk.gray('  /plugins     - List loaded plugins'));
-  console.log(chalk.gray('  /exit        - Exit the chat session'));
-  console.log();
-  console.log(chalk.bold('Plugin Commands (Ralph Wiggum):'));
-  console.log(chalk.gray('  /ralph-loop <task>  - Start autonomous agent loop'));
-  console.log(chalk.gray('  /cancel-ralph       - Cancel active Ralph Wiggum loop'));
+  log.info(chalk.bold('\n📖 Available Commands:'));
+  log.info(chalk.gray('  /help        - Show this help message'));
+  log.info(chalk.gray('  /paste       - Open editor for long/multiline input'));
+  log.info(chalk.gray('  /clear       - Clear conversation history'));
+  log.info(chalk.gray('  /context     - Show context/token usage'));
+  log.info(chalk.gray('  /memory      - Show memory status (preferences, tasks, etc.)'));
+  log.info(chalk.gray('  /debt        - Show scaffolding debt (incomplete items)'));
+  log.info(chalk.gray('  /tasks       - Show task list with statuses'));
+  log.info(chalk.gray('  /sessions    - Interactive session browser (or: list, load <id>, export <id>, delete <id>, clear)'));
+  log.info(chalk.gray('  /new-session - Start a fresh session'));
+  log.info(chalk.gray('  /resume      - Resume a paused agent'));
+  log.info(chalk.gray('  /plugins     - List loaded plugins'));
+  log.info(chalk.gray('  /exit        - Exit the chat session'));
+  log.newline();
+  log.info(chalk.bold('Plugin Commands (Ralph Wiggum):'));
+  log.info(chalk.gray('  /ralph-loop <task>  - Start autonomous agent loop'));
+  log.info(chalk.gray('  /cancel-ralph       - Cancel active Ralph Wiggum loop'));
   
   // Dynamic suggestions based on current session state
   const suggestions: string[] = [];
@@ -652,55 +654,55 @@ function showHelp(agent: CopilotAgent): void {
   }
   
   if (suggestions.length > 0) {
-    console.log();
-    console.log(chalk.bold('💡 Current Suggestions:'));
+    log.newline();
+    log.info(chalk.bold('💡 Current Suggestions:'));
     for (const suggestion of suggestions) {
-      console.log(suggestion);
+      log.info(suggestion);
     }
   }
   
-  console.log();
+  log.newline();
 }
 
 function showContext(agent: CopilotAgent): void {
-  console.log(chalk.bold('\nContext Usage:'));
+  log.info(chalk.bold('\nContext Usage:'));
   const usage = agent.getContextUsage();
-  console.log(usage);
-  console.log();
+  log.info(usage);
+  log.newline();
 }
 
 function showMemory(agent: CopilotAgent): void {
   const summary = agent.getMemorySummary();
-  console.log();
-  console.log(summary);
-  console.log();
+  log.newline();
+  log.info(summary);
+  log.newline();
 }
 
 function showPlugins(agent: CopilotAgent): void {
   const plugins = agent.getPluginRegistry().list();
 
   if (plugins.length === 0) {
-    console.log(chalk.gray('No plugins loaded.\n'));
+    log.info(chalk.gray('No plugins loaded.\n'));
     return;
   }
 
-  console.log(chalk.bold('\nLoaded Plugins:'));
+  log.info(chalk.bold('\nLoaded Plugins:'));
   for (const plugin of plugins) {
-    console.log(chalk.cyan(`  ${plugin.name} v${plugin.version}`));
-    console.log(chalk.gray(`    ${plugin.description}`));
+    log.info(chalk.cyan(`  ${plugin.name} v${plugin.version}`));
+    log.info(chalk.gray(`    ${plugin.description}`));
   }
-  console.log();
+  log.newline();
 }
 
 function showDebt(agent: CopilotAgent): void {
   const debt = agent.getScaffoldingDebt();
   if (!debt) {
-    console.log(chalk.green('\nNo scaffolding debt - all items complete!\n'));
+    log.info(chalk.green('\nNo scaffolding debt - all items complete!\n'));
     return;
   }
-  console.log();
-  console.log(debt);
-  console.log();
+  log.newline();
+  log.info(debt);
+  log.newline();
 }
 
 function showTasks(agent: CopilotAgent): void {
@@ -708,15 +710,15 @@ function showTasks(agent: CopilotAgent): void {
   const tasks = memoryStore.getTasks();
   
   if (tasks.length === 0) {
-    console.log(chalk.gray('\nNo tasks tracked yet.\n'));
-    console.log(chalk.dim('Tasks are automatically tracked when you mention things like:'));
-    console.log(chalk.dim('  - "Need to implement authentication"'));
-    console.log(chalk.dim('  - "Should refactor the API"'));
-    console.log(chalk.dim('  - "Going to add unit tests"\n'));
+    log.info(chalk.gray('\nNo tasks tracked yet.\n'));
+    log.info(chalk.dim('Tasks are automatically tracked when you mention things like:'));
+    log.info(chalk.dim('  - "Need to implement authentication"'));
+    log.info(chalk.dim('  - "Should refactor the API"'));
+    log.info(chalk.dim('  - "Going to add unit tests"\n'));
     return;
   }
 
-  console.log(chalk.bold('\n📋 Tracked Tasks:\n'));
+  log.info(chalk.bold('\n📋 Tracked Tasks:\n'));
 
   // Group by status
   const pending = tasks.filter((t: any) => t.status === 'pending');
@@ -725,54 +727,54 @@ function showTasks(agent: CopilotAgent): void {
   const blocked = tasks.filter((t: any) => t.status === 'blocked');
 
   if (inProgress.length > 0) {
-    console.log(chalk.yellow('● In Progress:'));
+    log.info(chalk.yellow('● In Progress:'));
     for (const task of inProgress) {
-      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+      log.info(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
     }
-    console.log();
+    log.newline();
   }
 
   if (pending.length > 0) {
-    console.log(chalk.gray('○ Pending:'));
+    log.info(chalk.gray('○ Pending:'));
     for (const task of pending) {
-      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+      log.info(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
     }
-    console.log();
+    log.newline();
   }
 
   if (blocked.length > 0) {
-    console.log(chalk.red('⚠ Blocked:'));
+    log.info(chalk.red('⚠ Blocked:'));
     for (const task of blocked) {
-      console.log(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+      log.info(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
     }
-    console.log();
+    log.newline();
   }
 
   if (completed.length > 0) {
-    console.log(chalk.green(`✓ Completed (${completed.length}):`));
+    log.info(chalk.green(`✓ Completed (${completed.length}):`));
     for (const task of completed.slice(-5)) {
-      console.log(chalk.dim(`  ${task.description}`));
+      log.info(chalk.dim(`  ${task.description}`));
     }
     if (completed.length > 5) {
-      console.log(chalk.dim(`  ... and ${completed.length - 5} more`));
+      log.info(chalk.dim(`  ... and ${completed.length - 5} more`));
     }
-    console.log();
+    log.newline();
   }
 }
 
 function showSessionHeader(providerInfo: string, workingDirectory: string, sessionId?: string, sessionTitle?: string): void {
-  console.log(chalk.dim('━'.repeat(60)));
-  console.log(chalk.cyan.bold('  🤖 Copilot CLI Agent') + chalk.gray(` v0.1.0`));
-  console.log(chalk.dim('━'.repeat(60)));
-  console.log(chalk.gray(`  Provider: ${providerInfo}`));
-  console.log(chalk.gray(`  Directory: ${workingDirectory}`));
+  log.info(chalk.dim('━'.repeat(60)));
+  log.info(chalk.cyan.bold('  🤖 Copilot CLI Agent') + chalk.gray(` v0.1.0`));
+  log.info(chalk.dim('━'.repeat(60)));
+  log.info(chalk.gray(`  Provider: ${providerInfo}`));
+  log.info(chalk.gray(`  Directory: ${workingDirectory}`));
   
   if (sessionId && sessionTitle) {
-    console.log(chalk.gray(`  Session: ${sessionTitle} (${sessionId.slice(0, 8)}...) ✓`));
+    log.info(chalk.gray(`  Session: ${sessionTitle} (${sessionId.slice(0, 8)}...) ✓`));
   }
   
-  console.log(chalk.dim('━'.repeat(60)));
-  console.log(chalk.dim('💡 Type /help for commands, /exit to quit\n'));
+  log.info(chalk.dim('━'.repeat(60)));
+  log.info(chalk.dim('💡 Type /help for commands, /exit to quit\n'));
 }
 
 async function handleSessionsCommand(
@@ -784,8 +786,8 @@ async function handleSessionsCommand(
   switch (cmd.action) {
     case 'list': {
       const sessions = await sessionManager.listSessions();
-      console.log(chalk.bold('\n💾 Saved Sessions:'));
-      console.log(sessionManager.formatSessionsList(sessions));
+      log.info(chalk.bold('\n💾 Saved Sessions:'));
+      log.info(sessionManager.formatSessionsList(sessions));
       break;
     }
 
@@ -796,7 +798,7 @@ async function handleSessionsCommand(
       if (!sessionId) {
         const sessions = await sessionManager.listSessions();
         if (sessions.length === 0) {
-          console.log(chalk.yellow('No saved sessions found.\n'));
+          log.info(chalk.yellow('No saved sessions found.\n'));
           return;
         }
 
@@ -810,20 +812,20 @@ async function handleSessionsCommand(
             })),
           });
         } catch {
-          console.log(chalk.yellow('\nCancelled\n'));
+          log.info(chalk.yellow('\nCancelled\n'));
           return;
         }
       }
 
       const session = await sessionManager.loadSession(sessionId);
       if (!session) {
-        console.log(chalk.red(`✗ Session not found: ${sessionId}\n`));
+        log.info(chalk.red(`✗ Session not found: ${sessionId}\n`));
         return;
       }
 
-      console.log(chalk.green(`\n✓ Loading session: ${session.title}`));
-      console.log(chalk.gray(`  Created: ${session.createdAt.toLocaleString()}`));
-      console.log(chalk.gray(`  Messages: ${session.messages.length}`));
+      log.info(chalk.green(`\n✓ Loading session: ${session.title}`));
+      log.info(chalk.gray(`  Created: ${session.createdAt.toLocaleString()}`));
+      log.info(chalk.gray(`  Messages: ${session.messages.length}`));
 
       // Show preview of conversation
       const spinner = ora('Restoring conversation...').start();
@@ -856,73 +858,73 @@ async function handleSessionsCommand(
       showSessionHeader(providerInfo, session.workingDirectory, session.id, session.title);
 
       // Display full conversation history
-      console.log(chalk.bold('📜 Conversation History:\n'));
-      console.log(chalk.dim('─'.repeat(60)));
+      log.info(chalk.bold('📜 Conversation History:\n'));
+      log.info(chalk.dim('─'.repeat(60)));
 
       for (const msg of messages) {
         if (msg.role === 'user') {
-          console.log(chalk.green('\nYou:'));
-          console.log(msg.content);
+          log.info(chalk.green('\nYou:'));
+          log.info(msg.content);
         } else if (msg.role === 'assistant') {
-          console.log(chalk.cyan('\nAssistant:'));
+          log.info(chalk.cyan('\nAssistant:'));
           if (msg.toolCalls && msg.toolCalls.length > 0) {
             // Show tool calls
             for (const toolCall of msg.toolCalls) {
-              console.log(chalk.blue(`→ Executing: ${toolCall.function.name}`));
+              log.info(chalk.blue(`→ Executing: ${toolCall.function.name}`));
             }
           }
           if (msg.content) {
-            console.log(msg.content);
+            log.info(msg.content);
           }
         } else if (msg.role === 'tool') {
           // Optionally show tool results (commented out to reduce noise)
-          // console.log(chalk.gray(`  ✓ ${msg.name}: ${msg.content.slice(0, 100)}...`));
+          // log.info(chalk.gray(`  ✓ ${msg.name}: ${msg.content.slice(0, 100)}...`));
         }
       }
 
-      console.log(chalk.dim('\n' + '─'.repeat(60)));
-      console.log(chalk.green('\n✓ Session restored - continue the conversation\n'));
+      log.info(chalk.dim('\n' + '─'.repeat(60)));
+      log.info(chalk.green('\n✓ Session restored - continue the conversation\n'));
       break;
     }
 
     case 'export': {
       if (!cmd.id) {
-        console.log(chalk.yellow('Usage: /sessions export <session-id>'));
-        console.log(chalk.gray('Use /sessions list to see available sessions\n'));
+        log.info(chalk.yellow('Usage: /sessions export <session-id>'));
+        log.info(chalk.gray('Use /sessions list to see available sessions\n'));
         return;
       }
 
       const markdown = await sessionManager.exportSession(cmd.id);
       if (!markdown) {
-        console.log(chalk.red(`✗ Session not found: ${cmd.id}\n`));
+        log.info(chalk.red(`✗ Session not found: ${cmd.id}\n`));
         return;
       }
 
-      console.log(markdown);
-      console.log(chalk.gray('\n---\n'));
-      console.log(chalk.cyan('💡 Tip: Save this to a file for documentation\n'));
+      log.info(markdown);
+      log.info(chalk.gray('\n---\n'));
+      log.info(chalk.cyan('💡 Tip: Save this to a file for documentation\n'));
       break;
     }
 
     case 'delete': {
       if (!cmd.id) {
-        console.log(chalk.yellow('Usage: /sessions delete <session-id>'));
-        console.log(chalk.gray('Use /sessions list to see available sessions\n'));
+        log.info(chalk.yellow('Usage: /sessions delete <session-id>'));
+        log.info(chalk.gray('Use /sessions list to see available sessions\n'));
         return;
       }
 
       const success = await sessionManager.deleteSession(cmd.id);
       if (success) {
-        console.log(chalk.green(`✓ Deleted session: ${cmd.id}\n`));
+        log.info(chalk.green(`✓ Deleted session: ${cmd.id}\n`));
       } else {
-        console.log(chalk.red(`✗ Failed to delete session: ${cmd.id}\n`));
+        log.info(chalk.red(`✗ Failed to delete session: ${cmd.id}\n`));
       }
       break;
     }
 
     case 'clear': {
       const count = await sessionManager.clearAllSessions();
-      console.log(chalk.green(`✓ Cleared ${count} session(s)\n`));
+      log.info(chalk.green(`✓ Cleared ${count} session(s)\n`));
       break;
     }
   }

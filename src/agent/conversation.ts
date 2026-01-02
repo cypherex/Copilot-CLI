@@ -7,6 +7,7 @@ import { LocalMemoryStore } from '../memory/store.js';
 import { SmartCompressor, type SmartCompressionConfig } from '../memory/smart-compressor.js';
 import { ContextExtractor } from '../memory/extractor.js';
 import { calculateBudget, adjustBudgetForTotal, type ContextBudget } from '../context/budget.js';
+import { log } from '../utils/index.js';
 
 export interface ConversationConfig {
   maxHistoryLength?: number;
@@ -111,7 +112,7 @@ export class ConversationManager {
     }
 
     this.initialized = true;
-    console.log(chalk.gray('[Memory] Loaded persistent context'));
+    log.log(chalk.gray('[Memory] Loaded persistent context'));
   }
 
   setLLMClient(client: LLMClient): void {
@@ -204,7 +205,7 @@ export class ConversationManager {
     // Dual check ensures warning only triggers when truly low on budget
     // This prevents false warnings if usedTokens is unexpectedly low
     if (availableTokens < this.currentBudget.total * 0.2 && usageRatio > 0.8) {
-      console.log(chalk.yellow(
+      log.log(chalk.yellow(
         `[Budget] Warning: ${Math.floor(usageRatio * 100)}% of token budget used. ` +
         `${availableTokens} tokens remaining.`
       ));
@@ -213,7 +214,7 @@ export class ConversationManager {
     // Debug logging for budget tracking (can be removed or made conditional)
     // Enable with: DEBUG_BUDGET=1 node app.js
     if (process.env.DEBUG_BUDGET) {
-      console.log(chalk.gray(
+      log.log(chalk.gray(
         `[Budget] Used ${usedTokens} / ${this.currentBudget.total} tokens ` +
         `(${Math.floor(usageRatio * 100)}%)`
       ));
@@ -260,7 +261,7 @@ export class ConversationManager {
             lifespan: fact.lifespan || 'session',
           });
           this.memoryStore.supersedeUserFact(existingFact.id, newFact.id);
-          console.log(chalk.gray(`[Memory] Superseded fact: "${existingFact.fact}" → "${fact.fact}"`));
+          log.log(chalk.gray(`[Memory] Superseded fact: "${existingFact.fact}" → "${fact.fact}"`));
         } else if (!existingFact) {
           this.memoryStore.addUserFact({
             fact: fact.fact,
@@ -385,7 +386,7 @@ export class ConversationManager {
         // Store retrieval ID for usefulness tracking
         this.pendingRetrievalIds.push(retrieval.id);
         
-        console.log(chalk.gray(`[Memory] Retrieved context for: "${ref.phrase}"`));
+        log.log(chalk.gray(`[Memory] Retrieved context for: "${ref.phrase}"`));
       }
     }
 
@@ -449,12 +450,12 @@ export class ConversationManager {
 
     // Use smart compression if enabled and needed
     if (this.enableSmartMemory && this.contextManager.needsCompression()) {
-      console.log(chalk.yellow('[Memory] Context threshold reached, compressing...'));
+      log.log(chalk.yellow('[Memory] Context threshold reached, compressing...'));
 
       const result = await this.smartCompressor.compress(this.messages);
       this.messages = result.messages;
 
-      console.log(chalk.green(
+      log.log(chalk.green(
         `[Memory] Compressed: ${result.originalTokens} → ${result.compressedTokens} tokens ` +
         `(archived ${result.archivedChunks} chunks)`
       ));

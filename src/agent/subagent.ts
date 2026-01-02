@@ -5,7 +5,6 @@ import type { LLMClient, LLMConfig, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import { ConversationManager } from './conversation.js';
 import { StreamAccumulator } from '../llm/streaming.js';
-import ora from 'ora';
 import chalk from 'chalk';
 import type { HookRegistry } from '../hooks/registry.js';
 import type { CompletionTracker } from '../audit/index.js';
@@ -37,6 +36,8 @@ export interface SubAgentProgress {
   iteration: number;
   maxIterations: number;
   currentTool?: string;
+  stage?: string; // Current stage within the iteration (e.g., 'thinking', 'executing', 'analyzing')
+  stageLastUpdated?: number; // Timestamp when stage last updated
   status: 'running' | 'paused' | 'waiting_for_input' | 'completed' | 'failed';
 }
 
@@ -116,6 +117,8 @@ export class SubAgent extends EventEmitter {
       iteration: 0,
       maxIterations: this.maxIterations,
       status: 'running',
+      stage: 'thinking',
+      stageLastUpdated: Date.now(),
     };
   }
 
@@ -240,27 +243,22 @@ Remember: You are responsible for delivering complete, production-ready work. No
     let iteration = 0;
     let finalOutput = '';
     let continueLoop = true;
-
-    // Create spinner for progress tracking
-    const spinner = ora({
-      text: `${this.config.name} working...`,
-      color: 'cyan',
-    }).start();
+    let currentStage = 'thinking'; // Track current stage
 
     try {
       while (continueLoop && iteration < this.maxIterations) {
         iteration++;
-        
-        // Update spinner with iteration progress
-        spinner.text = `${this.config.name} (iteration ${iteration}/${this.maxIterations})`;
-        
-        // Emit progress update
+
+        // Update stage to thinking before LLM call
+        currentStage = 'thinking';
         this.emit('progress', {
           agentId: this.config.name,
           name: this.config.name,
           iteration,
           maxIterations: this.maxIterations,
           currentTool: undefined,
+          stage: currentStage,
+          stageLastUpdated: Date.now(),
           status: 'running',
         });
 
@@ -278,9 +276,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
             if (match) {
               const messageId = parseInt(match[1]);
               const message = match[2];
-              
-              spinner.info(chalk.yellow(`User message: ${message.slice(0, 50)}...`));
-              
+
               // Process the message
               this.conversation.addUserMessage(message);
               
@@ -299,7 +295,6 @@ Remember: You are responsible for delivering complete, production-ready work. No
             }
           } else {
             // Handle async user message (fire and forget)
-            spinner.info(chalk.yellow(`User message: ${queuedMessage.slice(0, 50)}...`));
             this.conversation.addUserMessage(queuedMessage);
           }
         }
@@ -326,6 +321,19 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
 
         if (response.toolCalls && response.toolCalls.length > 0) {
+          // Update stage to executing
+          currentStage = 'executing';
+          this.emit('progress', {
+            agentId: this.config.name,
+            name: this.config.name,
+            iteration,
+            maxIterations: this.maxIterations,
+            currentTool: undefined,
+            stage: currentStage,
+            stageLastUpdated: Date.now(),
+            status: 'running',
+          });
+
           this.conversation.addAssistantMessage(response.content || '', response.toolCalls);
           await this.executeTools(response.toolCalls);
           continueLoop = true;
@@ -336,11 +344,6 @@ Remember: You are responsible for delivering complete, production-ready work. No
       }
 
       const toolsUsed = Array.from(this.toolsUsed);
-      const successMessage = toolsUsed.length > 0 
-        ? `${this.config.name} completed (used: ${toolsUsed.join(', ')})`
-        : `${this.config.name} completed`;
-
-      spinner.succeed(chalk.green(successMessage));
 
       return {
         success: true,
@@ -350,8 +353,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      spinner.fail(chalk.red(`${this.config.name} failed: ${errorMessage}`));
-      
+
       return {
         success: false,
         output: finalOutput,
@@ -380,6 +382,18 @@ Remember: You are responsible for delivering complete, production-ready work. No
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
       this.toolsUsed.add(toolName);
+
+      // Update stage to show which tool is being executed
+      this.emit('progress', {
+        agentId: this.config.name,
+        name: this.config.name,
+        iteration: 0, // We don't track iteration here
+        maxIterations: this.maxIterations,
+        currentTool: toolName,
+        stage: `executing: ${toolName}`,
+        stageLastUpdated: Date.now(),
+        status: 'running',
+      });
 
       let toolArgs: Record<string, any>;
       try {
@@ -467,6 +481,10 @@ export class SubAgentManager extends EventEmitter {
     );
 
     // Forward queue events
+    this.agentQueue.on('agent_started', (data) => {
+      this.emit('agent_started', data);
+    });
+
     this.agentQueue.on('agent_queued', (data) => {
       this.emit('agent_queued', data);
     });

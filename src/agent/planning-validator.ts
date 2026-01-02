@@ -1,6 +1,7 @@
 // Planning Validator - ensures agent has a plan and tasks before working
 
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import type { MemoryStore, Task, SessionGoal } from '../memory/types.js';
 
 export interface ValidationResult {
@@ -232,22 +233,22 @@ export class PlanningValidator {
    */
   displayValidation(result: ValidationResult): void {
     if (result.canProceed) {
-      console.log(chalk.green('✓ Planning validated - ready to proceed'));
+      log.success('✓ Planning validated - ready to proceed');
       return;
     }
 
-    console.log(chalk.red('\n⛔ Planning Validation Failed'));
+    log.error('\n⛔ Planning Validation Failed');
     if (result.reason) {
-      console.log(chalk.yellow(`\nReason:\n  ${result.reason}`));
+      log.warn(`\nReason:\n  ${result.reason}`);
     }
 
     if (result.suggestions && result.suggestions.length > 0) {
-      console.log(chalk.cyan('\nSuggestions:'));
+      log.log('\nSuggestions:', chalk.cyan);
       for (const suggestion of result.suggestions) {
-        console.log(chalk.gray(`  • ${suggestion}`));
+        log.log(`  • ${suggestion}`, chalk.gray);
       }
     }
-    console.log();
+    log.log('');
   }
 
   /**

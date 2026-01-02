@@ -1,7 +1,7 @@
 // SubAgentQueue - Manages a queue of subagents with a concurrency limit
 import { EventEmitter } from 'events';
-import ora from 'ora';
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import type { LLMClient, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import { ConversationManager } from './conversation.js';
@@ -104,7 +104,7 @@ export class SubAgentQueue extends EventEmitter {
 
       // Try to process the queue
       this.processQueue().catch(err => {
-        console.error(chalk.red('Error processing queue:', err));
+        log.error('Error processing queue: ' + err);
       });
     });
   }
@@ -129,7 +129,10 @@ export class SubAgentQueue extends EventEmitter {
 
       const agentId = queuedAgent.config.name;
 
-      console.log(chalk.cyan(`Starting agent ${agentId} (${this.runningAgents.size + 1}/${this.maxConcurrency} running)`));
+      log.log(`Starting agent ${agentId} (${this.runningAgents.size + 1}/${this.maxConcurrency} running)`, chalk.cyan);
+
+      // Emit agent_started event
+      this.emit('agent_started', { agentId, name: queuedAgent.config.name });
 
       // Create abort controller for this agent
       const abortController = new AbortController();
@@ -176,7 +179,7 @@ export class SubAgentQueue extends EventEmitter {
 
           // Process next in queue
           this.processQueue().catch(err => {
-            console.error(chalk.red('Error processing queue:', err));
+            log.error('Error processing queue: ' + err);
             this.processing = false;
           });
         });
@@ -225,19 +228,19 @@ export class SubAgentQueue extends EventEmitter {
     if (this.isShuttingDown) return;
 
     this.isShuttingDown = true;
-    console.log(chalk.yellow('\n⚠️  Shutting down subagent queue...'));
+    log.log('\n⚠️  Shutting down subagent queue...', chalk.yellow);
 
     // Clear waiting queue
     const queuedCount = this.waitingQueue.length;
     this.waitingQueue = [];
     if (queuedCount > 0) {
-      console.log(chalk.gray(`  Cancelled ${queuedCount} queued agent(s)`));
+      log.log(`  Cancelled ${queuedCount} queued agent(s)`, chalk.gray);
     }
 
     // Abort all running agents
     const runningCount = this.runningAgentControllers.size;
     if (runningCount > 0) {
-      console.log(chalk.gray(`  Aborting ${runningCount} running agent(s)...`));
+      log.log(`  Aborting ${runningCount} running agent(s)...`, chalk.gray);
 
       for (const [agentId, controller] of this.runningAgentControllers) {
         controller.abort();
@@ -252,9 +255,9 @@ export class SubAgentQueue extends EventEmitter {
       ]);
 
       if (settled === 'timeout') {
-        console.log(chalk.yellow('  Timeout waiting for subagents - forcing exit'));
+        log.log('  Timeout waiting for subagents - forcing exit', chalk.yellow);
       } else {
-        console.log(chalk.green('  All subagents terminated'));
+        log.log('  All subagents terminated', chalk.green);
       }
     }
   }
@@ -399,19 +402,22 @@ Remember: You are responsible for delivering complete, production-ready work. No
     let hadFileModifications = false;
     const ITERATION_DELAY_MS = 35; // Minimal delay to prevent API rate limiting
 
-    // Create spinner for progress tracking
-    const spinner = ora({
-      text: `${this.config.name} working...`,
-      color: 'cyan',
-    }).start();
-
     try {
       while (continueLoop && iteration < this.maxIterations) {
         iteration++;
 
+        // Emit progress event (no spinner - UI handles display)
+        this.emit('progress', {
+          agentId: this.config.name,
+          name: this.config.name,
+          iteration,
+          maxIterations: this.maxIterations,
+          currentTool: undefined,
+          status: 'running',
+        });
+
         // Check if aborted
         if (this.abortSignal?.aborted) {
-          spinner.warn(chalk.yellow(`${this.config.name} aborted`));
           return {
             success: false,
             output: finalOutput,
@@ -433,13 +439,9 @@ Remember: You are responsible for delivering complete, production-ready work. No
             maxIterations: this.maxIterations,
           });
           if (!iterationResult.continue) {
-            spinner.warn(chalk.yellow(`${this.config.name} cancelled by hook`));
             break;
           }
         }
-
-        // Update spinner with iteration progress
-        spinner.text = `${this.config.name} (iteration ${iteration}/${this.maxIterations})`;
 
         const tools = this.toolRegistry.getDefinitions();
         const accumulator = new StreamAccumulator();
@@ -579,12 +581,13 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
             // Log incomplete items but don't block - orchestrator will handle via global tracking
             if (auditResult.newItems.length > 0) {
-              console.log(chalk.yellow(
+              log.log(
                 `
 ⚠️  Subagent detected ${auditResult.newItems.length} incomplete item(s) - ` +
                 `added to global tracking list for orchestrator
-`
-              ));
+`,
+                chalk.yellow
+              );
             }
           }
         }
@@ -594,11 +597,6 @@ Remember: You are responsible for delivering complete, production-ready work. No
       await this.conversation.trimHistory();
 
       const toolsUsed = Array.from(this.toolsUsed);
-      const successMessage = toolsUsed.length > 0
-        ? `${this.config.name} completed (used: ${toolsUsed.join(', ')})`
-        : `${this.config.name} completed`;
-
-      spinner.succeed(chalk.green(successMessage));
 
       return {
         success: true,
@@ -608,7 +606,6 @@ Remember: You are responsible for delivering complete, production-ready work. No
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      spinner.fail(chalk.red(`${this.config.name} failed: ${errorMessage}`));
 
       return {
         success: false,

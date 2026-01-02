@@ -2,6 +2,7 @@
 // Warns users about context usage BEFORE they hit limits
 
 import chalk from 'chalk';
+import { log } from '../utils/index.js';
 import type { ConversationManager } from './conversation.js';
 
 export interface ContextMonitorConfig {
@@ -88,29 +89,29 @@ export class ProactiveContextMonitor {
     const icon = isCritical ? '🔴' : '🟡';
     const level = isCritical ? 'CRITICAL' : 'WARNING';
 
-    console.log();
-    console.log(chalk.bold[isCritical ? 'red' : 'yellow'](`${icon} [${level}] Context Usage: ${usage.percentageUsed}%`));
-    console.log(chalk.gray('   Using ' + this.formatTokens(usage.totalTokens) + ' of ' + this.formatTokens(usage.maxTokens)));
-    console.log(chalk.gray('━'.repeat(50)));
+    log.log('');
+    log.log(`${icon} [${level}] Context Usage: ${usage.percentageUsed}%`, chalk.bold[isCritical ? 'red' : 'yellow']);
+    log.log('   Using ' + this.formatTokens(usage.totalTokens) + ' of ' + this.formatTokens(usage.maxTokens), chalk.gray);
+    log.log('━'.repeat(50), chalk.gray);
 
     // Draw progress bar
     const barWidth = 40;
     const filled = Math.round((usage.percentageUsed / 100) * barWidth);
     const bar = chalk[isCritical ? 'red' : 'yellow']('█'.repeat(filled)) +
                 chalk.gray('░'.repeat(barWidth - filled));
-    console.log(`  [${bar}] ${usage.percentageUsed}%`);
-    console.log(chalk.gray('━'.repeat(50)));
+    log.log(`  [${bar}] ${usage.percentageUsed}%`);
+    log.log('━'.repeat(50), chalk.gray);
 
     // Show suggestions based on context
     const suggestions = this.buildSuggestions(usage);
     if (suggestions.length > 0) {
-      console.log(chalk.dim('💡 Suggestions:'));
+      log.log('💡 Suggestions:', chalk.dim);
       for (const suggestion of suggestions) {
-        console.log(chalk.dim('   ' + suggestion));
+        log.log('   ' + suggestion, chalk.dim);
       }
     }
 
-    console.log();
+    log.log('');
   }
 
   /**
@@ -192,11 +193,11 @@ export class ProactiveContextMonitor {
    * Display summary prompt
    */
   displaySummaryPrompt(): void {
-    console.log();
-    console.log(chalk.cyan('📝 Consider summarizing completed work:'));
-    console.log(chalk.dim('   This helps preserve important context while freeing tokens.'));
-    console.log(chalk.dim('   Say "Summarize progress so far" or /context to review.'));
-    console.log();
+    log.log('');
+    log.log('📝 Consider summarizing completed work:', chalk.cyan);
+    log.log('   This helps preserve important context while freeing tokens.', chalk.dim);
+    log.log('   Say "Summarize progress so far" or /context to review.', chalk.dim);
+    log.log('');
 
     this.lastWarningTime = Date.now();
     this.warningCount++;

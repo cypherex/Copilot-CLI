@@ -10,6 +10,7 @@
 
 import chalk from 'chalk';
 import ora from 'ora';
+import { log } from '../utils/index.js';
 import type { LLMClient, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import type { ConversationManager } from './conversation.js';
@@ -119,7 +120,7 @@ export class AgenticLoop {
         userMessage,
       });
       if (!promptResult.continue) {
-        console.log(chalk.yellow('Message processing cancelled by hook.'));
+        log.log(chalk.yellow('Message processing cancelled by hook.'));
         return;
       }
       if (promptResult.modifiedMessage) {
@@ -138,21 +139,21 @@ export class AgenticLoop {
       
       if (isMandatory) {
         // MANDATORY delegation - use warning style with different color
-        console.log(chalk.yellow.bold('\n⚠️ [WARNING] MANDATORY DELEGATION'));
-        console.log(chalk.yellow('   ' + roleName));
-        console.log(chalk.yellow('   ' + opportunity.reason));
-        console.log(chalk.yellow('   Priority: ' + opportunity.priority));
+        log.log(chalk.yellow.bold('\n⚠️ [WARNING] MANDATORY DELEGATION'));
+        log.log(chalk.yellow('   ' + roleName));
+        log.log(chalk.yellow('   ' + opportunity.reason));
+        log.log(chalk.yellow('   Priority: ' + opportunity.priority));
         if (opportunity.taskCount && opportunity.taskCount > 1) {
-          console.log(chalk.yellow('   Detected Tasks: ' + opportunity.taskCount));
+          log.log(chalk.yellow('   Detected Tasks: ' + opportunity.taskCount));
         }
-        console.log(chalk.yellow('   ⚠️ YOU MUST delegate this task to a subagent'));
+        log.log(chalk.yellow('   ⚠️ YOU MUST delegate this task to a subagent'));
       } else {
         // Suggestion mode - use gray color
-        console.log(chalk.gray('\n💡 Suggestion: ' + roleName));
-        console.log(chalk.gray('   ' + opportunity.reason));
-        console.log(chalk.gray('   Priority: ' + opportunity.priority));
+        log.log(chalk.gray('\n💡 Suggestion: ' + roleName));
+        log.log(chalk.gray('   ' + opportunity.reason));
+        log.log(chalk.gray('   Priority: ' + opportunity.priority));
         if (opportunity.taskCount && opportunity.taskCount > 1) {
-          console.log(chalk.gray('   Detected Tasks: ' + opportunity.taskCount));
+          log.log(chalk.gray('   Detected Tasks: ' + opportunity.taskCount));
         }
       }
     }
@@ -209,9 +210,9 @@ export class AgenticLoop {
       if (this.chatUI?.hasQueuedMessages()) {
         const nextMessage = this.chatUI.pollQueuedMessage();
         if (nextMessage) {
-          console.log(chalk.blue('\n📨 New message received while working:\n'));
-          console.log(chalk.green('You: ') + nextMessage);
-          console.log();
+          log.log(chalk.blue('\n📨 New message received while working:\n'));
+          log.log(chalk.green('You: ') + nextMessage);
+          log.newline();
 
           // Add the new message to conversation
           this.conversation.addUserMessage(nextMessage);
@@ -237,7 +238,7 @@ export class AgenticLoop {
           maxIterations: this.maxIterations ?? Infinity,
         });
         if (!iterationResult.continue) {
-          console.log(chalk.yellow('Iteration cancelled by hook.'));
+          log.log(chalk.yellow('Iteration cancelled by hook.'));
           break;
         }
       }
@@ -370,12 +371,12 @@ export class AgenticLoop {
 
         // If we didn't stream (tool-only response or very fast), display now
         if (response.content && !hasStartedStreaming) {
-          console.log(chalk.cyan('\nAssistant:'));
-          console.log(response.content);
-          console.log();
+          log.log(chalk.cyan('\nAssistant:'));
+          log.info(response.content);
+          log.newline();
         } else if (!response.content && hasStartedStreaming) {
           // Ensure proper newline even if no content
-          console.log();
+          log.newline();
         }
 
         // Update task bar after response
@@ -422,7 +423,7 @@ export class AgenticLoop {
           if (needsCompression) {
             // Compression will happen, continue loop after compression
             await this.conversation.trimHistory();
-            console.log(chalk.cyan('\n💾 Context compressed - continuing work...\n'));
+            log.log(chalk.cyan('\n💾 Context compressed - continuing work...\n'));
             continueLoop = true;
             continue;
           }
@@ -443,10 +444,10 @@ export class AgenticLoop {
               );
 
               if (openItems.length === 0 || (!isStillWorkingOnReview && !response.toolCalls?.length)) {
-                console.log(chalk.dim('⏭️  Tracking item review complete - resuming detection\n'));
+                log.log(chalk.dim('⏭️  Tracking item review complete - resuming detection\n'));
                 this.justAskedToReviewTrackingItems = false;
               } else {
-                console.log(chalk.dim('⏭️  Skipping detection - LLM is still reviewing tracking items\n'));
+                log.log(chalk.dim('⏭️  Skipping detection - LLM is still reviewing tracking items\n'));
               }
               // Continue with normal flow (don't re-detect while flag is true)
             } else {
@@ -466,12 +467,12 @@ export class AgenticLoop {
             // AUTO-PROCEED: When agent asks permission for task-authorized action
             if (detection.askingPermission && detection.permissionAlreadyGranted && detection.currentTask) {
               const prompt = this.incompleteWorkDetector.generatePrompt(detection);
-              console.log(prompt);
+              log.info(prompt);
 
               // Inject decision directly into conversation
               const autoDecision = `Your task is "${detection.currentTask}". This already authorizes the action you're asking about. Proceed with the best option that aligns with your task requirements. Do not wait for user confirmation - make the decision autonomously.`;
 
-              console.log(chalk.green.bold('🤖 Auto-injecting decision to proceed\n'));
+              log.log(chalk.green.bold('🤖 Auto-injecting decision to proceed\n'));
 
               this.conversation.addUserMessage(autoDecision);
               continueLoop = true;
@@ -484,7 +485,7 @@ export class AgenticLoop {
               this.consecutiveIdenticalDetections++;
               if (this.consecutiveIdenticalDetections >= this.LOOP_BREAKER_THRESHOLD) {
                 // Break the loop - stop asking about the same issue
-                console.log(chalk.yellow('\n⚠️ Loop breaker activated - stopping repeated validation\n'));
+                log.log(chalk.yellow('\n⚠️ Loop breaker activated - stopping repeated validation\n'));
                 continueLoop = false;
                 continue;
               }
@@ -498,7 +499,7 @@ export class AgenticLoop {
               // Show formatted warning to user
               const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
               if (consolePrompt) {
-                console.log(consolePrompt);
+                log.info(consolePrompt);
               }
 
               // Generate LLM-friendly message and ask to review using tracking item tools
@@ -521,7 +522,7 @@ CRITICAL: You MUST read actual files to verify completion - no guessing! The rev
 
 Start by calling list_tracking_items with status='open' to see what needs review.`;
 
-              console.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+              log.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
 
               // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
               this.justAskedToReviewTrackingItems = true;
@@ -539,13 +540,13 @@ Start by calling list_tracking_items with status='open' to see what needs review
                   detection.trackingItems,
                   response.content || 'LLM response'
                 );
-                console.log(chalk.cyan(`📋 Stored ${detection.trackingItems.length} tracking items in memory\n`));
+                log.log(chalk.cyan(`📋 Stored ${detection.trackingItems.length} tracking items in memory\n`));
               }
 
               // Show formatted warning to user
               const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
               if (consolePrompt) {
-                console.log(consolePrompt);
+                log.info(consolePrompt);
               }
 
               // Generate LLM-friendly message and ask to review using tracking item tools
@@ -568,7 +569,7 @@ CRITICAL: The review_tracking_item tool REQUIRES file paths - you must read actu
 
 Start with list_tracking_items to see what needs review.`;
 
-              console.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+              log.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
 
               // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
               this.justAskedToReviewTrackingItems = true;
@@ -615,19 +616,19 @@ Start with list_tracking_items to see what needs review.`;
             // Show debt summary if blocking
             const debt = this.completionTracker.getDebt();
             if (debt.shouldBlock) {
-              console.log(chalk.red('\n⛔ Scaffolding debt limit reached. Please complete existing items before adding features.'));
+              log.log(chalk.red('\n⛔ Scaffolding debt limit reached. Please complete existing items before adding features.'));
             }
           }
         }
       } catch (error) {
         spinner?.fail('Error communicating with Copilot');
-        console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+        log.error(error instanceof Error ? error.message : String(error));
         continueLoop = false;
       }
     }
 
     if (this.maxIterations !== null && iteration >= this.maxIterations) {
-      console.warn(chalk.yellow('\nWarning: Maximum iteration limit reached'));
+      log.warn('\nWarning: Maximum iteration limit reached');
     }
 
     await this.conversation.trimHistory();
@@ -667,7 +668,7 @@ Start with list_tracking_items to see what needs review.`;
           toolArgs,
         });
         if (!preResult.continue) {
-          console.log(chalk.yellow(`Tool execution cancelled by hook: ${toolName}`));
+          log.log(chalk.yellow(`Tool execution cancelled by hook: ${toolName}`));
           this.conversation.addToolResult(toolCall.id, toolName, 'Execution cancelled by hook');
           continue;
         }
@@ -683,7 +684,7 @@ Start with list_tracking_items to see what needs review.`;
         args: toolArgs,
         startTime: Date.now(),
       });
-      console.log(toolCallDisplay);
+      log.info(toolCallDisplay);
 
       // Create spinner for execution
       const spinner = ora({ indent: 2, text: `Executing ${toolName}...` }).start();
@@ -706,7 +707,7 @@ Start with list_tracking_items to see what needs review.`;
           error: result.error,
           duration,
         });
-        console.log(resultDisplay);
+        log.info(resultDisplay);
 
         if (result.success) {
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
@@ -725,7 +726,7 @@ Start with list_tracking_items to see what needs review.`;
             result.error || 'Unknown error',
             { file: toolArgs.path, args: toolArgs }
           );
-          console.log(formattedError);
+          log.info(formattedError);
           this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
         }
       } catch (error) {
@@ -738,7 +739,7 @@ Start with list_tracking_items to see what needs review.`;
           error instanceof Error ? error : new Error(errorMessage),
           { file: toolArgs.path, args: toolArgs }
         );
-        console.log(formattedError);
+        log.info(formattedError);
 
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
         result = { success: false, error: errorMessage };
@@ -757,21 +758,21 @@ Start with list_tracking_items to see what needs review.`;
       this.updateTaskBar();
     }
 
-    console.log();
+    log.newline();
   }
 
   /**
    * Execute tools in parallel with visual grouping
    */
   private async executeToolsInParallel(toolCalls: ToolCall[]): Promise<void> {
-    console.log(chalk.blue(`\nRunning ${toolCalls.length} operations in parallel:\n`));
+    log.log(chalk.blue(`\nRunning ${toolCalls.length} operations in parallel:\n`));
 
     const results = await Promise.all(
       toolCalls.map((toolCall, index) => this.executeToolWithBox(toolCall, index, toolCalls.length))
     );
 
     const maxDuration = Math.max(...results.map(r => r.duration));
-    console.log(chalk.green(`\nAll operations completed in ${maxDuration}ms\n`));
+    log.log(chalk.green(`\nAll operations completed in ${maxDuration}ms\n`));
   }
 
   /**
@@ -793,7 +794,7 @@ Start with list_tracking_items to see what needs review.`;
 
     // Display tool call with box drawing
     const prefix = connector + BOX_CHARS.horizontal + ' ';
-    console.log(chalk.dim(prefix) + chalk.cyan(`[${toolName}]`) + ' ' + chalk.gray(JSON.stringify(toolArgs).slice(0, 60)));
+    log.log(chalk.dim(prefix) + chalk.cyan(`[${toolName}]`) + ' ' + chalk.gray(JSON.stringify(toolArgs).slice(0, 60)));
 
     const startTime = Date.now();
 
@@ -804,7 +805,7 @@ Start with list_tracking_items to see what needs review.`;
       const statusIcon = result.success ? chalk.green('✓') : chalk.red('✗');
       const statusMsg = result.success ? `Completed (${duration}ms)` : `Failed (${duration}ms)`;
 
-      console.log(chalk.dim(BOX_CHARS.vertical + '   ') + statusIcon + ' ' + chalk.gray(statusMsg));
+      log.log(chalk.dim(BOX_CHARS.vertical + '   ') + statusIcon + ' ' + chalk.gray(statusMsg));
 
       if (result.success) {
         this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
@@ -818,7 +819,7 @@ Start with list_tracking_items to see what needs review.`;
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      console.log(chalk.dim(BOX_CHARS.vertical + '   ') + chalk.red('✗') + ' ' + chalk.red(`Error (${duration}ms)`));
+      log.log(chalk.dim(BOX_CHARS.vertical + '   ') + chalk.red('✗') + ' ' + chalk.red(`Error (${duration}ms)`));
       this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
 
       return { duration };
@@ -902,7 +903,7 @@ Start with list_tracking_items to see what needs review.`;
         });
       }
     } catch (error) {
-      console.log(chalk.gray(`[Memory] Failed to track edit: ${error instanceof Error ? error.message : String(error)}`));
+      log.log(chalk.gray(`[Memory] Failed to track edit: ${error instanceof Error ? error.message : String(error)}`));
     }
   }
 
@@ -910,18 +911,18 @@ Start with list_tracking_items to see what needs review.`;
     newItems: { type: string; description: string; file: string }[];
     resolvedItems: { type: string; description: string; file: string }[];
   }): void {
-    console.log();
+    log.newline();
 
     // Show resolved items first (positive feedback)
     for (const item of auditResult.resolvedItems) {
-      console.log(chalk.green(`✓ Resolved: ${item.type} in ${item.file}`));
+      log.log(chalk.green(`✓ Resolved: ${item.type} in ${item.file}`));
     }
 
     // Show new incomplete items
     for (const item of auditResult.newItems) {
       const color = item.type === 'obsolete_code' ? chalk.yellow : chalk.gray;
       const icon = item.type === 'obsolete_code' ? '⚠' : '○';
-      console.log(color(`${icon} Tracking: ${item.type} in ${item.file}: ${item.description.slice(0, 60)}`));
+      log.log(`${icon} Tracking: ${item.type} in ${item.file}: ${item.description.slice(0, 60)}`, color);
     }
   }
 

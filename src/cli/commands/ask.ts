@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
+import { log } from '../../utils/index.js';
 
 interface AskOptions {
   directory: string;
@@ -48,8 +49,8 @@ export async function askCommand(
   options: AskOptions
 ): Promise<void> {
   const isPrintMode = options.print || options.json;
-  const log = isPrintMode ? () => {} : console.log;
-  const logError = isPrintMode ? console.error : (msg: string) => console.log(chalk.red(msg));
+  const doLog = isPrintMode ? () => {} : log.info;
+  const logError = isPrintMode ? (msg: string) => log.error(msg) : (msg: string) => log.error(msg);
 
   // Get question from args or stdin
   let input = question || '';
@@ -87,13 +88,13 @@ export async function askCommand(
     spinner?.stop();
 
     if (!isPrintMode) {
-      log(chalk.green('You:'), input);
-      log();
+      log.info(chalk.green('You:') + ' ' + input);
+      log.newline();
     }
 
     // Capture output for JSON mode
     let capturedOutput = '';
-    const originalLog = console.log;
+    const originalConsoleLog = console.log;
 
     if (options.json) {
       console.log = (...args: unknown[]) => {
@@ -105,7 +106,7 @@ export async function askCommand(
     await agent.chat(input);
 
     if (options.json) {
-      console.log = originalLog;
+      console.log = originalConsoleLog;
       const result = {
         success: true,
         input,
@@ -113,7 +114,7 @@ export async function askCommand(
         provider: agent.getProviderName(),
         model: agent.getModelName(),
       };
-      console.log(JSON.stringify(result, null, 2));
+      log.info(JSON.stringify(result, null, 2));
     }
 
     await agent.shutdown();
@@ -121,13 +122,13 @@ export async function askCommand(
     spinner?.fail('Failed');
 
     if (options.json) {
-      console.log(JSON.stringify({
+      log.info(JSON.stringify({
         success: false,
         input,
         error: error instanceof Error ? error.message : String(error),
       }, null, 2));
     } else {
-      logError(error instanceof Error ? error.message : String(error));
+      log.error(error instanceof Error ? error.message : String(error));
     }
 
     process.exit(1);

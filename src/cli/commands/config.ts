@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { loadConfig, setConfigValue, getConfigValue } from '../../utils/config.js';
+import { log } from '../../utils/index.js';
 
 function getCachePath(): string {
   if (process.platform === 'win32') {
@@ -27,10 +28,10 @@ export async function configCommand(options: {
       const cachePath = getCachePath();
       try {
         await fs.rm(cachePath, { recursive: true, force: true });
-        console.log(chalk.green('✓ Token cache cleared successfully'));
-        console.log(chalk.gray(`  Removed: ${cachePath}`));
+        log.info(chalk.green('✓ Token cache cleared successfully'));
+        log.info(chalk.gray(`  Removed: ${cachePath}`));
       } catch {
-        console.log(chalk.yellow('Cache directory does not exist or already cleared'));
+        log.info(chalk.yellow('Cache directory does not exist or already cleared'));
       }
       return;
     }
@@ -38,94 +39,94 @@ export async function configCommand(options: {
     // Verify setup option
     if (options.verify) {
       const config = await loadConfig();
-      console.log(chalk.bold('\n🔍 Configuration Verification\n'));
+      log.info(chalk.bold('\n🔍 Configuration Verification\n'));
 
       // Show current provider
       const provider = config.llm.provider || 'copilot';
-      console.log(chalk.bold('LLM Provider:'), chalk.cyan(provider));
+      log.info(chalk.bold('LLM Provider:') + ' ' + chalk.cyan(provider));
       if (config.llm.model) {
-        console.log(chalk.bold('Model:'), chalk.cyan(config.llm.model));
+        log.info(chalk.bold('Model:') + ' ' + chalk.cyan(config.llm.model));
       }
-      console.log();
+      log.newline();
 
       if (provider === 'copilot') {
         // Check Client ID
         const clientId = config.auth.clientId;
         if (!clientId || clientId === '' || clientId === 'your-client-id-here') {
-          console.log(chalk.red('✗ AZURE_CLIENT_ID: Not configured'));
-          console.log(chalk.gray('  Set via: .env file or environment variable'));
+          log.info(chalk.red('✗ AZURE_CLIENT_ID: Not configured'));
+          log.info(chalk.gray('  Set via: .env file or environment variable'));
         } else {
-          console.log(chalk.green(`✓ AZURE_CLIENT_ID: ${clientId.slice(0, 8)}...`));
+          log.info(chalk.green(`✓ AZURE_CLIENT_ID: ${clientId.slice(0, 8)}...`));
         }
 
         // Check Tenant ID
         const tenantId = config.auth.tenantId;
         if (tenantId === 'common') {
-          console.log(chalk.yellow('⚠ AZURE_TENANT_ID: Using "common" (may need org-specific tenant)'));
+          log.info(chalk.yellow('⚠ AZURE_TENANT_ID: Using "common" (may need org-specific tenant)'));
         } else if (!tenantId || tenantId === 'your-tenant-id-here') {
-          console.log(chalk.red('✗ AZURE_TENANT_ID: Not configured'));
+          log.info(chalk.red('✗ AZURE_TENANT_ID: Not configured'));
         } else {
-          console.log(chalk.green(`✓ AZURE_TENANT_ID: ${tenantId.slice(0, 8)}...`));
+          log.info(chalk.green(`✓ AZURE_TENANT_ID: ${tenantId.slice(0, 8)}...`));
         }
 
         // Check scopes
-        console.log(chalk.green(`✓ Scopes configured: ${config.auth.scopes.length} permissions`));
+        log.info(chalk.green(`✓ Scopes configured: ${config.auth.scopes.length} permissions`));
 
-        console.log('\n' + chalk.bold('Required Azure AD Setup:'));
-        console.log(chalk.gray('  1. App registration with delegated permissions'));
-        console.log(chalk.gray('  2. Admin consent granted for all permissions'));
-        console.log(chalk.gray('  3. "Allow public client flows" enabled'));
-        console.log(chalk.gray('  4. Microsoft 365 Copilot license assigned'));
-        console.log(chalk.gray('\n  See AZURE_SETUP.md for detailed instructions'));
+        log.info('\n' + chalk.bold('Required Azure AD Setup:'));
+        log.info(chalk.gray('  1. App registration with delegated permissions'));
+        log.info(chalk.gray('  2. Admin consent granted for all permissions'));
+        log.info(chalk.gray('  3. "Allow public client flows" enabled'));
+        log.info(chalk.gray('  4. Microsoft 365 Copilot license assigned'));
+        log.info(chalk.gray('\n  See AZURE_SETUP.md for detailed instructions'));
 
       } else if (provider === 'zai') {
         // Check API Key
         if (config.llm.apiKey) {
-          console.log(chalk.green(`✓ API Key: ${config.llm.apiKey.slice(0, 8)}...`));
+          log.info(chalk.green(`✓ API Key: ${config.llm.apiKey.slice(0, 8)}...`));
         } else {
-          console.log(chalk.red('✗ API Key: Not configured'));
-          console.log(chalk.gray('  Get your key at https://z.ai/subscribe'));
-          console.log(chalk.gray('  Set ZAI_API_KEY env var or: copilot-cli config --set llm.apiKey=YOUR_KEY'));
+          log.info(chalk.red('✗ API Key: Not configured'));
+          log.info(chalk.gray('  Get your key at https://z.ai/subscribe'));
+          log.info(chalk.gray('  Set ZAI_API_KEY env var or: copilot-cli config --set llm.apiKey=YOUR_KEY'));
         }
-        console.log(chalk.green(`✓ Endpoint: ${config.llm.endpoint}`));
+        log.info(chalk.green(`✓ Endpoint: ${config.llm.endpoint}`));
 
       } else if (provider === 'ollama') {
-        console.log(chalk.green(`✓ Endpoint: ${config.llm.endpoint}`));
-        console.log(chalk.gray('  Make sure Ollama is running: ollama serve'));
-        console.log(chalk.gray(`  Model: ollama pull ${config.llm.model || 'qwen2.5-coder:7b'}`));
+        log.info(chalk.green(`✓ Endpoint: ${config.llm.endpoint}`));
+        log.info(chalk.gray('  Make sure Ollama is running: ollama serve'));
+        log.info(chalk.gray(`  Model: ollama pull ${config.llm.model || 'qwen2.5-coder:7b'}`));
       }
 
       // Check for .env file
-      console.log();
+      log.newline();
       try {
         await fs.access('.env');
-        console.log(chalk.green('✓ .env file: Found'));
+        log.info(chalk.green('✓ .env file: Found'));
       } catch {
-        console.log(chalk.yellow('⚠ .env file: Not found (using environment variables)'));
+        log.info(chalk.yellow('⚠ .env file: Not found (using environment variables)'));
       }
 
-      console.log('\n' + chalk.bold('Switch Provider:'));
-      console.log(chalk.gray('  copilot-cli config --set llm.provider=zai'));
-      console.log(chalk.gray('  copilot-cli config --set llm.provider=ollama'));
-      console.log(chalk.gray('  copilot-cli config --set llm.provider=copilot'));
-      console.log();
+      log.info('\n' + chalk.bold('Switch Provider:'));
+      log.info(chalk.gray('  copilot-cli config --set llm.provider=zai'));
+      log.info(chalk.gray('  copilot-cli config --set llm.provider=ollama'));
+      log.info(chalk.gray('  copilot-cli config --set llm.provider=copilot'));
+      log.newline();
       return;
     }
 
     if (options.list) {
       const config = await loadConfig();
-      console.log(chalk.bold('\nConfiguration:'));
-      console.log(JSON.stringify(config, null, 2));
-      console.log();
+      log.info(chalk.bold('\nConfiguration:'));
+      log.info(JSON.stringify(config, null, 2));
+      log.newline();
       return;
     }
 
     if (options.get) {
       const value = await getConfigValue(options.get);
       if (value !== undefined) {
-        console.log(typeof value === 'object' ? JSON.stringify(value, null, 2) : value);
+        log.info(typeof value === 'object' ? JSON.stringify(value, null, 2) : value);
       } else {
-        console.log(chalk.yellow(`Key not found: ${options.get}`));
+        log.info(chalk.yellow(`Key not found: ${options.get}`));
       }
       return;
     }
@@ -133,7 +134,7 @@ export async function configCommand(options: {
     if (options.set) {
       const eqIndex = options.set.indexOf('=');
       if (eqIndex === -1) {
-        console.log(chalk.red('Invalid format. Use: --set key=value'));
+        log.info(chalk.red('Invalid format. Use: --set key=value'));
         process.exit(1);
       }
 
@@ -141,17 +142,17 @@ export async function configCommand(options: {
       const value = options.set.slice(eqIndex + 1);
 
       await setConfigValue(key, value);
-      console.log(chalk.green(`✓ Set ${key} = ${value}`));
+      log.info(chalk.green(`✓ Set ${key} = ${value}`));
       return;
     }
 
-    console.log(chalk.yellow('Use --set, --get, or --list'));
-    console.log(chalk.gray('Examples:'));
-    console.log(chalk.gray('  copilot-cli config --list'));
-    console.log(chalk.gray('  copilot-cli config --get auth.clientId'));
-    console.log(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_ID'));
+    log.info(chalk.yellow('Use --set, --get, or --list'));
+    log.info(chalk.gray('Examples:'));
+    log.info(chalk.gray('  copilot-cli config --list'));
+    log.info(chalk.gray('  copilot-cli config --get auth.clientId'));
+    log.info(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_ID'));
   } catch (error) {
-    console.error(chalk.red('Error:'), error instanceof Error ? error.message : String(error));
+    log.error(chalk.red('Error:') + ' ' + (error instanceof Error ? error.message : String(error)));
     process.exit(1);
   }
 }
