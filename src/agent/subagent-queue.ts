@@ -339,6 +339,7 @@ Your task: ${this.config.task}
 - Creates new files with content
 - Automatically creates parent directories
 - Use overwrite: true only when explicitly needed
+- **Avoid** creating files over 250 lines long
 
 ## patch_file
 - **CRITICAL**: Uses EXACT string matching (including whitespace/indentation)

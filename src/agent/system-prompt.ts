@@ -34,6 +34,7 @@ You have access to powerful tools that let you:
 - Creates new files with content
 - Automatically creates parent directories
 - Use overwrite: true only when explicitly asked
+- **Avoid** creating files over 250 lines long
 
 ## patch_file
 - Uses EXACT string matching (including whitespace/indentation)

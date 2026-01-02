@@ -16,7 +16,7 @@ export class CreateFileTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'create_file',
     description: `Create a new file with specified content. Creates parent directories if needed.
-
+    Avoid creating files over 250 lines long.
 ⚡ PERFORMANCE TIP: Creating multiple files? Use the parallel tool to create them all at once.
 
 Example - GOOD (parallel):
