@@ -42,7 +42,7 @@ const BreakDownTaskSchema = z.object({
   subtasks: z.array(z.object({
     description: z.string().describe('Subtask description'),
     priority: z.enum(['high', 'medium', 'low']).optional().describe('Subtask priority'),
-  })).min(2).max(10).describe('Array of subtasks to create (2-10 subtasks recommended)'),
+  })).min(2).max(15).describe('Array of subtasks to create (2-15 subtasks recommended)'),
 });
 
 export class CreateTaskTool extends BaseTool {
@@ -449,7 +449,7 @@ Use this to:
 - Prepare tasks for delegation to subagents
 
 IMPORTANT: This is the recommended way to handle complex tasks.
-Break them down into 2-10 focused subtasks that can be worked on independently.
+Break them down into 2-15 focused subtasks that can be worked on independently.
 
 Example:
   Parent: "Implement user authentication"
@@ -468,7 +468,7 @@ Example:
         },
         subtasks: {
           type: 'array',
-          description: 'Array of subtasks to create (2-10 recommended)',
+          description: 'Array of subtasks to create (2-15 recommended)',
           items: {
             type: 'object',
             properties: {

@@ -126,9 +126,11 @@ const IMPORTANCE_KEYWORDS = {
 export class ContextExtractor {
   private llmClient?: LLMClient;
   private isFirstUserMessage: boolean = true;
+  private classificationCache: Map<string, ClassifiedMessage>;
 
   constructor(llmClient?: LLMClient) {
     this.llmClient = llmClient;
+    this.classificationCache = new Map<string, ClassifiedMessage>();
   }
 
   setLLMClient(client: LLMClient): void {
@@ -137,6 +139,14 @@ export class ContextExtractor {
 
   resetSession(): void {
     this.isFirstUserMessage = true;
+  }
+
+  clearClassificationCache(): void {
+    this.classificationCache.clear();
+  }
+
+  private getContentHash(message: ChatMessage): string {
+    return `${message.role}:${message.content.slice(0, 200)}:${message.content.length}`;
   }
 
   // Classify a single message
@@ -262,10 +272,20 @@ export class ContextExtractor {
     };
   }
 
-  // Classify all messages
+  // Classify all messages with caching for incremental updates
   classifyMessages(messages: ChatMessage[]): ClassifiedMessage[] {
     this.resetSession();
-    return messages.map((msg, idx) => this.classifyMessage(msg, idx, idx > 0 ? messages[idx - 1] : undefined));
+    return messages.map((msg, idx) => {
+      const hash = this.getContentHash(msg);
+      const cached = this.classificationCache.get(hash);
+      if (cached) {
+        // Update index for cache hit
+        return { ...cached, index: idx };
+      }
+      const result = this.classifyMessage(msg, idx, idx > 0 ? messages[idx - 1] : undefined);
+      this.classificationCache.set(hash, result);
+      return result;
+    });
   }
 
   private looksLikeGoal(content: string): boolean {

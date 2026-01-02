@@ -9,6 +9,7 @@ import type {
   ArchiveEntry,
 } from './types.js';
 import { estimateMessagesTokens } from '../context/token-estimator.js';
+import { LRUCache } from '../utils/lru-cache.js';
 
 export interface SmartCompressionConfig {
   targetTokens: number;
@@ -29,6 +30,18 @@ export interface SmartCompressionResult {
   compressionRatio: number; // compressed / original
   strategiesUsed: string[];
 }
+export interface CompressionMetrics {
+  llmCalls: number;
+  llmCallLatency: number; // Total time spent in LLM calls (ms)
+  classificationTime: number; // Time for message classification (ms)
+  summarizationTime: number; // Time for message summarization (ms)
+  archiveTime: number; // Time for archiving chunks (ms)
+  totalTime: number; // Total compression time (ms)
+  strategyImpact: {
+    [strategy: string]: { tokensSaved: number; timeSpent: number };
+  };
+}
+
 
 const DEFAULT_CONFIG: SmartCompressionConfig = {
   targetTokens: 16000,
@@ -45,7 +58,8 @@ export class SmartCompressor {
   private extractor: ContextExtractor;
   private memoryStore: LocalMemoryStore;
   private llmClient?: LLMClient;
-  private chunkSummaryCache: Map<string, string>; // Cache for chunk summaries to avoid re-summarizing
+  private chunkSummaryCache: LRUCache<string, string>; // LRU cache for chunk summaries to avoid re-summarizing with proper eviction
+  private metrics: CompressionMetrics;
 
   constructor(
     memoryStore: LocalMemoryStore,
@@ -54,12 +68,60 @@ export class SmartCompressor {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.memoryStore = memoryStore;
     this.extractor = new ContextExtractor();
-    this.chunkSummaryCache = new Map();
+    this.chunkSummaryCache = new LRUCache(100); // Cache up to 100 chunk summaries
+    this.metrics = {
+      llmCalls: 0,
+      llmCallLatency: 0,
+      classificationTime: 0,
+      summarizationTime: 0,
+      archiveTime: 0,
+      totalTime: 0,
+      strategyImpact: {}
+    };
   }
 
   setLLMClient(client: LLMClient): void {
     this.llmClient = client;
     this.extractor.setLLMClient(client);
+  }
+
+  getMetrics(): CompressionMetrics {
+    return { ...this.metrics };
+  }
+
+  resetMetrics(): void {
+    this.metrics = {
+      llmCalls: 0,
+      llmCallLatency: 0,
+      classificationTime: 0,
+      summarizationTime: 0,
+      archiveTime: 0,
+      totalTime: 0,
+      strategyImpact: {}
+    };
+  }
+
+  private async withTiming<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    const start = Date.now();
+    try {
+      const result = await fn();
+      const elapsed = Date.now() - start;
+      if (operation === 'classify') this.metrics.classificationTime += elapsed;
+      if (operation === 'summarize') this.metrics.summarizationTime += elapsed;
+      if (operation === 'archive') this.metrics.archiveTime += elapsed;
+      return result;
+    } catch (error) {
+      const elapsed = Date.now() - start;
+      if (operation === 'classify') this.metrics.classificationTime += elapsed;
+      if (operation === 'summarize') this.metrics.summarizationTime += elapsed;
+      if (operation === 'archive') this.metrics.archiveTime += elapsed;
+      throw error;
+    }
+  }
+
+  private trackLLMCall(latencyMs: number): void {
+    this.metrics.llmCalls++;
+    this.metrics.llmCallLatency += latencyMs;
   }
 
   /**
@@ -94,14 +156,11 @@ export class SmartCompressor {
   }
 
   async compress(messages: ChatMessage[]): Promise<SmartCompressionResult> {
+    const startTime = Date.now();
     const originalTokens = estimateMessagesTokens(messages);
     const strategiesUsed: string[] = [];
 
-    // Clear cache periodically to avoid stale summaries
-    // Clear when cache size exceeds 100 entries
-    if (this.chunkSummaryCache.size > 100) {
-      this.clearSummaryCache();
-    }
+    // Note: LRUCache automatically handles eviction, no manual clearing needed
 
     // Check if compression needed
     if (originalTokens <= this.config.targetTokens) {
@@ -121,7 +180,9 @@ export class SmartCompressor {
     const conversationMessages = messages.filter(m => m.role !== 'system');
 
     // Classify all messages
-    const classified = this.extractor.classifyMessages(conversationMessages);
+    const classified = await this.withTiming('classify', () =>
+      Promise.resolve(this.extractor.classifyMessages(conversationMessages))
+    );
 
     // Extract and store important information before compression
     await this.extractAndStore(conversationMessages, classified);
@@ -135,33 +196,42 @@ export class SmartCompressor {
       strategiesUsed.push('remove_low_importance');
     }
 
-    // Strategy 2: Compress code blocks to signatures
+    // Strategy 2: Compress code blocks to signatures (fast, apply to all first)
     if (this.config.aggressiveMode && originalTokens > this.config.targetTokens * 2) {
       messagesToProcess = this.compressCodeBlocks(messagesToProcess, classified);
       strategiesUsed.push('compress_code_blocks');
     }
 
-    // Strategy 3: Summarize long messages
-    if (this.config.semanticPreservation && this.llmClient) {
-      const threshold = this.config.aggressiveMode ? 500 : 1000;
-      messagesToProcess = await this.summarizeLongMessages(messagesToProcess, threshold);
-      strategiesUsed.push('summarize_long_messages');
-    }
-
-    // Strategy 4: Merge adjacent tool results
+    // Strategy 3: Merge adjacent tool results (fast, apply before partitioning)
     messagesToProcess = this.mergeAdjacentToolResults(messagesToProcess);
     strategiesUsed.push('merge_tool_results');
 
-    // Determine what to keep, compress, or discard from processed messages
+    // Determine what to keep, compress, or discard BEFORE expensive summarization
     const { keep, archive, discard } = this.partitionMessages(
       messagesToProcess,
       classified
     );
 
+    // Lazy summarization: Only summarize messages that will be kept or archived
+    // Skip summarization for messages that will be discarded
+    if (this.config.semanticPreservation && this.llmClient) {
+      const threshold = this.config.aggressiveMode ? 500 : 1000;
+      const keepMessages = await this.withTiming('summarize', () =>
+        this.summarizeLongMessages(keep, threshold)
+      );
+      const keepIndices = keep.map(msg => messagesToProcess.indexOf(msg));
+      // Update keep with summarized versions
+      keep.length = 0;
+      keep.push(...keepMessages);
+      strategiesUsed.push('summarize_long_messages_lazy');
+    }
+
     // Archive important older messages
     let archivedChunks = 0;
     if (this.config.archiveOldContext && archive.length > 0) {
-      archivedChunks = await this.archiveMessages(archive, classified);
+      archivedChunks = await this.withTiming('archive', () =>
+        this.archiveMessages(archive, classified)
+      );
       strategiesUsed.push('archive_old_context');
     }
 
@@ -211,6 +281,7 @@ export class SmartCompressor {
       compressionRatio,
       strategiesUsed,
     };
+    this.metrics.totalTime = Date.now() - startTime;
   }
 
   private partitionMessages(
@@ -361,32 +432,82 @@ export class SmartCompressor {
   ): Promise<ChatMessage[]> {
     if (!this.llmClient) return messages;
 
-    const results: ChatMessage[] = [];
+    // Separate messages that need summarization
+    const longMessages: Array<{ index: number; msg: ChatMessage }> = [];
+    const results = [...messages];
 
-    for (const msg of messages) {
-      if (msg.content.length <= threshold) {
-        results.push(msg);
-        continue;
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.content.length > threshold) {
+        longMessages.push({ index: i, msg });
       }
+    }
 
-      try {
-        const summary = await this.summarizeMessage(msg);
-        results.push({
+    // Parallelize summarization with batching for efficiency
+    if (longMessages.length > 0) {
+      const summaries = await this.summarizeMessagesBatch(
+        longMessages.map(({ msg }) => msg)
+      );
+
+      // Apply summaries to results
+      for (let i = 0; i < longMessages.length; i++) {
+        const { index, msg } = longMessages[i];
+        results[index] = {
           ...msg,
-          content: summary,
-        });
-      } catch {
-        // If summarization fails, keep original
-        results.push(msg);
+          content: summaries[i],
+        };
       }
     }
 
     return results;
   }
 
-  private async summarizeMessage(msg: ChatMessage): Promise<string> {
+  private async summarizeMessagesBatch(messages: ChatMessage[]): Promise<string[]> {
+    if (!this.llmClient || messages.length === 0) return messages.map(m => m.content);
+
+    // Batch multiple messages into a single LLM call for efficiency
+    const batchSize = 5; // Summarize up to 5 messages at once
+    const results: string[] = [];
+
+    for (let i = 0; i < messages.length; i += batchSize) {
+      const batch = messages.slice(i, i + batchSize);
+
+      const llmStart = Date.now();
+      try {
+        const response = await this.llmClient.chat([
+          {
+            role: 'system',
+            content: `Summarize each of the ${batch.length} messages concisely while preserving key information, code snippets, and technical details. Return each summary on a separate line numbered 1-${batch.length}.`,
+          },
+          {
+            role: 'user',
+            content: batch.map((msg, idx) => `Message ${idx + 1}:\n${msg.content}`).join('\n\n---\n\n'),
+          },
+        ]);
+
+        const summaryText = response.choices[0]?.message.content || '';
+        const summaryLines = summaryText.split('\n').filter(l => l.trim());
+        
+        // Extract summaries (look for numbered lines or take all non-empty lines)
+        for (let j = 0; j < batch.length; j++) {
+          const numberedMatch = summaryLines.find(l => l.match(new RegExp(`^${j + 1}[\\.:)]`)));
+          results.push(numberedMatch ? numberedMatch.replace(/^\d+[\\.:)]?\s*/, '') : (summaryLines[j] || batch[j].content));
+        }
+      } catch {
+        // If batch summarization fails, fall back to individual
+        for (const msg of batch) {
+          results.push(await this.summarizeMessage(msg));
+        }
+      }
+    }
+
+    return results;
+  }
+
+    private async summarizeMessage(msg: ChatMessage): Promise<string> {
     if (!this.llmClient) return msg.content;
 
+    const llmStart = Date.now();
     try {
       const response = await this.llmClient.chat([
         {
@@ -399,6 +520,7 @@ export class SmartCompressor {
         },
       ]);
 
+      this.trackLLMCall(Date.now() - llmStart);
       return response.choices[0]?.message.content || msg.content;
     } catch {
       return msg.content;
@@ -565,9 +687,12 @@ export class SmartCompressor {
       chunks.push(currentChunk);
     }
 
-    // Archive each chunk
-    for (const chunk of chunks) {
-      const summary = await this.summarizeChunk(chunk.messages);
+    // Batch chunk summaries into single LLM call
+    const chunkSummaries = await this.summarizeChunksBatch(chunks);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const summary = chunkSummaries[i];
       const keywords = this.extractKeywords(chunk.messages);
       const files = chunk.infos.flatMap(i => i.extractedInfo?.files || []);
       const maxImportance = this.getMaxImportance(chunk.infos);
@@ -606,6 +731,7 @@ export class SmartCompressor {
       return cachedSummary;
     }
 
+    const llmStart = Date.now();
     try {
       const response = await this.llmClient.chat([
         {
@@ -618,16 +744,68 @@ export class SmartCompressor {
         },
       ]);
       const summary = response.choices[0]?.message.content || 'No summary available';
-      
+      this.trackLLMCall(Date.now() - llmStart);
+
       // Cache the summary
       this.chunkSummaryCache.set(cacheKey, summary);
-      
+
       return summary;
     } catch {
       return 'Conversation chunk (summary unavailable)';
     }
   }
 
+
+  private async summarizeChunksBatch(
+    chunks: Array<{ messages: ChatMessage[] }>
+  ): Promise<string[]> {
+    if (!this.llmClient || chunks.length === 0) {
+      return chunks.map(() => 'Conversation chunk (summary unavailable)');
+    }
+
+    // Batch up to 5 chunks into a single LLM call
+    const batchSize = 5;
+    const results: string[] = [];
+
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+
+      const llmStart = Date.now();
+      try {
+        const response = await this.llmClient.chat([
+          {
+            role: 'system',
+            content: `Summarize each of the ${batch.length} conversation chunks in 2-3 sentences each. Focus on: what was asked, what was done, key outcomes. Return each summary on a separate line numbered 1-${batch.length}.`,
+          },
+          {
+            role: 'user',
+            content: batch.map(
+              (chunk, idx) => `Chunk ${idx + 1}:\n${
+                chunk.messages.map(m => `${m.role}: ${m.content.slice(0, 300)}`).join('\n')
+              }`
+            ).join('\n\n---\n\n'),
+          },
+        ]);
+
+        const summaryText = response.choices[0]?.message.content || '';
+        const summaryLines = summaryText.split('\n').filter(l => l.trim());
+
+        // Extract summaries
+        for (let j = 0; j < batch.length; j++) {
+          const numberedMatch = summaryLines.find(l => l.match(new RegExp(`^${j + 1}[\\.:)]`)));
+          results.push(numberedMatch ? numberedMatch.replace(/^\d+[\\.:)]?\s*/, '') : (summaryLines[j] || 'Conversation chunk (summary unavailable)'));
+        }
+      } catch {
+        // Fall back to individual summarization
+        const fallbackSummaries = await Promise.all(
+          batch.map(chunk => this.summarizeChunk(chunk.messages))
+        );
+        results.push(...fallbackSummaries);
+      }
+    }
+
+    return results;
+  }
   private extractKeywords(messages: ChatMessage[]): string[] {
     const keywords = new Set<string>();
     const content = messages.map(m => m.content).join(' ').toLowerCase();
