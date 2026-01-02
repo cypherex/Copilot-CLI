@@ -306,17 +306,17 @@ The system uses a two-stage approach to minimize false positives:
 
 **Stage 1: Initial Detection (Regex-based)**
 - Scans your responses for bullet points, numbered lists, and TODOs
-- Matches common patterns: `• item`, `1. item`, `TODO: item`, `[ ] item`
+- Matches common patterns: \`• item\`, \`1. item\`, \`TODO: item\`, \`[ ] item\`
 - This is intentionally over-sensitive to catch all potential incomplete work
 
 **Stage 2: Pre-Storage Validation (Heuristic Filtering)**
 - Before storing items, applies heuristic rules to filter obvious false positives
 - Filters out: documentation, examples, explanations, file references, workflow notation, meta-descriptions
 - Example exclusions:
-  - `*File: src/agent/loop.ts` (documentation)
-  - `✅ Real work items: "Add error handling"` (example)
-  - `This is explanatory text` (explanation)
-  - `**Incomplete** → create_task()` (workflow)
+  - \`*File: src/agent/loop.ts\` (documentation)
+  - \`✅ Real work items: "Add error handling"\` (example)
+  - \`This is explanatory text\` (explanation)
+  - \`**Incomplete** → create_task()\` (workflow)
 - Only stores items that look like actionable work
 
 **Result**: Most false positives are automatically filtered, reducing manual cleanup
