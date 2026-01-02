@@ -314,10 +314,11 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   let agentPaused = false;
   let pauseReason = '';
 
-  // Initialize UI
+  // Initialize UI with traditional mode - split-screen has streaming conflicts
   const ui = new ChatUI({
     showStatusBar: true,
     showTaskPanel: true,
+    useSplitScreen: false, // Disabled - causes word-per-line streaming issues
   });
 
   // Setup interrupt handler (Ctrl+C)
@@ -404,6 +405,9 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
     // Initialize UI with agent
     ui.initialize(agent);
+
+    // Connect UI to agent for non-blocking message processing (split-screen mode)
+    agent.setChatUI(ui);
 
     // Show session header
     const providerInfo = agent.getModelName()

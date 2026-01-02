@@ -318,6 +318,11 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         if (response.content) {
           finalOutput = response.content;
+          // Emit message event for real-time display
+          this.emit('message', {
+            content: response.content,
+            type: 'output',
+          });
         }
 
         if (response.toolCalls && response.toolCalls.length > 0) {
@@ -383,8 +388,24 @@ Remember: You are responsible for delivering complete, production-ready work. No
         toolArgs = {};
       }
 
+      // Emit tool call event for real-time display
+      this.emit('tool_call', {
+        toolName,
+        args: toolArgs,
+        toolCallId: toolCall.id,
+      });
+
       try {
         const result = await this.toolRegistry.execute(toolName, toolArgs);
+
+        // Emit tool result event for real-time display
+        this.emit('tool_result', {
+          toolCallId: toolCall.id,
+          toolName,
+          success: result.success,
+          output: result.output,
+          error: result.error,
+        });
 
         if (result.success) {
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
@@ -393,6 +414,15 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Emit error result event
+        this.emit('tool_result', {
+          toolCallId: toolCall.id,
+          toolName,
+          success: false,
+          error: errorMessage,
+        });
+
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
       }
     }
@@ -471,6 +501,21 @@ export class SubAgentManager extends EventEmitter {
     // Forward user_message_queued events
     agent.on('user_message_queued', (data: any) => {
       this.emit('user_message_queued', { agentId, ...data });
+    });
+
+    // Forward message events for real-time display
+    agent.on('message', (data: any) => {
+      this.emit('message', { agentId, ...data });
+    });
+
+    // Forward tool_call events for real-time display
+    agent.on('tool_call', (data: any) => {
+      this.emit('tool_call', { agentId, ...data });
+    });
+
+    // Forward tool_result events for real-time display
+    agent.on('tool_result', (data: any) => {
+      this.emit('tool_result', { agentId, ...data });
     });
 
     // Add to queue (will wait for slot)

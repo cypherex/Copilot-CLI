@@ -577,16 +577,14 @@ Remember: You are responsible for delivering complete, production-ready work. No
               responseId
             );
 
-            // If audit found incomplete items, continue the loop to address them
+            // Log incomplete items but don't block - orchestrator will handle via global tracking
             if (auditResult.newItems.length > 0) {
-              const itemDescriptions = auditResult.newItems
-                .map(item => `- ${item.type} in ${item.file}: ${item.description}`)
-                .join('\n');
-              const auditPrompt = `\n\nScaffolding audit detected incomplete work:\n${itemDescriptions}\n\nPlease complete these items before finishing.`;
-
-              this.conversation.addUserMessage(auditPrompt);
-              continueLoop = true;
-              continue;
+              console.log(chalk.yellow(
+                `
+⚠️  Subagent detected ${auditResult.newItems.length} incomplete item(s) - ` +
+                `added to global tracking list for orchestrator
+`
+              ));
             }
           }
         }

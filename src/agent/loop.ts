@@ -25,6 +25,10 @@ import { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { MemoryStore } from '../memory/types.js';
+import { ToolCallRenderer } from '../ui/tool-call-renderer.js';
+import { errorFormatter } from '../ui/error-formatter.js';
+import { BOX_CHARS } from '../ui/box-drawer.js';
+import type { ChatUI } from '../ui/chat-ui.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
@@ -37,6 +41,7 @@ export class AgenticLoop {
   private fileRelationshipTracker?: FileRelationshipTracker;
   private workContinuityManager?: WorkContinuityManager;
   private memoryStore?: MemoryStore;
+  private chatUI?: ChatUI;
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
@@ -92,6 +97,10 @@ export class AgenticLoop {
 
   setWorkContinuityManager(manager: WorkContinuityManager): void {
     this.workContinuityManager = manager;
+  }
+
+  setChatUI(chatUI: ChatUI): void {
+    this.chatUI = chatUI;
   }
 
   async processUserMessage(userMessage: string): Promise<void> {
@@ -194,6 +203,27 @@ export class AgenticLoop {
 
     while (continueLoop && (this.maxIterations === null || iteration < this.maxIterations)) {
       iteration++;
+
+      // Check for queued user messages (split-screen mode)
+      // This allows users to send messages while the agent is working
+      if (this.chatUI?.hasQueuedMessages()) {
+        const nextMessage = this.chatUI.pollQueuedMessage();
+        if (nextMessage) {
+          console.log(chalk.blue('\n📨 New message received while working:\n'));
+          console.log(chalk.green('You: ') + nextMessage);
+          console.log();
+
+          // Add the new message to conversation
+          this.conversation.addUserMessage(nextMessage);
+
+          // Reset iteration counter to give fresh attempts for new message
+          iteration = 0;
+
+          // Continue loop to process the new message
+          continueLoop = true;
+          continue;
+        }
+      }
 
       // Enforce delay between iterations to prevent API rate limiting
       if (iteration > 1) {
@@ -604,6 +634,22 @@ Start with list_tracking_items to see what needs review.`;
   }
 
   private async executeTools(toolCalls: ToolCall[]): Promise<void> {
+    // Detect if we can run tools in parallel
+    const canRunInParallel = toolCalls.length > 1 && this.canExecuteInParallel(toolCalls);
+
+    if (canRunInParallel) {
+      await this.executeToolsInParallel(toolCalls);
+    } else {
+      await this.executeToolsSequential(toolCalls);
+    }
+  }
+
+  /**
+   * Execute tools sequentially with enhanced display
+   */
+  private async executeToolsSequential(toolCalls: ToolCall[]): Promise<void> {
+    const toolCallRenderer = new ToolCallRenderer();
+
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
       let toolArgs: Record<string, any>;
@@ -630,31 +676,39 @@ Start with list_tracking_items to see what needs review.`;
         }
       }
 
-      console.log(chalk.blue(`\n→ Executing: ${toolName}`));
+      // Render structured tool call
+      const toolCallDisplay = toolCallRenderer.renderToolCall({
+        id: toolCall.id,
+        name: toolName,
+        args: toolArgs,
+        startTime: Date.now(),
+      });
+      console.log(toolCallDisplay);
 
-      // Display compact tool arguments
-      const argSummary = Object.entries(toolArgs)
-        .map(([key, value]) => {
-          const strValue = typeof value === 'string' ? value : JSON.stringify(value);
-          const truncated = strValue.length > 50 ? strValue.slice(0, 50) + '...' : strValue;
-          return `${key}="${truncated}"`;
-        })
-        .join(', ');
-      console.log(chalk.gray('   ' + argSummary));
-
-      // Create spinner for real-time status
-      const spinner = ora({ indent: 2, text: toolName }).start();
+      // Create spinner for execution
+      const spinner = ora({ indent: 2, text: `Executing ${toolName}...` }).start();
 
       let result: { success: boolean; output?: string; error?: string };
+      const startTime = Date.now();
 
       try {
         result = await this.toolRegistry.execute(toolName, toolArgs);
+        const duration = Date.now() - startTime;
+
+        spinner.stop();
+
+        // Render structured result
+        const resultDisplay = toolCallRenderer.renderToolResult({
+          id: toolCall.id,
+          name: toolName,
+          success: result.success,
+          output: result.output,
+          error: result.error,
+          duration,
+        });
+        console.log(resultDisplay);
 
         if (result.success) {
-          spinner.succeed(chalk.green(toolName));
-          if (result.output) {
-            console.log(chalk.gray(result.output.slice(0, 500) + (result.output.length > 500 ? '...' : '')));
-          }
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
 
           // Track file reads in memory
@@ -665,14 +719,27 @@ Start with list_tracking_items to see what needs review.`;
           // Track file edits in memory
           this.trackFileEdit(toolName, toolArgs);
         } else {
-          spinner.fail(chalk.red(toolName));
-          console.log(chalk.red(result.error));
+          // Format error with helpful suggestions
+          const formattedError = errorFormatter.formatToolError(
+            toolName,
+            result.error || 'Unknown error',
+            { file: toolArgs.path, args: toolArgs }
+          );
+          console.log(formattedError);
           this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        spinner.fail(chalk.red(toolName));
-        console.log(chalk.red(errorMessage));
+        spinner.stop();
+
+        // Format error with helpful suggestions
+        const formattedError = errorFormatter.formatToolError(
+          toolName,
+          error instanceof Error ? error : new Error(errorMessage),
+          { file: toolArgs.path, args: toolArgs }
+        );
+        console.log(formattedError);
+
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
         result = { success: false, error: errorMessage };
       }
@@ -691,6 +758,98 @@ Start with list_tracking_items to see what needs review.`;
     }
 
     console.log();
+  }
+
+  /**
+   * Execute tools in parallel with visual grouping
+   */
+  private async executeToolsInParallel(toolCalls: ToolCall[]): Promise<void> {
+    console.log(chalk.blue(`\nRunning ${toolCalls.length} operations in parallel:\n`));
+
+    const results = await Promise.all(
+      toolCalls.map((toolCall, index) => this.executeToolWithBox(toolCall, index, toolCalls.length))
+    );
+
+    const maxDuration = Math.max(...results.map(r => r.duration));
+    console.log(chalk.green(`\nAll operations completed in ${maxDuration}ms\n`));
+  }
+
+  /**
+   * Execute a single tool with box-drawing visualization for parallel execution
+   */
+  private async executeToolWithBox(toolCall: ToolCall, index: number, total: number): Promise<{ duration: number }> {
+    const toolName = toolCall.function.name;
+    let toolArgs: Record<string, any>;
+
+    try {
+      toolArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+      toolArgs = {};
+    }
+
+    // Determine box character
+    const isLast = index === total - 1;
+    const connector = isLast ? BOX_CHARS.bottomLeft : BOX_CHARS.verticalRight;
+
+    // Display tool call with box drawing
+    const prefix = connector + BOX_CHARS.horizontal + ' ';
+    console.log(chalk.dim(prefix) + chalk.cyan(`[${toolName}]`) + ' ' + chalk.gray(JSON.stringify(toolArgs).slice(0, 60)));
+
+    const startTime = Date.now();
+
+    try {
+      const result = await this.toolRegistry.execute(toolName, toolArgs);
+      const duration = Date.now() - startTime;
+
+      const statusIcon = result.success ? chalk.green('✓') : chalk.red('✗');
+      const statusMsg = result.success ? `Completed (${duration}ms)` : `Failed (${duration}ms)`;
+
+      console.log(chalk.dim(BOX_CHARS.vertical + '   ') + statusIcon + ' ' + chalk.gray(statusMsg));
+
+      if (result.success) {
+        this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
+        this.trackFileEdit(toolName, toolArgs);
+      } else {
+        this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
+      }
+
+      return { duration };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.log(chalk.dim(BOX_CHARS.vertical + '   ') + chalk.red('✗') + ' ' + chalk.red(`Error (${duration}ms)`));
+      this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
+
+      return { duration };
+    }
+  }
+
+  /**
+   * Check if tools can be executed in parallel
+   * Returns false if tools have dependencies (e.g., one creates a file that another reads)
+   */
+  private canExecuteInParallel(toolCalls: ToolCall[]): boolean {
+    // Tools that modify state should not run in parallel with tools that depend on that state
+    const writeTools = new Set(['create_file', 'patch_file', 'execute_bash']);
+    const readTools = new Set(['read_file', 'list_files', 'search_files']);
+
+    let hasWrites = false;
+    let hasReads = false;
+
+    for (const toolCall of toolCalls) {
+      const toolName = toolCall.function.name;
+      if (writeTools.has(toolName)) hasWrites = true;
+      if (readTools.has(toolName)) hasReads = true;
+    }
+
+    // If we have both reads and writes, they might be dependent, so run sequentially
+    if (hasWrites && hasReads) {
+      return false;
+    }
+
+    // All tools are reads or all are writes - can run in parallel
+    return true;
   }
 
   private trackFileEdit(toolName: string, toolArgs: Record<string, any>): void {

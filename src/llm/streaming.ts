@@ -3,6 +3,7 @@
 import type { StreamChunk } from './types.js';
 import chalk from 'chalk';
 import { marked } from 'marked';
+import { CodeBlockDetector, syntaxHighlighter } from '../ui/syntax-highlighter.js';
 
 /**
  * Accumulates streaming chunks and renders them to stdout in real-time
@@ -83,12 +84,16 @@ export class StreamAccumulator {
 }
 
 /**
- * Real-time streaming renderer for markdown content
+ * Real-time streaming renderer for markdown content with syntax highlighting
  */
 class StreamingRenderer {
-  private lines: string[] = [];
-  private activeCodeBlock = false;
+  private codeBlockDetector: CodeBlockDetector;
   private currentContent = '';
+  private pendingText = '';
+
+  constructor() {
+    this.codeBlockDetector = new CodeBlockDetector();
+  }
 
   start(): void {
     // Print the "Assistant:" label at the start
@@ -99,33 +104,46 @@ class StreamingRenderer {
     const diff = content.slice(this.currentContent.length);
     if (!diff) return;
 
-    // Detect and handle code blocks
-    this.handleCodeBlocks(diff);
+    // Add to pending text and try to parse
+    this.pendingText += diff;
 
-    // Write the new content directly to stdout
-    process.stdout.write(diff);
+    // Parse blocks from pending text
+    const blocks = this.codeBlockDetector.parse(this.pendingText);
+
+    // Process complete blocks
+    for (const block of blocks) {
+      if (block.type === 'code') {
+        // Apply syntax highlighting to code blocks
+        const highlighted = syntaxHighlighter.highlight(block.content, block.language || 'text');
+
+        // Add code block markers with language
+        process.stdout.write(chalk.gray('```') + chalk.dim(block.language || '') + '\n');
+        process.stdout.write(highlighted);
+        process.stdout.write(chalk.gray('```') + '\n');
+      } else {
+        // Regular text - write as-is
+        process.stdout.write(block.content);
+      }
+    }
+
+    // Clear pending text as we've processed it
+    this.pendingText = '';
     this.currentContent = content;
   }
 
-  private handleCodeBlocks(chunk: string): void {
-    // Check for code block markers
-    const codeBlockRegex = /```(\w*)?/g;
-    let match;
-    
-    // Reset regex state for this chunk
-    while ((match = codeBlockRegex.exec(chunk)) !== null) {
-      this.activeCodeBlock = !this.activeCodeBlock;
+  stop(): void {
+    // Flush any remaining pending text
+    if (this.pendingText) {
+      process.stdout.write(this.pendingText);
     }
 
-    // If we're in a code block, we could apply special formatting
-    // For now, we let the raw text flow through
-  }
-
-  stop(): void {
     // Ensure we end on a new line
     if (!this.currentContent.endsWith('\n')) {
       process.stdout.write('\n');
     }
     process.stdout.write('\n');
+
+    // Reset detector for next stream
+    this.codeBlockDetector.reset();
   }
 }

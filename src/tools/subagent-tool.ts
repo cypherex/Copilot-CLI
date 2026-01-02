@@ -16,6 +16,7 @@ import {
 } from '../agent/subagent-communication-patterns.js';
 import ora from 'ora';
 import chalk from 'chalk';
+import { SubagentRenderer, subagentRendererRegistry } from '../ui/subagent-renderer.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
@@ -270,7 +271,51 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       maxIterations,
     });
 
+    // Create renderer for this subagent
+    const renderer = subagentRendererRegistry.create(agentId);
+
+    // Render subagent start
+    renderer.renderStart({
+      agentId,
+      role: role || 'general',
+      task,
+    });
+
+    // Listen to subagent events for real-time display
+    const messageListener = (data: any) => {
+      if (data.agentId === agentId) {
+        renderer.renderMessage(data);
+      }
+    };
+
+    const toolCallListener = (data: any) => {
+      if (data.agentId === agentId) {
+        renderer.renderToolCall(data);
+      }
+    };
+
+    const toolResultListener = (data: any) => {
+      if (data.agentId === agentId) {
+        renderer.renderToolResult(data);
+      }
+    };
+
+    // Attach listeners
+    this.subAgentManager.on('message', messageListener);
+    this.subAgentManager.on('tool_call', toolCallListener);
+    this.subAgentManager.on('tool_result', toolResultListener);
+
+    // Cleanup function to prevent memory leaks
+    const cleanup = () => {
+      this.subAgentManager.off('message', messageListener);
+      this.subAgentManager.off('tool_call', toolCallListener);
+      this.subAgentManager.off('tool_result', toolResultListener);
+      subagentRendererRegistry.remove(agentId);
+    };
+
     if (background) {
+      // For background tasks, listeners stay attached until agent completes
+      // They will be cleaned up when wait_agent is called
       const response: any = {
         status: 'spawned',
         agent_id: agentId,
@@ -284,23 +329,40 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       return JSON.stringify(response, null, 2);
     }
 
-    // Wait for completion
-    const result = await this.subAgentManager.wait(agentId);
+    // Wait for completion with guaranteed cleanup
+    try {
+      const startTime = Date.now();
+      const result = await this.subAgentManager.wait(agentId);
+      const duration = Date.now() - startTime;
 
-    const response: any = {
-      status: result.success ? 'completed' : 'failed',
-      agent_id: agentId,
-      output: result.output,
-      error: result.error,
-      iterations: result.iterations,
-      tools_used: result.toolsUsed,
-    };
+      // Render completion
+      if (result.success) {
+        renderer.renderEnd({
+          duration,
+          summary: `Completed in ${result.iterations} iterations. Used tools: ${result.toolsUsed.join(', ')}`,
+        });
+      } else {
+        renderer.renderError(result.error || 'Unknown error');
+      }
 
-    if (warnings.length > 0) {
-      response.warnings = warnings;
+      const response: any = {
+        status: result.success ? 'completed' : 'failed',
+        agent_id: agentId,
+        output: result.output,
+        error: result.error,
+        iterations: result.iterations,
+        tools_used: result.toolsUsed,
+      };
+
+      if (warnings.length > 0) {
+        response.warnings = warnings;
+      }
+
+      return JSON.stringify(response, null, 2);
+    } finally {
+      // ALWAYS cleanup event listeners and renderer, even on error
+      cleanup();
     }
-
-    return JSON.stringify(response, null, 2);
   }
 }
 

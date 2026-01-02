@@ -19,6 +19,7 @@ import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
+import type { ChatUI } from '../ui/chat-ui.js';
 
 export class CopilotAgent {
   private authManager: AuthManager | null = null;
@@ -180,6 +181,10 @@ export class CopilotAgent {
     await this.hookRegistry.execute('session:start', {
       sessionId: `session_${Date.now()}`,
     });
+  }
+
+  setChatUI(chatUI: ChatUI): void {
+    this.loop.setChatUI(chatUI);
   }
 
   async shutdown(): Promise<void> {

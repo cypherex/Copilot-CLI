@@ -5,12 +5,16 @@ import type { CopilotAgent } from '../agent/index.js';
 import { Input } from './input.js';
 import { StatusBar, getStatusInfo, type StatusInfo } from './status-bar.js';
 import { TaskDisplay } from '../cli/ui/task-display.js';
+import { MessageQueue } from './message-queue.js';
+import { PersistentInput } from './persistent-input.js';
+import { SplitScreen } from './split-screen.js';
 
 export interface ChatUIConfig {
   showStatusBar: boolean;
   showTaskPanel: boolean;
   updateInterval: number; // ms between status updates
   maxMessageLength: number;
+  useSplitScreen: boolean; // Enable persistent input with split-screen layout
 }
 
 export const DEFAULT_CHAT_UI_CONFIG: ChatUIConfig = {
@@ -18,6 +22,7 @@ export const DEFAULT_CHAT_UI_CONFIG: ChatUIConfig = {
   showTaskPanel: true,
   updateInterval: 1000,
   maxMessageLength: 10000,
+  useSplitScreen: false, // Off by default for backwards compatibility
 };
 
 export class ChatUI {
@@ -28,6 +33,11 @@ export class ChatUI {
   private updateTimer?: NodeJS.Timeout;
   private agent?: CopilotAgent;
   private isActive = false;
+
+  // Split-screen mode components
+  private messageQueue?: MessageQueue;
+  private persistentInput?: PersistentInput;
+  private splitScreen?: SplitScreen;
 
   private static AVAILABLE_COMMANDS = [
     'help',
@@ -53,6 +63,16 @@ export class ChatUI {
     this.input = new Input(ChatUI.AVAILABLE_COMMANDS);
     this.statusBar = new StatusBar();
     this.taskDisplay = new TaskDisplay(6);
+
+    // Initialize split-screen components if enabled
+    if (this.config.useSplitScreen) {
+      this.messageQueue = new MessageQueue();
+      this.persistentInput = new PersistentInput(this.messageQueue, {
+        prompt: chalk.green('You: '),
+      });
+      this.persistentInput.setCommands(ChatUI.AVAILABLE_COMMANDS);
+      this.splitScreen = new SplitScreen(this.messageQueue, this.persistentInput);
+    }
   }
 
   /**
@@ -69,6 +89,11 @@ export class ChatUI {
         this.refreshStatus();
       }, this.config.updateInterval);
     }
+
+    // Initialize split-screen if enabled
+    if (this.config.useSplitScreen && this.splitScreen) {
+      this.splitScreen.initialize();
+    }
   }
 
   /**
@@ -83,6 +108,11 @@ export class ChatUI {
     }
 
     this.statusBar.hide();
+
+    // Shutdown split-screen if active
+    if (this.splitScreen) {
+      this.splitScreen.shutdown();
+    }
   }
 
   /**
@@ -154,18 +184,54 @@ export class ChatUI {
    * Read user input with enhanced editing
    */
   async readInput(): Promise<string> {
-    // Clear any status display before showing input
+    // Split-screen mode: get from message queue
+    if (this.config.useSplitScreen && this.messageQueue) {
+      const message = await this.messageQueue.dequeue();
+      return message.content;
+    }
+
+    // Traditional mode: blocking input
     const prompt = chalk.green('You: ');
     return await this.input.read(prompt);
+  }
+
+  /**
+   * Check if there are queued messages (split-screen mode only)
+   */
+  hasQueuedMessages(): boolean {
+    if (!this.messageQueue) return false;
+    return !this.messageQueue.isEmpty();
+  }
+
+  /**
+   * Get next queued message without blocking (split-screen mode only)
+   */
+  pollQueuedMessage(): string | undefined {
+    if (!this.messageQueue) return undefined;
+    const message = this.messageQueue.poll();
+    return message?.content;
+  }
+
+  /**
+   * Get message queue (for advanced usage)
+   */
+  getMessageQueue(): MessageQueue | undefined {
+    return this.messageQueue;
   }
 
   /**
    * Show a message from the assistant
    */
   showAssistantMessage(message: string): void {
-    console.log(chalk.cyan('Assistant:'));
-    console.log(message);
-    console.log();
+    const output = chalk.cyan('Assistant:') + '\n' + message + '\n';
+
+    if (this.splitScreen) {
+      this.splitScreen.writeOutput(output);
+    } else {
+      console.log(chalk.cyan('Assistant:'));
+      console.log(message);
+      console.log();
+    }
   }
 
   /**
@@ -340,5 +406,30 @@ export class ChatUI {
    */
   clearInputHistory(): void {
     this.input.clearHistory();
+  }
+
+  /**
+   * Write output to either console or split-screen
+   */
+  private writeOutput(content: string): void {
+    if (this.splitScreen) {
+      this.splitScreen.writeOutput(content);
+    } else {
+      console.log(content);
+    }
+  }
+
+  /**
+   * Get split-screen instance (for advanced usage)
+   */
+  getSplitScreen(): SplitScreen | undefined {
+    return this.splitScreen;
+  }
+
+  /**
+   * Check if using split-screen mode
+   */
+  isSplitScreenMode(): boolean {
+    return this.config.useSplitScreen;
   }
 }

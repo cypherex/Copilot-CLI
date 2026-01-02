@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(node dist/cli/index.js:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
