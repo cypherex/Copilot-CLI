@@ -6,6 +6,8 @@ import type {
   SessionGoal,
   Task,
   TaskStatus,
+  TrackingItem,
+  TrackingItemStatus,
   WorkingState,
   ActiveFile,
   FileSection,
@@ -18,6 +20,7 @@ import type {
 export interface SessionMemoryData {
   goals: SessionGoal[];
   tasks: Task[];
+  trackingItems: TrackingItem[];
   workingState: WorkingState;
   archive: ArchiveEntry[];
   retrievalHistory: RetrievalResult[];
@@ -27,6 +30,7 @@ export class SessionMemoryStore {
   private goals: Map<string, SessionGoal> = new Map();
   private rootGoalId?: string;
   private tasks: Map<string, Task> = new Map();
+  private trackingItems: Map<string, TrackingItem> = new Map();
   private workingState: WorkingState;
   private archiveEntries: ArchiveEntry[] = [];
   private retrievalHistory: RetrievalResult[] = [];
@@ -53,6 +57,7 @@ export class SessionMemoryStore {
     return {
       goals: Array.from(this.goals.values()),
       tasks: Array.from(this.tasks.values()),
+      trackingItems: Array.from(this.trackingItems.values()),
       workingState: this.workingState,
       archive: this.archiveEntries,
       retrievalHistory: this.retrievalHistory,
@@ -63,6 +68,7 @@ export class SessionMemoryStore {
   import(data: SessionMemoryData): void {
     this.goals.clear();
     this.tasks.clear();
+    this.trackingItems.clear();
     this.rootGoalId = undefined;
 
     for (const goal of data.goals) {
@@ -74,6 +80,10 @@ export class SessionMemoryStore {
 
     for (const task of data.tasks) {
       this.tasks.set(task.id, task);
+    }
+
+    for (const item of data.trackingItems || []) {
+      this.trackingItems.set(item.id, item);
     }
 
     this.workingState = data.workingState;
@@ -192,6 +202,49 @@ export class SessionMemoryStore {
         this.workingState.currentTask = undefined;
       }
     }
+  }
+
+  // Tracking items
+  getTrackingItems(status?: TrackingItemStatus): TrackingItem[] {
+    const items = Array.from(this.trackingItems.values());
+    if (status) {
+      return items.filter(item => item.status === status);
+    }
+    return items.sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
+  }
+
+  addTrackingItem(item: Omit<TrackingItem, 'id' | 'detectedAt'>): TrackingItem {
+    const full: TrackingItem = {
+      ...item,
+      id: this.generateId('tracking'),
+      detectedAt: new Date(),
+    };
+    this.trackingItems.set(full.id, full);
+    return full;
+  }
+
+  updateTrackingItem(id: string, updates: Partial<TrackingItem>): void {
+    const existing = this.trackingItems.get(id);
+    if (existing) {
+      const updated = {
+        ...existing,
+        ...updates,
+      };
+
+      // Auto-set timestamps based on status changes
+      if (updates.status === 'under-review' && !updated.movedToReviewAt) {
+        updated.movedToReviewAt = new Date();
+      }
+      if (updates.status === 'closed' && !updated.closedAt) {
+        updated.closedAt = new Date();
+      }
+
+      this.trackingItems.set(id, updated);
+    }
+  }
+
+  deleteTrackingItem(id: string): void {
+    this.trackingItems.delete(id);
   }
 
   // Working state

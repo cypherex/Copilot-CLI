@@ -36,6 +36,7 @@ export class AgenticLoop {
   private incompleteWorkDetector?: IncompleteWorkDetector;
   private fileRelationshipTracker?: FileRelationshipTracker;
   private workContinuityManager?: WorkContinuityManager;
+  private memoryStore?: MemoryStore;
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
@@ -43,6 +44,9 @@ export class AgenticLoop {
   private consecutiveIdenticalDetections = 0;
   private lastDetectionHash = '';
   private readonly LOOP_BREAKER_THRESHOLD = 3;
+
+  // Track if we just asked LLM to review tracking items (to avoid re-parsing the review response)
+  private justAskedToReviewTrackingItems = false;
 
   constructor(
     private llmClient: LLMClient,
@@ -71,7 +75,7 @@ export class AgenticLoop {
   }
 
   setMemoryStore(memoryStore: MemoryStore): void {
-    // For task bar updates
+    this.memoryStore = memoryStore;
   }
 
   setProactiveContextMonitor(monitor: ProactiveContextMonitor): void {
@@ -397,16 +401,37 @@ export class AgenticLoop {
 
           // Detect incomplete work - if LLM says it's done but left things undone
           if (this.incompleteWorkDetector && response.content) {
-            const isToolFree = this.incompleteWorkDetector.isToolFreeResponse({
-              role: 'assistant',
-              content: response.content,
-              toolCalls: response.toolCalls || []
-            });
-            const hasTrackingItems = (this.completionTracker?.getIncomplete().length || 0) > 0;
-            const detection = this.incompleteWorkDetector.analyze(
-              response.content,
-              hasTrackingItems
-            );
+            // Skip detection if we just asked LLM to review tracking items
+            // (prevents re-parsing the LLM's explanation as new tracking items)
+            if (this.justAskedToReviewTrackingItems) {
+              // Only reset flag when review is complete:
+              // 1. All tracking items are closed, OR
+              // 2. LLM made tool-free response (finished using tracking item tools)
+              const openItems = this.memoryStore?.getTrackingItems('open') || [];
+              const isStillWorkingOnReview = response.toolCalls?.some(tc =>
+                ['list_tracking_items', 'review_tracking_item', 'close_tracking_item'].includes(tc.function.name)
+              );
+
+              if (openItems.length === 0 || (!isStillWorkingOnReview && !response.toolCalls?.length)) {
+                console.log(chalk.dim('⏭️  Tracking item review complete - resuming detection\n'));
+                this.justAskedToReviewTrackingItems = false;
+              } else {
+                console.log(chalk.dim('⏭️  Skipping detection - LLM is still reviewing tracking items\n'));
+              }
+              // Continue with normal flow (don't re-detect while flag is true)
+            } else {
+              const isToolFree = this.incompleteWorkDetector.isToolFreeResponse({
+                role: 'assistant',
+                content: response.content,
+                toolCalls: response.toolCalls || []
+              });
+              // Check for open tracking items in memory
+              const openTrackingItems = this.memoryStore?.getTrackingItems('open') || [];
+              const hasTrackingItems = openTrackingItems.length > 0;
+              const detection = this.incompleteWorkDetector.analyze(
+                response.content,
+                hasTrackingItems
+              );
 
             // AUTO-PROCEED: When agent asks permission for task-authorized action
             if (detection.askingPermission && detection.permissionAlreadyGranted && detection.currentTask) {
@@ -446,11 +471,31 @@ export class AgenticLoop {
                 console.log(consolePrompt);
               }
 
-              // Generate LLM-friendly message and ask to review
-              const llmMessage = this.incompleteWorkDetector.generateLLMMessage(detection);
-              const reviewPrompt = `${llmMessage}\n\nPlease review the items above and determine which ones are actually relevant and should be added to the task list. Use the task management tools to add only the relevant items. Skip any items that are:\n- Already completed\n- Duplicates of existing tasks\n- Not actually needed\n- Outside the current scope\n\nExplain your reasoning briefly for which items you're adding or skipping.`;
+              // Generate LLM-friendly message and ask to review using tracking item tools
+              const reviewPrompt = `⚠️ You said the work is complete, but there are pending tracking items that need review.
 
-              console.log(chalk.green.bold('🤖 Asking LLM to review and filter tracking items\n'));
+Use list_tracking_items to see all open items, then for each item:
+
+1. **READ FILES FIRST** - Use read_file to examine relevant files
+2. **Move to review** - Call review_tracking_item with:
+   - item_id: the tracking item ID
+   - files_to_verify: paths of files you READ (required!)
+   - initial_assessment: your assessment after reading
+
+3. **Make decision**:
+   - If INCOMPLETE: Call create_task to add to task list, then close_tracking_item with reason='added-to-tasks' and the new task_id
+   - If COMPLETE: Call close_tracking_item with reason='completed' and file evidence
+   - If NOT NEEDED: Call close_tracking_item with reason='duplicate'/'not-needed'/'out-of-scope' and explanation
+
+CRITICAL: You MUST read actual files to verify completion - no guessing! The review_tracking_item tool enforces this by requiring file paths.
+
+Start by calling list_tracking_items with status='open' to see what needs review.`;
+
+              console.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+
+              // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
+              this.justAskedToReviewTrackingItems = true;
+
               this.conversation.addUserMessage(reviewPrompt);
               continueLoop = true;
               continue;
@@ -458,21 +503,51 @@ export class AgenticLoop {
 
             // Case 2: LLM mentions remaining/incomplete work (post-response check)
             if (detection.remainingPhrases.length > 0 || detection.trackingItems.length > 0) {
+              // Store detected items in memory as 'open' tracking items
+              if (detection.trackingItems.length > 0) {
+                this.incompleteWorkDetector.storeDetectedItems(
+                  detection.trackingItems,
+                  response.content || 'LLM response'
+                );
+                console.log(chalk.cyan(`📋 Stored ${detection.trackingItems.length} tracking items in memory\n`));
+              }
+
               // Show formatted warning to user
               const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
               if (consolePrompt) {
                 console.log(consolePrompt);
               }
 
-              // Generate LLM-friendly message and ask to review
-              const llmMessage = this.incompleteWorkDetector.generateLLMMessage(detection);
-              const reviewPrompt = `${llmMessage}\n\nPlease review the tracking items above and determine which ones should be added to the task list. Use the task management tools to add only the relevant items. Skip any items that are:\n- Already completed\n- Duplicates of existing tasks\n- Not actually needed\n- Just informational notes\n\nExplain briefly which items you're adding and why you're skipping others (if any).`;
+              // Generate LLM-friendly message and ask to review using tracking item tools
+              const reviewPrompt = `⚠️ You mentioned incomplete or remaining work. These items have been added as tracking items.
 
-              console.log(chalk.green.bold('🤖 Asking LLM to review and filter tracking items\n'));
+Use list_tracking_items with status='open' to see all items that need review, then for each:
+
+1. **READ FILES FIRST** - Use read_file to examine relevant files and verify status
+2. **Move to review** - Call review_tracking_item with:
+   - item_id: the tracking item ID
+   - files_to_verify: paths of files you READ (required - no guessing!)
+   - initial_assessment: your findings after reading the files
+
+3. **Make decision based on file evidence**:
+   - If INCOMPLETE: Call create_task to add to task list, then close_tracking_item with reason='added-to-tasks' and the task_id
+   - If COMPLETE: Call close_tracking_item with reason='completed' and cite specific file evidence
+   - If DUPLICATE/NOT-NEEDED: Call close_tracking_item with appropriate reason and explanation
+
+CRITICAL: The review_tracking_item tool REQUIRES file paths - you must read actual files to verify, not guess!
+
+Start with list_tracking_items to see what needs review.`;
+
+              console.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+
+              // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
+              this.justAskedToReviewTrackingItems = true;
+
               this.conversation.addUserMessage(reviewPrompt);
               continueLoop = true;
               continue;
             }
+            } // End of detection else block
           }
 
           // Track retrieval usefulness if we had retrievals

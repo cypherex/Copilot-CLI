@@ -185,6 +185,22 @@ export class IncompleteWorkDetector {
   }
 
   /**
+   * Store detected tracking items in memory (called after analysis)
+   */
+  storeDetectedItems(items: TrackingItem[], extractedFrom: string): void {
+    if (!this.memoryStore) return;
+
+    for (const item of items) {
+      this.memoryStore.addTrackingItem({
+        description: item.description,
+        status: 'open',
+        priority: (item.priority || 'medium') as any,
+        extractedFrom,
+      });
+    }
+  }
+
+  /**
    * Analyze a message for incomplete work
    */
   analyze(message: string, hasTrackingItemsInMemory: boolean = false): DetectionResult {

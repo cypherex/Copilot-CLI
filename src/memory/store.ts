@@ -91,6 +91,23 @@ export class LocalMemoryStore implements MemoryStore {
     return this.sessionStore.updateTask(id, updates);
   }
 
+  // Tracking items (session-scoped)
+  getTrackingItems(status?: any) {
+    return this.sessionStore.getTrackingItems(status);
+  }
+
+  addTrackingItem(item: any) {
+    return this.sessionStore.addTrackingItem(item);
+  }
+
+  updateTrackingItem(id: string, updates: any) {
+    return this.sessionStore.updateTrackingItem(id, updates);
+  }
+
+  deleteTrackingItem(id: string) {
+    return this.sessionStore.deleteTrackingItem(id);
+  }
+
   // Working state (session-scoped)
   getWorkingState() {
     return this.sessionStore.getWorkingState();

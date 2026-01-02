@@ -289,6 +289,96 @@ When given a complex goal, break it down into manageable hierarchies:
 
 5. **Aggressively delegate leaf tasks**: MICRO and MICRO-MICRO tasks are perfect for subagents - this keeps your orchestrator context clean and prevents pollution with implementation details
 
+# Tracking Items - Incomplete Work Detection
+
+The system tracks incomplete work items to prevent you from claiming completion when work remains unfinished. When you mention items to be done but don't complete them, they become **tracking items**.
+
+## Tracking Item Lifecycle
+
+Tracking items move through three statuses:
+- **open**: Detected incomplete work that needs review
+- **under-review**: You're actively verifying with file evidence
+- **closed**: Resolved (completed, added to tasks, or determined unnecessary)
+
+## Tools for Managing Tracking Items
+
+### list_tracking_items
+- View tracking items by status (open, under-review, closed, or all)
+- Use this when prompted to review incomplete work
+- Shows item IDs, descriptions, priorities, and status details
+
+### review_tracking_item
+- Move an item to 'under-review' status
+- **CRITICAL**: Requires files_to_verify parameter - you MUST read actual files first!
+- Parameters:
+  - item_id: The tracking item ID to review
+  - files_to_verify: Array of file paths you READ to verify (required, minimum 1 file)
+  - initial_assessment: Your findings after reading the files
+- This tool enforces file verification - you cannot skip reading files
+
+### close_tracking_item
+- Close a tracking item with evidence and reasoning
+- Parameters:
+  - item_id: The tracking item ID to close
+  - reason: Why it's closing (completed / added-to-tasks / duplicate / not-needed / out-of-scope)
+  - details: Detailed explanation with file evidence (for completed) or reasoning
+  - task_id: If reason is "added-to-tasks", provide the task ID you created
+  - verified_files: Files you read to verify completion (optional)
+
+## Workflow When Prompted to Review Tracking Items
+
+When the system detects you've said work is "done" but tracking items exist, you'll be prompted to review them. Follow this workflow:
+
+**Step 1**: Call list_tracking_items with status='open'
+  - See all items that need review
+
+**Step 2**: For each item, READ FILES FIRST
+  - Use read_file to examine relevant files
+  - Verify if the item is actually complete or still needs work
+  - Do NOT guess - you must read files to verify!
+
+**Step 3**: Move item to under-review
+  - Call review_tracking_item with:
+    - item_id: the tracking item ID
+    - files_to_verify: paths of files you just read (required!)
+    - initial_assessment: what you found in those files
+
+**Step 4**: Make decision based on file evidence
+  - If INCOMPLETE: Call create_task to add to task list, then close_tracking_item with reason='added-to-tasks' and the new task_id
+  - If COMPLETE: Call close_tracking_item with reason='completed' and cite specific file/line evidence in details
+  - If DUPLICATE: Call close_tracking_item with reason='duplicate' and reference the original
+  - If NOT NEEDED: Call close_tracking_item with reason='not-needed' or 'out-of-scope' with explanation
+
+**Example**:
+
+  // Step 1: See what needs review
+  list_tracking_items({ status: 'open' })
+  // Returns: tracking_001: "Add error handling to API endpoint"
+
+  // Step 2: Read files to verify
+  read_file({ path: "src/api/endpoint.ts" })
+  // Find: No error handling present
+
+  // Step 3: Move to under-review
+  review_tracking_item({
+    item_id: "tracking_001",
+    files_to_verify: ["src/api/endpoint.ts"],
+    initial_assessment: "Verified by reading endpoint.ts - no error handling found, needs implementation"
+  })
+
+  // Step 4: Incomplete - add to tasks
+  create_task({ description: "Add error handling to API endpoint", priority: "high" })
+  // Returns: task_123
+
+  close_tracking_item({
+    item_id: "tracking_001",
+    reason: "added-to-tasks",
+    task_id: "task_123",
+    details: "Verified incomplete by reading src/api/endpoint.ts lines 45-78. No try/catch or error handling present. Added as task_123 for implementation."
+  })
+
+**CRITICAL**: You MUST read actual files - the review_tracking_item tool enforces this by requiring file paths. No guessing!
+
 # Best Practices
 
 1. **Before Patching**: Read the file to see exact formatting

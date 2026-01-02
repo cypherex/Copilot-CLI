@@ -103,6 +103,33 @@ export interface Task {
   shouldHaveSpawnedSubagent?: boolean; // Retrospective flag
 }
 
+// Tracking items - incomplete work items detected in LLM responses
+export type TrackingItemStatus = 'open' | 'under-review' | 'closed';
+
+export interface TrackingItem {
+  id: string;
+  description: string;
+  status: TrackingItemStatus;
+  priority: MemoryPriority;
+
+  // Context
+  extractedFrom: string; // Which message it was extracted from
+  detectedAt: Date;
+
+  // Review tracking
+  movedToReviewAt?: Date; // When it was moved to 'under-review'
+  verificationNotes?: string; // LLM's notes when verifying (file paths read, reasoning)
+
+  // Closure
+  closedAt?: Date;
+  closureReason?: 'completed' | 'added-to-tasks' | 'duplicate' | 'not-needed' | 'out-of-scope';
+  closureDetails?: string; // Explanation for why it was closed
+
+  // Related items
+  relatedTaskId?: string; // If added to task list
+  relatedFiles?: string[]; // Files that were read to verify this item
+}
+
 // Working state - current focus
 export interface WorkingState {
   activeFiles: ActiveFile[];
@@ -333,6 +360,12 @@ export interface MemoryStore {
   getActiveTask(): Task | undefined;
   addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Task;
   updateTask(id: string, updates: Partial<Task>): void;
+
+  // Tracking items (incomplete work detection)
+  getTrackingItems(status?: TrackingItemStatus): TrackingItem[];
+  addTrackingItem(item: Omit<TrackingItem, 'id' | 'detectedAt'>): TrackingItem;
+  updateTrackingItem(id: string, updates: Partial<TrackingItem>): void;
+  deleteTrackingItem(id: string): void;
 
   // Working state
   getWorkingState(): WorkingState;

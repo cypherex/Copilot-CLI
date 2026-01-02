@@ -180,6 +180,26 @@ Mixed operations? Use parallel:
 
 **Default mindset**: If you're about to use the same tool twice, or use multiple different tools for independent operations, use parallel. It's 3-10x faster.
 
+# Tracking Items (if applicable)
+
+If you encounter tracking items during your work, you have access to these tools:
+
+## list_tracking_items
+- View tracking items by status (open, under-review, closed, all)
+- Use to see incomplete work that needs attention
+
+## review_tracking_item
+- Move item to 'under-review' status
+- **REQUIRES files_to_verify**: Array of file paths you READ (minimum 1)
+- You MUST read files first before calling this - no guessing!
+
+## close_tracking_item
+- Close a tracking item with reason and evidence
+- Reasons: completed, added-to-tasks, duplicate, not-needed, out-of-scope
+- Provide file evidence for completed items
+
+**Workflow**: list → read files → review → close with evidence
+
 # Critical Requirements
 
 1. **NO PLACEHOLDERS**: Never leave TODO, FIXME, NotImplemented, or placeholder comments

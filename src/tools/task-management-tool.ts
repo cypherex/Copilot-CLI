@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
-import type { MemoryStore, Task } from '../memory/types.js';
+import type { MemoryStore, Task, TrackingItem } from '../memory/types.js';
 
 // Schema for create_task
 const CreateTaskSchema = z.object({
@@ -544,6 +544,315 @@ Example:
     lines.push(`  - Use set_current_task to start working on a subtask`);
     lines.push(`  - Use list_subtasks to view the breakdown`);
     lines.push(`  - Delegate subtasks to subagents for parallel work`);
+
+    return lines.join('\n');
+  }
+}
+
+// ========== TRACKING ITEM TOOLS ==========
+
+// Schema for review_tracking_item
+const ReviewTrackingItemSchema = z.object({
+  item_id: z.string().describe('The ID of the tracking item to review'),
+  files_to_verify: z.array(z.string()).min(1).describe('File paths that will be read to verify if this item is complete. REQUIRED: You must read these files to verify completion, not just guess.'),
+  initial_assessment: z.string().optional().describe('Your initial assessment after reading the files'),
+});
+
+// Schema for close_tracking_item
+const CloseTrackingItemSchema = z.object({
+  item_id: z.string().describe('The ID of the tracking item to close'),
+  reason: z.enum(['completed', 'added-to-tasks', 'duplicate', 'not-needed', 'out-of-scope']).describe('Why this item is being closed'),
+  details: z.string().describe('Explanation for closure. If completed, explain what files/evidence prove it. If duplicate, reference the original. If not-needed, explain why.'),
+  task_id: z.string().optional().describe('If reason is "added-to-tasks", the task ID that was created'),
+  verified_files: z.array(z.string()).optional().describe('Files that were read to verify completion (if applicable)'),
+});
+
+// Schema for list_tracking_items
+const ListTrackingItemsSchema = z.object({
+  status: z.enum(['all', 'open', 'under-review', 'closed']).optional().default('all').describe('Filter by status'),
+});
+
+export class ReviewTrackingItemTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'review_tracking_item',
+    description: `Move a tracking item to 'under-review' status and specify which files will be read to verify completion.
+
+CRITICAL: This tool REQUIRES you to:
+1. Read the specified files BEFORE calling this tool (use read_file)
+2. Provide file paths that contain evidence of completion or incompletion
+3. Give an honest assessment based on actual file contents, not guesses
+
+Use this when:
+- You're about to verify if a tracking item is actually complete
+- You need to examine files to determine item status
+
+This enforces verification-by-reading to prevent lazy "guessing" about completion.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        item_id: {
+          type: 'string',
+          description: 'The tracking item ID to review',
+        },
+        files_to_verify: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'File paths you READ to verify completion (REQUIRED - must read files first!)',
+        },
+        initial_assessment: {
+          type: 'string',
+          description: 'Your assessment after reading the files',
+        },
+      },
+      required: ['item_id', 'files_to_verify'],
+    },
+  };
+
+  protected readonly schema = ReviewTrackingItemSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof ReviewTrackingItemSchema>): Promise<string> {
+    const { item_id, files_to_verify, initial_assessment } = args;
+
+    const item = this.memoryStore.getTrackingItems().find(i => i.id === item_id);
+    if (!item) {
+      throw new Error(`Tracking item not found: ${item_id}`);
+    }
+
+    if (item.status === 'closed') {
+      throw new Error(`Item already closed: ${item.description}`);
+    }
+
+    // Warn if suspiciously few files specified
+    if (files_to_verify.length === 0) {
+      throw new Error(`You must specify at least one file in files_to_verify. Read the relevant files FIRST using read_file, then provide their paths here.`);
+    }
+
+    // Move to under-review
+    this.memoryStore.updateTrackingItem(item_id, {
+      status: 'under-review',
+      relatedFiles: files_to_verify,
+      verificationNotes: initial_assessment,
+    });
+
+    const lines = [
+      `Moved tracking item to 'under-review':`,
+      ``,
+      `Item: ${item.description}`,
+      `Priority: ${item.priority}`,
+      ``,
+      `Files verified: ${files_to_verify.join(', ')}`,
+    ];
+
+    if (initial_assessment) {
+      lines.push(``);
+      lines.push(`Assessment: ${initial_assessment}`);
+    }
+
+    lines.push(``);
+    lines.push(`⚠️  REMINDER: You should have called read_file on these paths BEFORE this tool.`);
+    lines.push(`   File verification is on the honor system - provide accurate evidence!`);
+    lines.push(``);
+    lines.push(`Next steps:`);
+    lines.push(`  - If complete: call close_tracking_item with reason='completed' and cite specific file evidence`);
+    lines.push(`  - If incomplete: call create_task to add to task list, then close_tracking_item with reason='added-to-tasks'`);
+    lines.push(`  - If not needed: call close_tracking_item with appropriate reason`);
+
+    return lines.join('\n');
+  }
+}
+
+export class CloseTrackingItemTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'close_tracking_item',
+    description: `Close a tracking item with a specific reason.
+
+Use this when:
+- Item is verified complete (with file evidence)
+- Item was added to task list (provide task_id)
+- Item is duplicate, not needed, or out of scope
+
+IMPORTANT: Provide detailed explanation in 'details' field. For completed items, reference specific files/lines that prove completion.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        item_id: {
+          type: 'string',
+          description: 'The tracking item ID to close',
+        },
+        reason: {
+          type: 'string',
+          enum: ['completed', 'added-to-tasks', 'duplicate', 'not-needed', 'out-of-scope'],
+          description: 'Why this item is being closed',
+        },
+        details: {
+          type: 'string',
+          description: 'Detailed explanation with file evidence (for completed) or reasoning',
+        },
+        task_id: {
+          type: 'string',
+          description: 'Task ID if reason is "added-to-tasks"',
+        },
+        verified_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Files read to verify completion',
+        },
+      },
+      required: ['item_id', 'reason', 'details'],
+    },
+  };
+
+  protected readonly schema = CloseTrackingItemSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof CloseTrackingItemSchema>): Promise<string> {
+    const { item_id, reason, details, task_id, verified_files } = args;
+
+    const item = this.memoryStore.getTrackingItems().find(i => i.id === item_id);
+    if (!item) {
+      throw new Error(`Tracking item not found: ${item_id}`);
+    }
+
+    if (item.status === 'closed') {
+      return `Item already closed: ${item.description}`;
+    }
+
+    // Validate task_id if reason is added-to-tasks
+    if (reason === 'added-to-tasks' && !task_id) {
+      throw new Error(`Must provide task_id when reason is 'added-to-tasks'`);
+    }
+
+    if (reason === 'added-to-tasks' && task_id) {
+      const task = this.memoryStore.getTasks().find(t => t.id === task_id);
+      if (!task) {
+        throw new Error(`Task not found: ${task_id}`);
+      }
+    }
+
+    // Close the item
+    this.memoryStore.updateTrackingItem(item_id, {
+      status: 'closed',
+      closureReason: reason,
+      closureDetails: details,
+      relatedTaskId: task_id,
+      relatedFiles: verified_files || item.relatedFiles,
+    });
+
+    const lines = [
+      `Closed tracking item:`,
+      ``,
+      `Item: ${item.description}`,
+      `Reason: ${reason}`,
+      `Details: ${details}`,
+    ];
+
+    if (task_id) {
+      lines.push(`Related task: ${task_id}`);
+    }
+
+    if (verified_files && verified_files.length > 0) {
+      lines.push(``);
+      lines.push(`Evidence from files: ${verified_files.join(', ')}`);
+    }
+
+    return lines.join('\n');
+  }
+}
+
+export class ListTrackingItemsTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'list_tracking_items',
+    description: `List tracking items by status.
+
+Tracking items are incomplete work items detected in your responses:
+- open: Detected but not yet reviewed
+- under-review: Currently being verified for completion
+- closed: Verified complete or resolved
+
+Use this to:
+- See what incomplete work is being tracked
+- Review items that need attention
+- Check progress on addressing detected issues`,
+    parameters: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['all', 'open', 'under-review', 'closed'],
+          description: 'Filter by status (default: all)',
+        },
+      },
+    },
+  };
+
+  protected readonly schema = ListTrackingItemsSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof ListTrackingItemsSchema>): Promise<string> {
+    const { status = 'all' } = args;
+
+    const items = status === 'all'
+      ? this.memoryStore.getTrackingItems()
+      : this.memoryStore.getTrackingItems(status as any);
+
+    if (items.length === 0) {
+      return `No tracking items found${status !== 'all' ? ` with status '${status}'` : ''}.`;
+    }
+
+    const lines = [
+      `Tracking Items${status !== 'all' ? ` (${status})` : ''}:`,
+      ``,
+    ];
+
+    // Group by status
+    const byStatus = {
+      open: items.filter(i => i.status === 'open'),
+      'under-review': items.filter(i => i.status === 'under-review'),
+      closed: items.filter(i => i.status === 'closed'),
+    };
+
+    for (const [statusKey, statusItems] of Object.entries(byStatus)) {
+      if (statusItems.length === 0) continue;
+
+      lines.push(`${statusKey.toUpperCase()} (${statusItems.length}):`);
+
+      for (const item of statusItems) {
+        lines.push(`  ${item.id}: ${item.description}`);
+        lines.push(`    Priority: ${item.priority} | Detected: ${item.detectedAt.toISOString()}`);
+
+        if (item.status === 'under-review' && item.movedToReviewAt) {
+          lines.push(`    Under review since: ${item.movedToReviewAt.toISOString()}`);
+          if (item.relatedFiles && item.relatedFiles.length > 0) {
+            lines.push(`    Files being verified: ${item.relatedFiles.join(', ')}`);
+          }
+        }
+
+        if (item.status === 'closed') {
+          lines.push(`    Closed: ${item.closureReason} - ${item.closureDetails}`);
+          if (item.relatedTaskId) {
+            lines.push(`    Related task: ${item.relatedTaskId}`);
+          }
+        }
+
+        lines.push(``);
+      }
+    }
 
     return lines.join('\n');
   }
