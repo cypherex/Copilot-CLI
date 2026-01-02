@@ -1,0 +1,26 @@
+[package]
+name = "task-queue-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+task-queue-core = { path = "../task-queue-core" }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["codec"] }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+bincode = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+tower = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+async-trait = { workspace = true }
+base64 = "0.21"
+serde_json = { workspace = true }

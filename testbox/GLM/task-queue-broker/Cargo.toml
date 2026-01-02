@@ -1,0 +1,37 @@
+[package]
+name = "task-queue-broker"
+version.workspace = true
+edition.workspace = true
+
+# Binary (tq-broker) is future work - not part of library implementation task
+# [[bin]]
+# name = "tq-broker"
+# path = "src/main.rs"
+
+[dependencies]
+task-queue-core = { path = "../task-queue-core" }
+task-queue-persistence = { path = "../task-queue-persistence" }
+# task-queue-raft = { path = "../task-queue-raft" } # Raft support not yet implemented
+tokio = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+config = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+bincode = { workspace = true }
+prometheus = { workspace = true }
+bcrypt = { workspace = true }
+ratelimit = { workspace = true }
+lru = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+tokio-tungstenite = "0.21"

@@ -1,0 +1,44 @@
+# Task Queue Configuration
+# This is the default configuration file for all components
+
+broker:
+  host: "0.0.0.0"
+  port: 6379
+  max_connections: 1000
+  queue_depth_threshold: 100000
+
+persistence:
+  data_dir: "./data"
+  wal_sync_interval_ms: 100
+  completed_task_retention_days: 7
+
+raft:
+  enabled: true
+  node_id: "node1"
+  peers:
+    - "node2:6379"
+    - "node3:6379"
+  election_timeout_ms: 1000
+  heartbeat_interval_ms: 300
+
+api:
+  rest_port: 8080
+  grpc_port: 9090
+  enable_tls: false
+  tls_cert_path: null
+  tls_key_path: null
+
+auth:
+  enabled: true
+  api_keys:
+    - key_hash: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYqQqhXyF0d2"
+      permissions: ["admin"]
+
+monitoring:
+  prometheus_port: 9091
+  log_level: "info"
+
+worker:
+  concurrency: 4
+  heartbeat_interval_secs: 15
+  graceful_shutdown_timeout_secs: 60

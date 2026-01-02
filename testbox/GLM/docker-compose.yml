@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  broker1:
+    build: .
+    command: cargo run --bin tq-broker -- --config config-node1.yaml
+    ports:
+      - "6379:6379"  # Broker port
+      - "8080:8080"  # REST API
+      - "9090:9090"  # gRPC API
+      - "9091:9091"  # Prometheus metrics
+    volumes:
+      - ./data/broker1:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+
+  broker2:
+    build: .
+    command: cargo run --bin tq-broker -- --config config-node2.yaml
+    ports:
+      - "6380:6379"
+      - "8081:8080"
+      - "9092:9090"
+      - "9093:9091"
+    volumes:
+      - ./data/broker2:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+    depends_on:
+      - broker1
+
+  broker3:
+    build: .
+    command: cargo run --bin tq-broker -- --config config-node3.yaml
+    ports:
+      - "6381:6379"
+      - "8082:8080"
+      - "9094:9090"
+      - "9095:9091"
+    volumes:
+      - ./data/broker3:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+    depends_on:
+      - broker1
+      - broker2
+
+  worker1:
+    build: .
+    command: cargo run --bin tq-worker -- --broker broker1:6379 --concurrency 4
+    volumes:
+      - ./data/worker1:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+    depends_on:
+      - broker1
+      - broker2
+      - broker3
+    restart: unless-stopped
+
+  worker2:
+    build: .
+    command: cargo run --bin tq-worker -- --broker broker2:6379 --concurrency 4
+    volumes:
+      - ./data/worker2:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+    depends_on:
+      - broker1
+      - broker2
+      - broker3
+    restart: unless-stopped
+
+  worker3:
+    build: .
+    command: cargo run --bin tq-worker -- --broker broker3:6379 --concurrency 4
+    volumes:
+      - ./data/worker3:/data
+    environment:
+      - RUST_LOG=info
+    networks:
+      - task-queue-network
+    depends_on:
+      - broker1
+      - broker2
+      - broker3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9096:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - task-queue-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana-datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - task-queue-network
+
+networks:
+  task-queue-network:
+    driver: bridge

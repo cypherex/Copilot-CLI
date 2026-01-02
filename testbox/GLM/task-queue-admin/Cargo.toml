@@ -1,0 +1,25 @@
+[package]
+name = "task-queue-admin"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tq-admin"
+path = "src/main.rs"
+
+[dependencies]
+task-queue-core = { path = "../task-queue-core" }
+task-queue-client = { path = "../task-queue-client" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+comfy-table = "7.1"
+base64 = "0.21"
+serde_yaml = "0.9"
