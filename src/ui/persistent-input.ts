@@ -297,10 +297,15 @@ export class PersistentInput extends EventEmitter {
     // Render prompt and input
     process.stdout.write(this.config.prompt + this.currentInput);
 
-    // Move cursor to correct position
+    // Move cursor to correct position using absolute positioning
+    // This is more reliable than relative movement (\x1b[${col}C)
     const promptLength = this.stripAnsi(this.config.prompt).length;
     const targetColumn = promptLength + this.cursorPosition;
-    process.stdout.write('\r\x1b[' + targetColumn + 'C');
+    // Use \r to return to column 0, then move to target column
+    process.stdout.write('\r');
+    if (targetColumn > 0) {
+      process.stdout.write('\x1b[' + targetColumn + 'C');
+    }
   }
 
   /**

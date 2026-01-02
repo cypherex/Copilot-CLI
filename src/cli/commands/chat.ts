@@ -316,6 +316,7 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
   let pauseReason = '';
 
   // Initialize UI with persistent bottom bar - taskbar and input always visible
+  // Note: The input prompt is handled by BottomBar, not by Input class
   const ui = new ChatUI({
     showStatusBar: true,
     showTaskPanel: true,

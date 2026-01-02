@@ -3,7 +3,7 @@
 import chalk from 'chalk';
 import { log } from '../utils/index.js';
 import type { CopilotAgent } from '../agent/index.js';
-import { Input } from './input.js';
+import { Input } from './input-fixed.js';
 import { StatusBar, getStatusInfo, type StatusInfo } from './status-bar.js';
 import { TaskDisplay } from '../cli/ui/task-display.js';
 import { MessageQueue } from './message-queue.js';
@@ -95,6 +95,7 @@ export class ChatUI {
         height: 3,
         showSeparator: true,
         updateInterval: this.config.updateInterval,
+        showPrompt: true, // Show prompt in bottom bar
       });
       this.outputManager = new OutputManager(this.bottomBar);
     }
@@ -255,6 +256,14 @@ export class ChatUI {
     if (this.config.useSplitScreen && this.messageQueue) {
       const message = await this.messageQueue.dequeue();
       return message.content;
+    }
+
+    // Persistent bottom bar mode: set up render callback
+    if (this.config.usePersistentBottomBar && this.bottomBar) {
+      // Set up render callback to update bottom bar
+      this.input.setRenderCallback((text, cursor) => {
+        this.bottomBar?.updateInput(text, cursor);
+      });
     }
 
     // Traditional mode: blocking input

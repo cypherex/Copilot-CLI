@@ -12,6 +12,7 @@ export interface BottomBarConfig {
   updateInterval: number; // ms between status updates
   enableTaskBar: boolean;
   enableInput: boolean;
+  showPrompt: boolean; // Whether to show the input prompt text
 }
 
 export const DEFAULT_BOTTOM_BAR_CONFIG: BottomBarConfig = {
@@ -21,6 +22,7 @@ export const DEFAULT_BOTTOM_BAR_CONFIG: BottomBarConfig = {
   updateInterval: 5000,
   enableTaskBar: true,
   enableInput: true,
+  showPrompt: true,
 };
 
 export interface BottomBarState {
@@ -134,11 +136,40 @@ export class BottomBar {
   }
 
   /**
+   * Clear the input line
+   */
+  clearInput(): void {
+    this.state.currentInput = '';
+    this.state.cursorPosition = 0;
+    this.renderInputLine();
+  }
+
+  /**
    * Update prompt string
    */
   updatePrompt(prompt: string): void {
     this.state.inputPrompt = prompt;
     this.renderInputLine();
+  }
+
+  /**
+   * Show the input prompt
+   */
+  showPrompt(): void {
+    if (!this.config.showPrompt) {
+      this.config.showPrompt = true;
+      this.renderInputLine();
+    }
+  }
+
+  /**
+   * Hide the input prompt
+   */
+  hidePrompt(): void {
+    if (this.config.showPrompt) {
+      this.config.showPrompt = false;
+      this.renderInputLine();
+    }
   }
 
   /**
@@ -236,9 +267,14 @@ export class BottomBar {
     this.moveCursor(this.inputRow, 0);
     process.stdout.write('\x1b[2K'); // Clear line
 
-    // Render prompt and input
-    const promptLength = this.stripAnsi(this.state.inputPrompt).length;
-    process.stdout.write(this.state.inputPrompt + this.state.currentInput);
+    // Render prompt (if enabled) and input
+    let promptLength = 0;
+    if (this.config.showPrompt) {
+      promptLength = this.stripAnsi(this.state.inputPrompt).length;
+      process.stdout.write(this.state.inputPrompt);
+    }
+
+    process.stdout.write(this.state.currentInput);
 
     // Move cursor to correct position
     const targetColumn = promptLength + this.state.cursorPosition;
