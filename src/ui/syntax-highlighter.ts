@@ -252,51 +252,66 @@ export class CodeBlockDetector {
    */
   parse(chunk: string): Array<{ type: 'text' | 'code'; content: string; language?: string }> {
     const blocks: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
-    const lines = chunk.split('\n');
 
-    let currentText = '';
+    // Check for code block markers only at line boundaries
+    if (chunk.includes('```')) {
+      // Has potential code block markers - process line by line
+      const lines = chunk.split('\n');
+      let currentText = '';
 
-    for (const line of lines) {
-      // Check for code block markers
-      const codeBlockMatch = line.match(/^```(\w+)?/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isLastLine = i === lines.length - 1;
+        const lineWithNewline = isLastLine ? line : line + '\n';
 
-      if (codeBlockMatch) {
-        // Flush any accumulated text
-        if (currentText) {
-          blocks.push({ type: 'text', content: currentText });
-          currentText = '';
-        }
+        // Check for code block markers
+        const codeBlockMatch = line.match(/^```(\w+)?/);
 
-        if (!this.inCodeBlock) {
-          // Starting a code block
-          this.inCodeBlock = true;
-          this.currentLanguage = codeBlockMatch[1] || 'text';
-          this.currentBlockContent = '';
+        if (codeBlockMatch) {
+          // Flush any accumulated text
+          if (currentText) {
+            blocks.push({ type: 'text', content: currentText });
+            currentText = '';
+          }
+
+          if (!this.inCodeBlock) {
+            // Starting a code block
+            this.inCodeBlock = true;
+            this.currentLanguage = codeBlockMatch[1] || 'text';
+            this.currentBlockContent = '';
+          } else {
+            // Ending a code block
+            blocks.push({
+              type: 'code',
+              content: this.currentBlockContent,
+              language: this.currentLanguage,
+            });
+            this.inCodeBlock = false;
+            this.currentLanguage = '';
+            this.currentBlockContent = '';
+          }
         } else {
-          // Ending a code block
-          blocks.push({
-            type: 'code',
-            content: this.currentBlockContent,
-            language: this.currentLanguage,
-          });
-          this.inCodeBlock = false;
-          this.currentLanguage = '';
-          this.currentBlockContent = '';
-        }
-      } else {
-        if (this.inCodeBlock) {
-          // Inside code block
-          this.currentBlockContent += line + '\n';
-        } else {
-          // Regular text
-          currentText += line + '\n';
+          if (this.inCodeBlock) {
+            // Inside code block
+            this.currentBlockContent += lineWithNewline;
+          } else {
+            // Regular text
+            currentText += lineWithNewline;
+          }
         }
       }
-    }
 
-    // Flush remaining content
-    if (currentText) {
-      blocks.push({ type: 'text', content: currentText });
+      // Flush remaining content
+      if (currentText) {
+        blocks.push({ type: 'text', content: currentText });
+      }
+    } else {
+      // No code blocks - return chunk as-is (preserves streaming without adding newlines)
+      if (this.inCodeBlock) {
+        this.currentBlockContent += chunk;
+      } else {
+        blocks.push({ type: 'text', content: chunk });
+      }
     }
 
     return blocks;

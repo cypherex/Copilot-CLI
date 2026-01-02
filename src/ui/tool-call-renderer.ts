@@ -23,8 +23,8 @@ export interface ToolResultDisplay {
  * Renderer for tool calls and results in Claude Code style
  */
 export class ToolCallRenderer {
-  private maxParamLength = 2000; // Show much more than the current 50 chars
-  private maxOutputLength = 10000; // Show much more than the current 500 chars
+  private maxParamLength = 50; // Show much more than the current 50 chars
+  private maxOutputLength = 100; // Show much more than the current 500 chars
 
   /**
    * Render a tool call in XML-style block format
