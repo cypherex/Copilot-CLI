@@ -8,6 +8,7 @@
 //
 // Non-mandatory opportunities are presented as suggestions that the agent may consider.
 
+import chalk from 'chalk';
 import { uiState } from '../ui/ui-state.js';
 import type { LLMClient, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
@@ -167,8 +168,13 @@ export class AgenticLoop {
       });
     }
 
-    // Add user message to conversation
+    // Add user message to conversation and UI
     this.conversation.addUserMessage(messageToProcess);
+    uiState.addMessage({
+      role: 'user',
+      content: messageToProcess,
+      timestamp: Date.now(),
+    });
 
     // Check context usage proactively and warn if approaching limits
     if (this.proactiveContextMonitor) {
@@ -232,6 +238,16 @@ export class AgenticLoop {
 
       const tools = this.toolRegistry.getDefinitions();
       uiState.setAgentStatus('thinking', 'Processing...');
+
+      // Show thinking indicator in conversation
+      if (iteration === 1) {
+        uiState.addMessage({
+          role: 'system',
+          content: chalk.dim('🤔 Processing your request...'),
+          timestamp: Date.now(),
+        });
+      }
+
       const accumulator = new StreamAccumulator();
       const startTime = Date.now();
       let hasStartedStreaming = false;
@@ -735,6 +751,14 @@ Start with list_tracking_items to see what needs review.`;
       });
       uiState.setAgentStatus('executing', `Running ${toolName}...`);
 
+      // Show tool execution in conversation
+      const argsPreview = toolArgs ? JSON.stringify(toolArgs).substring(0, 100) : '';
+      uiState.addMessage({
+        role: 'system',
+        content: chalk.dim(`⚙️  Executing: ${toolName}${argsPreview ? `(${argsPreview}${argsPreview.length >= 100 ? '...' : ''})` : ''}`),
+        timestamp: Date.now(),
+      });
+
       let result: { success: boolean; output?: string; error?: string };
       const startTime = Date.now();
 
@@ -747,6 +771,22 @@ Start with list_tracking_items to see what needs review.`;
 
         if (result.success) {
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
+
+          // Show tool output if there is any
+          if (result.output && result.output.trim()) {
+            uiState.addMessage({
+              role: 'tool',
+              content: result.output,
+              timestamp: Date.now(),
+            });
+          }
+
+          // Show success message in conversation
+          uiState.addMessage({
+            role: 'system',
+            content: chalk.dim(`✓ Completed: ${toolName} (${duration}ms)`),
+            timestamp: Date.now(),
+          });
 
           // Track file reads in memory
           if (toolName === 'read_file' && toolArgs.path) {

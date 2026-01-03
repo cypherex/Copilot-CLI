@@ -44,6 +44,25 @@ export class ManagedChatUI {
   private historyIndex = -1;
   private inputResolve?: (value: string) => void;
 
+  // Available commands for autocomplete
+  private static readonly AVAILABLE_COMMANDS = [
+    'help',
+    'clear',
+    'exit',
+    'quit',
+    'paste',
+    'editor',
+    'context',
+    'memory',
+    'debt',
+    'tasks',
+    'plugins',
+    'sessions',
+    'new-session',
+    'resume',
+    'ralph-loop',
+  ];
+
   constructor(config: Partial<ManagedChatUIConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
@@ -482,6 +501,12 @@ export class ManagedChatUI {
       return;
     }
 
+    // Tab - autocomplete
+    if (char === '\t') {
+      this.handleAutocomplete();
+      return;
+    }
+
     // Regular character
     if (char >= ' ') {
       this.inputBuffer =
@@ -493,18 +518,60 @@ export class ManagedChatUI {
     }
   }
 
+  private handleAutocomplete(): void {
+    // Only autocomplete for commands (starting with /)
+    if (!this.inputBuffer.startsWith('/')) return;
+
+    const currentInput = this.inputBuffer.slice(1);
+    const matches = ManagedChatUI.AVAILABLE_COMMANDS.filter(cmd =>
+      cmd.toLowerCase().startsWith(currentInput.toLowerCase())
+    );
+
+    if (matches.length === 1) {
+      // Single match - complete
+      this.inputBuffer = '/' + matches[0];
+      this.inputCursor = this.inputBuffer.length;
+      this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+    } else if (matches.length > 1) {
+      // Multiple matches - use common prefix
+      const commonPrefix = this.getCommonPrefix(matches);
+      if (commonPrefix.length > currentInput.length) {
+        this.inputBuffer = '/' + commonPrefix;
+        this.inputCursor = this.inputBuffer.length;
+        this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+      } else {
+        // Show suggestions
+        this.outputRegion.writeLine(chalk.dim('  ' + matches.join('  ')));
+      }
+    }
+  }
+
+  private getCommonPrefix(strings: string[]): string {
+    if (strings.length === 0) return '';
+    if (strings.length === 1) return strings[0];
+
+    const first = strings[0];
+    let commonLength = first.length;
+
+    for (let i = 1; i < strings.length; i++) {
+      const current = strings[i];
+      let j = 0;
+      while (j < Math.min(commonLength, current.length) &&
+             first[j].toLowerCase() === current[j].toLowerCase()) {
+        j++;
+      }
+      commonLength = j;
+    }
+
+    return first.slice(0, commonLength);
+  }
+
   private finishInput(value: string, cleanupFn: (chunk: string) => void): void {
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }
     process.stdin.removeListener('data', cleanupFn);
     process.stdin.pause();
-
-    // Show the entered message in output
-    if (value) {
-      this.outputRegion.writeLine(chalk.green('You: ') + value);
-      this.outputRegion.writeLine('');
-    }
 
     // Clear input region
     this.inputRegion.clearInput();
