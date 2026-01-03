@@ -29,6 +29,7 @@ export class AskRenderer {
   private lastStreamContent = '';
   private liveMessageContent: Map<string, string> = new Map(); // Track last rendered content for live messages
   private activeSubagents: Set<string> = new Set(); // Track active subagent IDs
+  private lastRenderedSubagentStatus: Map<string, { status: string; result?: string }> = new Map(); // Track what we last rendered
 
   constructor(options: AskRendererOptions = {}) {
     this.options = {
@@ -247,26 +248,59 @@ export class AskRenderer {
 
     if (!subagentState) return;
 
-    // Render full details to subagent log if using LogManager
+    // Always write full details to subagent log if using LogManager
     if (this.options.logManager) {
       const lines = SubagentRenderer.render(state.subagents, subagentId);
       const content = lines.map(line => this.stripAnsi(line)).join('\n') + '\n\n';
       this.options.logManager.writeToSubagent(subagentId, content, subagentState.role).catch(err => {
         console.error('Failed to write to subagent log:', err);
       });
+    }
 
-      // Render summary to main output
-      this.writeLine(this.colorize(`▶ Subagent: ${subagentState.role || 'agent'} (${subagentState.status})`, 'dim'));
-      this.writeLine(this.colorize(`  Task: ${subagentState.task}`, 'dim'));
-      if (subagentState.result) {
-        this.writeLine(this.colorize(`  Result: ${subagentState.result.substring(0, 100)}${subagentState.result.length > 100 ? '...' : ''}`, 'dim'));
-      }
-      if (subagentState.status === 'completed' || subagentState.status === 'failed') {
+    // Check if we need to render a summary to main output
+    const lastRendered = this.lastRenderedSubagentStatus.get(subagentId);
+    const currentStatus = {
+      status: subagentState.status,
+      result: subagentState.result,
+    };
+
+    // Only render summary if:
+    // 1. First time seeing this subagent, OR
+    // 2. Status changed (spawning -> running -> completed), OR
+    // 3. Result appeared/changed
+    const shouldRenderSummary = !lastRendered ||
+      lastRendered.status !== currentStatus.status ||
+      lastRendered.result !== currentStatus.result;
+
+    if (!shouldRenderSummary) {
+      return; // Skip duplicate render
+    }
+
+    // Update tracking
+    this.lastRenderedSubagentStatus.set(subagentId, currentStatus);
+
+    // Render summary to main output or full details if no log manager
+    if (this.options.logManager) {
+      // Only show key state transitions
+      if (subagentState.status === 'spawning') {
+        this.writeLine(this.colorize(`▶ Subagent: ${subagentState.role || 'agent'} started`, 'dim'));
+        const taskPreview = subagentState.task.split('\n')[0]; // First line only
+        this.writeLine(this.colorize(`  Task: ${taskPreview}${subagentState.task.includes('\n') ? '...' : ''}`, 'dim'));
+        this.writeLine('');
+      } else if (subagentState.status === 'completed' || subagentState.status === 'failed') {
         const duration = subagentState.endTime ? ((subagentState.endTime - subagentState.startTime) / 1000).toFixed(1) : '?';
-        this.writeLine(this.colorize(`  Duration: ${duration}s`, 'dim'));
-        this.writeLine(this.colorize(`  → See ${subagentState.role || 'subagent'}-${subagentId.slice(0, 8)}.log for full output`, 'dim'));
+        const statusSymbol = subagentState.status === 'completed' ? '✓' : '✗';
+        this.writeLine(this.colorize(`${statusSymbol} Subagent: ${subagentState.role || 'agent'} ${subagentState.status} (${duration}s)`, 'dim'));
+        if (subagentState.result) {
+          this.writeLine(this.colorize(`  Result: ${subagentState.result.substring(0, 100)}${subagentState.result.length > 100 ? '...' : ''}`, 'dim'));
+        }
+        if (subagentState.error) {
+          this.writeLine(this.colorize(`  Error: ${subagentState.error}`, 'dim'));
+        }
+        this.writeLine(this.colorize(`  → Full output: session.subagents/${subagentState.role || 'subagent'}-${subagentId.slice(0, 8)}.log`, 'dim'));
+        this.writeLine('');
       }
-      this.writeLine('');
+      // Skip rendering for intermediate statuses like "running" to reduce noise
     } else {
       // No log manager - render full details to main output (backward compatibility)
       const lines = SubagentRenderer.render(state.subagents, subagentId);
