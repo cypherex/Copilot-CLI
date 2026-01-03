@@ -24,6 +24,7 @@ import { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { MemoryStore } from '../memory/types.js';
+import { ErrorHandler, handleError } from '../utils/error-handler.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
@@ -788,10 +789,17 @@ Start with list_tracking_items to see what needs review.`;
           }
         }
       } catch (error) {
-        uiState.setAgentStatus('error', error instanceof Error ? error.message : String(error));
+        uiState.setAgentStatus('error', ErrorHandler.getUserFriendlyMessage(error));
+        
+        // Log full error with stack trace for debugging
+        handleError(error, {
+          context: 'AgenticLoop.iteration',
+          includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+        });
+        
         uiState.addMessage({
           role: 'system',
-          content: 'Error communicating with Copilot: ' + (error instanceof Error ? error.message : String(error)),
+          content: 'Error communicating with Copilot: ' + ErrorHandler.getUserFriendlyMessage(error),
           timestamp: Date.now(),
         });
         continueLoop = false;
@@ -922,6 +930,12 @@ Start with list_tracking_items to see what needs review.`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
 
+        // Log full error with stack trace for debugging
+        handleError(error, {
+          context: `AgenticLoop.toolExecution.${toolName}`,
+          includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+        });
+
         uiState.endToolExecution(undefined, errorMessage);
         uiState.addMessage({
           role: 'tool',
@@ -1002,6 +1016,12 @@ Start with list_tracking_items to see what needs review.`;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Log full error with stack trace for debugging
+      handleError(error, {
+        context: `AgenticLoop.parallelToolExecution.${toolName}`,
+        includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      });
 
       this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
 

@@ -4,6 +4,7 @@
 
 import chalk from 'chalk';
 import { createCLI } from './cli/index.js';
+import { ErrorHandler, handleError } from './utils/error-handler.js';
 
 async function main() {
   try {
@@ -19,12 +20,37 @@ async function main() {
         }
       }
 
-      console.error(chalk.red('Fatal error:'), error.message);
+      // Use ErrorHandler with stack logging
+      handleError(error, {
+        context: 'main',
+        includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      });
     } else {
-      console.error(chalk.red('Fatal error:'), String(error));
+      handleError(error, {
+        context: 'main',
+        includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      });
     }
     process.exit(1);
   }
 }
+
+// Handle unhandled promise rejections globally
+process.on('unhandledRejection', (reason, promise) => {
+  handleError(reason, {
+    context: 'unhandledRejection',
+    includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+  });
+});
+
+// Handle uncaught exceptions globally
+process.on('uncaughtException', (error) => {
+  handleError(error, {
+    context: 'uncaughtException',
+    includeStack: true, // Always show stack for uncaught exceptions
+    exitProcess: true,
+    exitCode: 1,
+  });
+});
 
 main();

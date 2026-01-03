@@ -7,6 +7,7 @@ import { loadConfig } from '../../utils/config.js';
 import { log } from '../../utils/index.js';
 import { AskRenderer } from '../../ui/ask-renderer.js';
 import { LogManager } from '../../ui/log-manager.js';
+import { ErrorHandler, handleError } from '../../utils/error-handler.js';
 
 interface AskOptions {
   directory: string;
@@ -163,14 +164,22 @@ export async function askCommand(
       });
     }
 
+    // Use ErrorHandler with stack logging
+    handleError(error, {
+      context: 'askCommand',
+      includeStack: !isPrintMode, // Show stack in interactive mode
+      silent: options.json, // Don't log to stderr in JSON mode
+    });
+
     if (options.json) {
       log.info(JSON.stringify({
         success: false,
         input,
-        error: error instanceof Error ? error.message : String(error),
+        error: ErrorHandler.getUserFriendlyMessage(error),
+        stack: process.env.NODE_ENV === 'development' || process.env.DEBUG
+          ? ErrorHandler.getStackTrace(error)
+          : undefined,
       }, null, 2));
-    } else {
-      log.error(error instanceof Error ? error.message : String(error));
     }
 
     process.exit(1);

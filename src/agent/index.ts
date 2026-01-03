@@ -17,6 +17,7 @@ import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
 import { SpawnValidator } from '../validators/spawn-validator.js';
 import { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
+import { ErrorHandler, handleError } from '../utils/error-handler.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
@@ -169,7 +170,15 @@ export class CopilotAgent {
   }
 
   async chat(userMessage: string): Promise<void> {
-    await this.loop.processUserMessage(userMessage);
+    try {
+      await this.loop.processUserMessage(userMessage);
+    } catch (error) {
+      handleError(error, {
+        context: "CopilotAgent.chat",
+        includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      });
+      throw error;
+    }
   }
 
   clearConversation(): void {

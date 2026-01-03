@@ -7,6 +7,7 @@ import { loadConfig } from '../../utils/config.js';
 import { SessionManager } from '../../session/index.js';
 import { ManagedChatUI } from '../../ui/managed-chat-ui.js';
 import { getRenderManager } from '../../ui/render-manager.js';
+import { ErrorHandler, handleError } from '../../utils/error-handler.js';
 
 const AVAILABLE_COMMANDS = [
   'help',
@@ -385,18 +386,38 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
         } catch (error) {
           ui.clearSpinner();
           const hint = getErrorHint(error);
-          ui.showError(error instanceof Error ? error.message : String(error), hint);
+          ui.showError(ErrorHandler.getUserFriendlyMessage(error), hint);
+          
+          // Log full error with stack trace for debugging
+          handleError(error, {
+            context: 'chatCommand.loop',
+            includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+          });
         }
       }
     } catch (loopError) {
       const hint = getErrorHint(loopError);
-      ui.showError(loopError instanceof Error ? loopError.message : String(loopError), hint);
+      ui.showError(ErrorHandler.getUserFriendlyMessage(loopError), hint);
+      
+      // Log full error with stack trace for debugging
+      handleError(loopError, {
+        context: 'chatCommand.mainLoop',
+        includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      });
     }
   } catch (error) {
     ui.spinnerFail('Failed to initialize agent');
-    ui.showError(error instanceof Error ? error.message : String(error));
+    ui.showError(ErrorHandler.getUserFriendlyMessage(error));
+    
+    // Log full error with stack trace for debugging
+    handleError(error, {
+      context: 'chatCommand.init',
+      includeStack: (process.env.NODE_ENV === 'development' || !!process.env.DEBUG),
+      exitProcess: true,
+      exitCode: 1,
+    });
+    
     ui.shutdown();
-    process.exit(1);
   }
 }
 
