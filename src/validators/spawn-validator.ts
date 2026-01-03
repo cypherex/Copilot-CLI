@@ -422,23 +422,30 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
       lines.push('');
     }
 
-    lines.push('Next Steps:');
-    lines.push('  1. Create a task for the overall work using create_task');
-    lines.push('  2. Use break_down_task to decompose it into subtasks');
-    lines.push('  3. Spawn subagents for individual subtasks (they will have parent_task_id)');
+    lines.push('REQUIRED ACTION:');
+    lines.push('  You MUST respond with tool calls ONLY - no text explanations.');
     lines.push('');
-    lines.push('Example:');
-    lines.push('  const parentTask = await create_task({ description: "' + task + '" });');
-    lines.push('  await break_down_task({');
-    lines.push('    task_id: parentTask.id,');
-    lines.push('    subtasks: [');
-    for (let i = 0; i < Math.min(3, breakdownDecision.suggestedSubtasks.length); i++) {
-      const isLast = i === Math.min(2, breakdownDecision.suggestedSubtasks.length - 1);
-      lines.push(`      { description: "${breakdownDecision.suggestedSubtasks[i]}" }${isLast ? '' : ','}`);
+    lines.push('Step 1: Call create_task tool with schema:');
+    lines.push('  {');
+    lines.push('    "description": "' + task + '",');
+    lines.push('    "priority": "high" | "medium" | "low" (optional)');
+    lines.push('  }');
+    lines.push('');
+    lines.push('Step 2: Call break_down_task tool with the task_id from step 1:');
+    lines.push('  {');
+    lines.push('    "task_id": "<id from create_task result>",');
+    lines.push('    "subtasks": [');
+    for (let i = 0; i < Math.min(breakdownDecision.suggestedSubtasks.length, 7); i++) {
+      const comma = i < Math.min(breakdownDecision.suggestedSubtasks.length, 7) - 1 ? ',' : '';
+      lines.push(`      { "description": "${breakdownDecision.suggestedSubtasks[i]}" }${comma}`);
+    }
+    if (breakdownDecision.suggestedSubtasks.length > 7) {
+      lines.push('      ... (include all suggested subtasks)');
     }
     lines.push('    ]');
-    lines.push('  });');
-    lines.push('  // Then spawn subagents for each subtask with parent_task_id set');
+    lines.push('  }');
+    lines.push('');
+    lines.push('IMPORTANT: Respond with ONLY these two tool calls. Do NOT include explanatory text.');
 
     return lines.join('\n');
   }

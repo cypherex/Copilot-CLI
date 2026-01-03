@@ -453,6 +453,15 @@ export class AgenticLoop {
         } else {
           this.conversation.addAssistantMessage(response.content || '');
 
+          // Log assistant message to UI/session (important for troubleshooting)
+          if (response.content) {
+            uiState.addMessage({
+              role: 'assistant',
+              content: response.content,
+              timestamp: Date.now(),
+            });
+          }
+
           // Check if we need compression before ending the loop
           const contextManager = this.conversation.getContextManager();
           contextManager.updateUsage(this.conversation.getMessages());
@@ -483,6 +492,29 @@ export class AgenticLoop {
 
               this.conversation.addUserMessage(
                 `You have ${activeAgents.length} background subagent(s) still running. You must call wait_agent for each one to get their results before finishing. Active agent IDs: ${activeAgents.join(', ')}`
+              );
+
+              continueLoop = true;
+              continue; // Go to next iteration
+            }
+          }
+
+          // Check for open tasks BEFORE ending loop
+          if (this.memoryStore) {
+            const allTasks = this.memoryStore.getTasks();
+            const openTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'abandoned');
+            if (openTasks.length > 0) {
+              // Agent tried to finish but has open tasks!
+              const taskList = openTasks.map(t => `- [${t.status}] ${t.description}`).join('\n');
+
+              uiState.addMessage({
+                role: 'system',
+                content: `⚠️  Cannot finish: ${openTasks.length} open task(s) remaining`,
+                timestamp: Date.now(),
+              });
+
+              this.conversation.addUserMessage(
+                `You cannot finish yet. There are ${openTasks.length} open tasks that need to be completed:\n\n${taskList}\n\nPlease continue working on these tasks. Use update_task_status to mark them as completed when done, or blocked if you encounter issues.`
               );
 
               continueLoop = true;
