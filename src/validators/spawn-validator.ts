@@ -423,7 +423,7 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
     }
 
     lines.push('REQUIRED ACTION:');
-    lines.push('  You MUST respond with tool calls ONLY - no text explanations.');
+    lines.push('  You MUST respond with structured schema - no text explanations.');
     lines.push('');
     lines.push('Step 1: Call create_task tool with schema:');
     lines.push('  {');
@@ -445,7 +445,7 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
     lines.push('    ]');
     lines.push('  }');
     lines.push('');
-    lines.push('IMPORTANT: Respond with ONLY these two tool calls. Do NOT include explanatory text.');
+    lines.push('IMPORTANT: Respond with ONLY with structured schema. Do NOT include explanatory text.');
 
     return lines.join('\n');
   }

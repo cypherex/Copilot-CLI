@@ -225,6 +225,7 @@ When given a complex goal, break it down into manageable hierarchies:
 
 ### create_task
 - Create top-level (MACRO) tasks from the user's goal
+- Do not create a monolithic task for the entire thing, unless it's encredibly simple
 - Can optionally use parent_id to create subtasks
 
 ### break_down_task
