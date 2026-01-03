@@ -138,7 +138,7 @@ export interface WorkingState {
   editHistory: EditRecord[];
   lastUpdated: Date;
   lastContextSummary?: string;
-  summaryScope?: 'current_task' | 'recent_messages' | 'all_transcript' | 'files';
+  summaryScope?: 'current_task' | 'recent_messages' | 'all_transcript' | 'files' | 'pre-subagent';
   summaryTimestamp?: Date;
   lastSubagentMerge?: {
     summary: string;

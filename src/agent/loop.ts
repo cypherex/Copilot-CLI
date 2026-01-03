@@ -8,9 +8,7 @@
 //
 // Non-mandatory opportunities are presented as suggestions that the agent may consider.
 
-import chalk from 'chalk';
-import ora from 'ora';
-import { log } from '../utils/index.js';
+import { uiState } from '../ui/ui-state.js';
 import type { LLMClient, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
 import type { ConversationManager } from './conversation.js';
@@ -20,31 +18,27 @@ import { CompletionTracker } from '../audit/index.js';
 import { detectSubagentOpportunity, buildSubagentHint } from './subagent-detector.js';
 import { getRole } from './subagent-roles.js';
 import { PlanningValidator, buildSubagentReminder, buildParallelExecutionReminder } from './planning-validator.js';
-import { TaskBarRenderer } from '../ui/task-bar.js';
 import { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { MemoryStore } from '../memory/types.js';
-import { ToolCallRenderer } from '../ui/tool-call-renderer.js';
-import { errorFormatter } from '../ui/error-formatter.js';
-import { BOX_CHARS } from '../ui/box-drawer.js';
-import type { ChatUI } from '../ui/chat-ui.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
   private planningValidator?: PlanningValidator;
-  private taskBarRenderer?: TaskBarRenderer;
   private proactiveContextMonitor?: ProactiveContextMonitor;
   private incompleteWorkDetector?: IncompleteWorkDetector;
   private fileRelationshipTracker?: FileRelationshipTracker;
   private workContinuityManager?: WorkContinuityManager;
   private memoryStore?: MemoryStore;
-  private chatUI?: ChatUI;
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
+
+  // Message queue for handling user messages during processing
+  private queuedMessages: string[] = [];
 
   // Loop breaker state - prevents infinite validation loops
   private consecutiveIdenticalDetections = 0;
@@ -76,10 +70,6 @@ export class AgenticLoop {
     this.planningValidator = validator;
   }
 
-  setTaskBarRenderer(renderer: TaskBarRenderer): void {
-    this.taskBarRenderer = renderer;
-  }
-
   setMemoryStore(memoryStore: MemoryStore): void {
     this.memoryStore = memoryStore;
   }
@@ -100,8 +90,18 @@ export class AgenticLoop {
     this.workContinuityManager = manager;
   }
 
-  setChatUI(chatUI: ChatUI): void {
-    this.chatUI = chatUI;
+  /**
+   * Queue a message to be processed during the next iteration
+   */
+  queueMessage(message: string): void {
+    this.queuedMessages.push(message);
+  }
+
+  /**
+   * Check if there are queued messages
+   */
+  hasQueuedMessages(): boolean {
+    return this.queuedMessages.length > 0;
   }
 
   async processUserMessage(userMessage: string): Promise<void> {
@@ -120,7 +120,11 @@ export class AgenticLoop {
         userMessage,
       });
       if (!promptResult.continue) {
-        log.log(chalk.yellow('Message processing cancelled by hook.'));
+        uiState.addMessage({
+          role: 'system',
+          content: 'Message processing cancelled by hook.',
+          timestamp: Date.now(),
+        });
         return;
       }
       if (promptResult.modifiedMessage) {
@@ -133,62 +137,38 @@ export class AgenticLoop {
     if (this.currentSubagentOpportunity && this.currentSubagentOpportunity.shouldSpawn) {
       const opportunity = this.currentSubagentOpportunity;
       const isMandatory = opportunity.mandatory === true;
-      
+
       // Get role name if roleId exists
       const roleName = opportunity.roleId ? getRole(opportunity.roleId)?.name : 'General Subagent';
-      
+
+      // Send subagent opportunity as system message - UI region will format it
+      const lines: string[] = [];
       if (isMandatory) {
-        // MANDATORY delegation - use warning style with different color
-        log.log(chalk.yellow.bold('\n⚠️ [WARNING] MANDATORY DELEGATION'));
-        log.log(chalk.yellow('   ' + roleName));
-        log.log(chalk.yellow('   ' + opportunity.reason));
-        log.log(chalk.yellow('   Priority: ' + opportunity.priority));
+        lines.push('[MANDATORY DELEGATION]');
+        lines.push(`Role: ${roleName}`);
+        lines.push(`Reason: ${opportunity.reason}`);
+        lines.push(`Priority: ${opportunity.priority}`);
         if (opportunity.taskCount && opportunity.taskCount > 1) {
-          log.log(chalk.yellow('   Detected Tasks: ' + opportunity.taskCount));
+          lines.push(`Detected Tasks: ${opportunity.taskCount}`);
         }
-        log.log(chalk.yellow('   ⚠️ YOU MUST delegate this task to a subagent'));
+        lines.push('YOU MUST delegate this task to a subagent');
       } else {
-        // Suggestion mode - use gray color
-        log.log(chalk.gray('\n💡 Suggestion: ' + roleName));
-        log.log(chalk.gray('   ' + opportunity.reason));
-        log.log(chalk.gray('   Priority: ' + opportunity.priority));
+        lines.push(`[Suggestion] ${roleName}`);
+        lines.push(`Reason: ${opportunity.reason}`);
+        lines.push(`Priority: ${opportunity.priority}`);
         if (opportunity.taskCount && opportunity.taskCount > 1) {
-          log.log(chalk.gray('   Detected Tasks: ' + opportunity.taskCount));
+          lines.push(`Detected Tasks: ${opportunity.taskCount}`);
         }
       }
+      uiState.addMessage({
+        role: 'system',
+        content: lines.join('\n'),
+        timestamp: Date.now(),
+      });
     }
 
-    // Validate planning before proceeding
-    if (this.planningValidator) {
-      // Detect if this is a read-only operation (query) vs write operation (task)
-      const isReadOnly = this.planningValidator.isReadOnlyOperation(messageToProcess);
-      const validation = this.planningValidator.validate(!isReadOnly); // Skip requirements for read-only
-
-      if (!validation.canProceed) {
-        this.planningValidator.displayValidation(validation);
-
-        // Add validation result to conversation for context, but DON'T block the agent
-        // The agent needs to be able to respond to CREATE tasks
-        const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
-        this.conversation.addUserMessage(messageToProcess + '\n\n' + validationMessage);
-        // Don't return early - let the agent respond and create tasks!
-      } else if (validation.suggestions && validation.suggestions.length > 0) {
-        // Validation passed but has suggestions (e.g., complex task should be broken down)
-        // Inject suggestions so LLM is aware
-        const suggestionsMessage = `[Planning Suggestions]\n${validation.suggestions.join('\n')}`;
-        this.conversation.addUserMessage(messageToProcess + '\n\n' + suggestionsMessage);
-      } else {
-        this.conversation.addUserMessage(messageToProcess);
-      }
-
-      // Inject planning reminders into system message
-      const planningReminders = this.planningValidator.buildPlanningReminders();
-      if (planningReminders) {
-        // We'll inject this before the LLM call
-      }
-    } else {
-      this.conversation.addUserMessage(messageToProcess);
-    }
+    // Add user message to conversation
+    this.conversation.addUserMessage(messageToProcess);
 
     // Check context usage proactively and warn if approaching limits
     if (this.proactiveContextMonitor) {
@@ -207,12 +187,15 @@ export class AgenticLoop {
 
       // Check for queued user messages (split-screen mode)
       // This allows users to send messages while the agent is working
-      if (this.chatUI?.hasQueuedMessages()) {
-        const nextMessage = this.chatUI.pollQueuedMessage();
+      if (this.hasQueuedMessages()) {
+        const nextMessage = this.queuedMessages.shift();
         if (nextMessage) {
-          log.log(chalk.blue('\n📨 New message received while working:\n'));
-          log.log(chalk.green('You: ') + nextMessage);
-          log.newline();
+          // Add the new user message via uiState
+          uiState.addMessage({
+            role: 'user',
+            content: nextMessage,
+            timestamp: Date.now(),
+          });
 
           // Add the new message to conversation
           this.conversation.addUserMessage(nextMessage);
@@ -238,13 +221,17 @@ export class AgenticLoop {
           maxIterations: this.maxIterations ?? Infinity,
         });
         if (!iterationResult.continue) {
-          log.log(chalk.yellow('Iteration cancelled by hook.'));
+          uiState.addMessage({
+            role: 'system',
+            content: 'Iteration cancelled by hook.',
+            timestamp: Date.now(),
+          });
           break;
         }
       }
 
       const tools = this.toolRegistry.getDefinitions();
-      let spinner: ReturnType<typeof ora> | null = ora('Thinking...').start();
+      uiState.setAgentStatus('thinking', 'Processing...');
       const accumulator = new StreamAccumulator();
       const startTime = Date.now();
       let hasStartedStreaming = false;
@@ -330,19 +317,12 @@ export class AgenticLoop {
             // Check if we should start streaming (after 500ms or when we have content)
             const elapsed = Date.now() - startTime;
             if (!hasStartedStreaming && elapsed >= 500) {
-              // Stop spinner and enable streaming
-              spinner?.stop();
-              spinner = null;
+              // Enable streaming output
               accumulator.enableStreaming();
               hasStartedStreaming = true;
             } else if (hasStartedStreaming) {
               // Update streaming display in real-time
               accumulator.updateStreamingDisplay();
-            } else if (!hasToolCalls && spinner) {
-              // Still showing spinner, update preview
-              spinner.text = chalk.gray(
-                currentContent.slice(0, 60) + (currentContent.length > 60 ? '...' : '')
-              );
             }
           }
 
@@ -350,16 +330,7 @@ export class AgenticLoop {
 
           if (chunk.delta.toolCalls) {
             hasToolCalls = true;
-            if (spinner) {
-              spinner.text = 'Executing tools...';
-            }
           }
-        }
-
-        // Stop spinner if still running
-        if (spinner) {
-          spinner.stop();
-          spinner = null;
         }
 
         // Finalize streaming if enabled
@@ -369,18 +340,20 @@ export class AgenticLoop {
 
         const response = accumulator.getResponse();
 
-        // If we didn't stream (tool-only response or very fast), display now
+        // If we didn't stream (tool-only response or very fast), add to messages
         if (response.content && !hasStartedStreaming) {
-          log.log(chalk.cyan('\nAssistant:'));
-          log.info(response.content);
-          log.newline();
-        } else if (!response.content && hasStartedStreaming) {
-          // Ensure proper newline even if no content
-          log.newline();
+          uiState.addMessage({
+            role: 'assistant',
+            content: response.content,
+            timestamp: Date.now(),
+          });
         }
 
-        // Update task bar after response
-        this.updateTaskBar();
+        // Update status back to idle
+        uiState.setAgentStatus('idle');
+
+        // Update tasks from memory store
+        this.syncTasksToUIState();
 
         // Execute assistant:response hook
         if (this.hookRegistry) {
@@ -410,6 +383,30 @@ export class AgenticLoop {
             hadFileModifications = true;
           }
 
+          // Validate planning ONLY when LLM attempts write operations
+          if (this.planningValidator && this.planningValidator.hasWriteOperationTools(response.toolCalls)) {
+            const validation = this.planningValidator.validate(true); // true = write operation
+
+            if (!validation.canProceed) {
+              this.planningValidator.displayValidation(validation);
+
+              // Inject validation message to guide the LLM
+              const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
+              this.conversation.addUserMessage(validationMessage);
+
+              // Continue loop to let LLM respond and create tasks
+              continueLoop = true;
+              continue;
+            } else if (validation.suggestions && validation.suggestions.length > 0) {
+              // Validation passed but has suggestions
+              uiState.addMessage({
+                role: 'system',
+                content: `[Planning Suggestions]\n${validation.suggestions.join('\n')}`,
+                timestamp: Date.now(),
+              });
+            }
+          }
+
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
@@ -423,7 +420,11 @@ export class AgenticLoop {
           if (needsCompression) {
             // Compression will happen, continue loop after compression
             await this.conversation.trimHistory();
-            log.log(chalk.cyan('\n💾 Context compressed - continuing work...\n'));
+            uiState.addMessage({
+              role: 'system',
+              content: 'Context compressed - continuing work...',
+              timestamp: Date.now(),
+            });
             continueLoop = true;
             continue;
           }
@@ -444,11 +445,10 @@ export class AgenticLoop {
               );
 
               if (openItems.length === 0 || (!isStillWorkingOnReview && !response.toolCalls?.length)) {
-                log.log(chalk.dim('⏭️  Tracking item review complete - resuming detection\n'));
+                // Tracking item review complete - resuming detection
                 this.justAskedToReviewTrackingItems = false;
-              } else {
-                log.log(chalk.dim('⏭️  Skipping detection - LLM is still reviewing tracking items\n'));
               }
+              // Silent - no need to log this internal state
               // Continue with normal flow (don't re-detect while flag is true)
             } else {
               const isToolFree = this.incompleteWorkDetector.isToolFreeResponse({
@@ -467,12 +467,22 @@ export class AgenticLoop {
             // AUTO-PROCEED: When agent asks permission for task-authorized action
             if (detection.askingPermission && detection.permissionAlreadyGranted && detection.currentTask) {
               const prompt = this.incompleteWorkDetector.generatePrompt(detection);
-              log.info(prompt);
+              if (prompt) {
+                uiState.addMessage({
+                  role: 'system',
+                  content: prompt,
+                  timestamp: Date.now(),
+                });
+              }
 
               // Inject decision directly into conversation
               const autoDecision = `Your task is "${detection.currentTask}". This already authorizes the action you're asking about. Proceed with the best option that aligns with your task requirements. Do not wait for user confirmation - make the decision autonomously.`;
 
-              log.log(chalk.green.bold('🤖 Auto-injecting decision to proceed\n'));
+              uiState.addMessage({
+                role: 'system',
+                content: 'Auto-injecting decision to proceed',
+                timestamp: Date.now(),
+              });
 
               this.conversation.addUserMessage(autoDecision);
               continueLoop = true;
@@ -485,7 +495,11 @@ export class AgenticLoop {
               this.consecutiveIdenticalDetections++;
               if (this.consecutiveIdenticalDetections >= this.LOOP_BREAKER_THRESHOLD) {
                 // Break the loop - stop asking about the same issue
-                log.log(chalk.yellow('\n⚠️ Loop breaker activated - stopping repeated validation\n'));
+                uiState.addMessage({
+                  role: 'system',
+                  content: 'Loop breaker activated - stopping repeated validation',
+                  timestamp: Date.now(),
+                });
                 continueLoop = false;
                 continue;
               }
@@ -499,11 +513,15 @@ export class AgenticLoop {
               // Show formatted warning to user
               const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
               if (consolePrompt) {
-                log.info(consolePrompt);
+                uiState.addMessage({
+                  role: 'system',
+                  content: consolePrompt,
+                  timestamp: Date.now(),
+                });
               }
 
               // Generate LLM-friendly message and ask to review using tracking item tools
-              const reviewPrompt = `⚠️ You said the work is complete, but there are pending tracking items that need review.
+              const reviewPrompt = `You said the work is complete, but there are pending tracking items that need review.
 
 Use list_tracking_items to see all open items, then for each item:
 
@@ -522,7 +540,11 @@ CRITICAL: You MUST read actual files to verify completion - no guessing! The rev
 
 Start by calling list_tracking_items with status='open' to see what needs review.`;
 
-              log.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+              uiState.addMessage({
+                role: 'system',
+                content: 'Asking LLM to review tracking items with file verification',
+                timestamp: Date.now(),
+              });
 
               // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
               this.justAskedToReviewTrackingItems = true;
@@ -536,21 +558,29 @@ Start by calling list_tracking_items with status='open' to see what needs review
             if (detection.remainingPhrases.length > 0 || detection.trackingItems.length > 0) {
               // Store detected items in memory as 'open' tracking items
               if (detection.trackingItems.length > 0) {
-                this.incompleteWorkDetector.storeDetectedItems(
+                await this.incompleteWorkDetector.storeDetectedItems(
                   detection.trackingItems,
                   response.content || 'LLM response'
                 );
-                log.log(chalk.cyan(`📋 Stored ${detection.trackingItems.length} tracking items in memory\n`));
+                uiState.addMessage({
+                  role: 'system',
+                  content: `Stored ${detection.trackingItems.length} tracking items in memory`,
+                  timestamp: Date.now(),
+                });
               }
 
               // Show formatted warning to user
               const consolePrompt = this.incompleteWorkDetector.generatePrompt(detection);
               if (consolePrompt) {
-                log.info(consolePrompt);
+                uiState.addMessage({
+                  role: 'system',
+                  content: consolePrompt,
+                  timestamp: Date.now(),
+                });
               }
 
               // Generate LLM-friendly message and ask to review using tracking item tools
-              const reviewPrompt = `⚠️ You mentioned incomplete or remaining work. These items have been added as tracking items.
+              const reviewPrompt = `You mentioned incomplete or remaining work. These items have been added as tracking items.
 
 Use list_tracking_items with status='open' to see all items that need review, then for each:
 
@@ -569,7 +599,11 @@ CRITICAL: The review_tracking_item tool REQUIRES file paths - you must read actu
 
 Start with list_tracking_items to see what needs review.`;
 
-              log.log(chalk.green.bold('🤖 Asking LLM to review tracking items with file verification\n'));
+              uiState.addMessage({
+                role: 'system',
+                content: 'Asking LLM to review tracking items with file verification',
+                timestamp: Date.now(),
+              });
 
               // Set flag to skip detection on next response (prevents re-parsing LLM's explanation)
               this.justAskedToReviewTrackingItems = true;
@@ -616,19 +650,31 @@ Start with list_tracking_items to see what needs review.`;
             // Show debt summary if blocking
             const debt = this.completionTracker.getDebt();
             if (debt.shouldBlock) {
-              log.log(chalk.red('\n⛔ Scaffolding debt limit reached. Please complete existing items before adding features.'));
+              uiState.addMessage({
+                role: 'system',
+                content: 'Scaffolding debt limit reached. Please complete existing items before adding features.',
+                timestamp: Date.now(),
+              });
             }
           }
         }
       } catch (error) {
-        spinner?.fail('Error communicating with Copilot');
-        log.error(error instanceof Error ? error.message : String(error));
+        uiState.setAgentStatus('error', error instanceof Error ? error.message : String(error));
+        uiState.addMessage({
+          role: 'system',
+          content: 'Error communicating with Copilot: ' + (error instanceof Error ? error.message : String(error)),
+          timestamp: Date.now(),
+        });
         continueLoop = false;
       }
     }
 
     if (this.maxIterations !== null && iteration >= this.maxIterations) {
-      log.warn('\nWarning: Maximum iteration limit reached');
+      uiState.addMessage({
+        role: 'system',
+        content: 'Warning: Maximum iteration limit reached',
+        timestamp: Date.now(),
+      });
     }
 
     await this.conversation.trimHistory();
@@ -646,11 +692,9 @@ Start with list_tracking_items to see what needs review.`;
   }
 
   /**
-   * Execute tools sequentially with enhanced display
+   * Execute tools sequentially
    */
   private async executeToolsSequential(toolCalls: ToolCall[]): Promise<void> {
-    const toolCallRenderer = new ToolCallRenderer();
-
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
       let toolArgs: Record<string, any>;
@@ -668,7 +712,11 @@ Start with list_tracking_items to see what needs review.`;
           toolArgs,
         });
         if (!preResult.continue) {
-          log.log(chalk.yellow(`Tool execution cancelled by hook: ${toolName}`));
+          uiState.addMessage({
+            role: 'tool',
+            content: `Tool execution cancelled by hook: ${toolName}`,
+            timestamp: Date.now(),
+          });
           this.conversation.addToolResult(toolCall.id, toolName, 'Execution cancelled by hook');
           continue;
         }
@@ -677,17 +725,15 @@ Start with list_tracking_items to see what needs review.`;
         }
       }
 
-      // Render structured tool call
-      const toolCallDisplay = toolCallRenderer.renderToolCall({
+      // Update uiState with tool execution start
+      uiState.startToolExecution({
         id: toolCall.id,
         name: toolName,
         args: toolArgs,
+        status: 'running',
         startTime: Date.now(),
       });
-      log.info(toolCallDisplay);
-
-      // Create spinner for execution
-      const spinner = ora({ indent: 2, text: `Executing ${toolName}...` }).start();
+      uiState.setAgentStatus('executing', `Running ${toolName}...`);
 
       let result: { success: boolean; output?: string; error?: string };
       const startTime = Date.now();
@@ -696,18 +742,8 @@ Start with list_tracking_items to see what needs review.`;
         result = await this.toolRegistry.execute(toolName, toolArgs);
         const duration = Date.now() - startTime;
 
-        spinner.stop();
-
-        // Render structured result
-        const resultDisplay = toolCallRenderer.renderToolResult({
-          id: toolCall.id,
-          name: toolName,
-          success: result.success,
-          output: result.output,
-          error: result.error,
-          duration,
-        });
-        log.info(resultDisplay);
+        // Update uiState with tool result
+        uiState.endToolExecution(result.output, result.error);
 
         if (result.success) {
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
@@ -720,26 +756,22 @@ Start with list_tracking_items to see what needs review.`;
           // Track file edits in memory
           this.trackFileEdit(toolName, toolArgs);
         } else {
-          // Format error with helpful suggestions
-          const formattedError = errorFormatter.formatToolError(
-            toolName,
-            result.error || 'Unknown error',
-            { file: toolArgs.path, args: toolArgs }
-          );
-          log.info(formattedError);
+          uiState.addMessage({
+            role: 'tool',
+            content: `${toolName} error: ${result.error}`,
+            timestamp: Date.now(),
+          });
           this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        spinner.stop();
 
-        // Format error with helpful suggestions
-        const formattedError = errorFormatter.formatToolError(
-          toolName,
-          error instanceof Error ? error : new Error(errorMessage),
-          { file: toolArgs.path, args: toolArgs }
-        );
-        log.info(formattedError);
+        uiState.endToolExecution(undefined, errorMessage);
+        uiState.addMessage({
+          role: 'tool',
+          content: `${toolName} error: ${errorMessage}`,
+          timestamp: Date.now(),
+        });
 
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
         result = { success: false, error: errorMessage };
@@ -754,31 +786,37 @@ Start with list_tracking_items to see what needs review.`;
         });
       }
 
-      // Update task bar after tool execution
-      this.updateTaskBar();
+      // Update tasks from memory store
+      this.syncTasksToUIState();
     }
-
-    log.newline();
   }
 
   /**
-   * Execute tools in parallel with visual grouping
+   * Execute tools in parallel
    */
   private async executeToolsInParallel(toolCalls: ToolCall[]): Promise<void> {
-    log.log(chalk.blue(`\nRunning ${toolCalls.length} operations in parallel:\n`));
+    uiState.addMessage({
+      role: 'system',
+      content: `Running ${toolCalls.length} operations in parallel`,
+      timestamp: Date.now(),
+    });
 
     const results = await Promise.all(
-      toolCalls.map((toolCall, index) => this.executeToolWithBox(toolCall, index, toolCalls.length))
+      toolCalls.map((toolCall) => this.executeSingleToolParallel(toolCall))
     );
 
     const maxDuration = Math.max(...results.map(r => r.duration));
-    log.log(chalk.green(`\nAll operations completed in ${maxDuration}ms\n`));
+    uiState.addMessage({
+      role: 'system',
+      content: `All ${toolCalls.length} operations completed in ${maxDuration}ms`,
+      timestamp: Date.now(),
+    });
   }
 
   /**
-   * Execute a single tool with box-drawing visualization for parallel execution
+   * Execute a single tool for parallel execution
    */
-  private async executeToolWithBox(toolCall: ToolCall, index: number, total: number): Promise<{ duration: number }> {
+  private async executeSingleToolParallel(toolCall: ToolCall): Promise<{ duration: number }> {
     const toolName = toolCall.function.name;
     let toolArgs: Record<string, any>;
 
@@ -788,24 +826,11 @@ Start with list_tracking_items to see what needs review.`;
       toolArgs = {};
     }
 
-    // Determine box character
-    const isLast = index === total - 1;
-    const connector = isLast ? BOX_CHARS.bottomLeft : BOX_CHARS.verticalRight;
-
-    // Display tool call with box drawing
-    const prefix = connector + BOX_CHARS.horizontal + ' ';
-    log.log(chalk.dim(prefix) + chalk.cyan(`[${toolName}]`) + ' ' + chalk.gray(JSON.stringify(toolArgs).slice(0, 60)));
-
     const startTime = Date.now();
 
     try {
       const result = await this.toolRegistry.execute(toolName, toolArgs);
       const duration = Date.now() - startTime;
-
-      const statusIcon = result.success ? chalk.green('✓') : chalk.red('✗');
-      const statusMsg = result.success ? `Completed (${duration}ms)` : `Failed (${duration}ms)`;
-
-      log.log(chalk.dim(BOX_CHARS.vertical + '   ') + statusIcon + ' ' + chalk.gray(statusMsg));
 
       if (result.success) {
         this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
@@ -819,7 +844,6 @@ Start with list_tracking_items to see what needs review.`;
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      log.log(chalk.dim(BOX_CHARS.vertical + '   ') + chalk.red('✗') + ' ' + chalk.red(`Error (${duration}ms)`));
       this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
 
       return { duration };
@@ -902,8 +926,8 @@ Start with list_tracking_items to see what needs review.`;
           purpose: 'Modified in session',
         });
       }
-    } catch (error) {
-      log.log(chalk.gray(`[Memory] Failed to track edit: ${error instanceof Error ? error.message : String(error)}`));
+    } catch {
+      // Silent - memory tracking failure is not critical
     }
   }
 
@@ -911,18 +935,24 @@ Start with list_tracking_items to see what needs review.`;
     newItems: { type: string; description: string; file: string }[];
     resolvedItems: { type: string; description: string; file: string }[];
   }): void {
-    log.newline();
+    const lines: string[] = [];
 
     // Show resolved items first (positive feedback)
     for (const item of auditResult.resolvedItems) {
-      log.log(chalk.green(`✓ Resolved: ${item.type} in ${item.file}`));
+      lines.push(`Resolved: ${item.type} in ${item.file}`);
     }
 
     // Show new incomplete items
     for (const item of auditResult.newItems) {
-      const color = item.type === 'obsolete_code' ? chalk.yellow : chalk.gray;
-      const icon = item.type === 'obsolete_code' ? '⚠' : '○';
-      log.log(`${icon} Tracking: ${item.type} in ${item.file}: ${item.description.slice(0, 60)}`, color);
+      lines.push(`Tracking: ${item.type} in ${item.file}: ${item.description.slice(0, 60)}`);
+    }
+
+    if (lines.length > 0) {
+      uiState.addMessage({
+        role: 'system',
+        content: lines.join('\n'),
+        timestamp: Date.now(),
+      });
     }
   }
 
@@ -939,22 +969,31 @@ Start with list_tracking_items to see what needs review.`;
     return this.completionTracker.formatDebtDisplay();
   }
 
-  // Update task bar display
-  private updateTaskBar(): void {
-    if (!this.taskBarRenderer) return;
-
+  // Sync tasks from memory store to uiState
+  private syncTasksToUIState(): void {
     try {
       const memoryStore = this.conversation.getMemoryStore();
       const currentTask = memoryStore.getActiveTask();
       const allTasks = memoryStore.getTasks();
 
-      const taskBar = this.taskBarRenderer.renderCompact(currentTask, allTasks);
-      if (taskBar) {
-        // Use process.stdout.write to avoid newline
-        process.stdout.write('\r' + ' '.repeat(100) + '\r' + taskBar);
-      }
-    } catch (error) {
-      // Silently fail to avoid disrupting the flow
+      // Convert to TaskState format
+      const uiTasks = allTasks.map(t => ({
+        id: t.id,
+        description: t.description,
+        status: t.status as 'pending' | 'in_progress' | 'completed' | 'blocked',
+        priority: t.priority as 'low' | 'medium' | 'high' | undefined,
+      }));
+
+      const uiCurrentTask = currentTask ? {
+        id: currentTask.id,
+        description: currentTask.description,
+        status: currentTask.status as 'pending' | 'in_progress' | 'completed' | 'blocked',
+        priority: currentTask.priority as 'low' | 'medium' | 'high' | undefined,
+      } : null;
+
+      uiState.setTasks(uiCurrentTask, uiTasks);
+    } catch {
+      // Silent - task sync failure is not critical
     }
   }
 

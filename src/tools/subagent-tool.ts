@@ -17,6 +17,7 @@ import {
 import ora from 'ora';
 import chalk from 'chalk';
 import { SubagentRenderer, subagentRendererRegistry } from '../ui/subagent-renderer.js';
+import { uiState } from '../ui/ui-state.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
@@ -142,6 +143,69 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
     const { task, name, role, files, success_criteria, background } = args;
 
     const warnings: string[] = [];
+    let contextSummary: string | undefined;
+
+    // AUTOMATIC CONTEXT MANAGEMENT: Summarize context if conversation is getting long
+    // This prevents context pollution in the main orchestrator when spawning subagents
+    if (this.memoryStore) {
+      const workingState = this.memoryStore.getWorkingState();
+      const tasks = this.memoryStore.getTasks();
+      
+      // Determine if we need to summarize
+      const needsSummary = tasks.length > 10 || workingState.editHistory.length > 10;
+      
+      if (needsSummary) {
+        // Use the summarize_context tool logic directly
+        const goal = this.memoryStore.getGoal();
+        const currentTask = tasks.find((t) => t.status === 'active');
+        const userFacts = this.memoryStore.getUserFacts();
+
+        const lines: string[] = [];
+        lines.push(`[Context Summary - PRE-SUBAGENT]`);
+        lines.push('');
+        
+        if (goal) {
+          lines.push(`🎯 Goal: ${goal.description}`);
+          lines.push('');
+        }
+        
+        if (currentTask) {
+          lines.push(`📋 Current Task: ${currentTask.description}`);
+          lines.push(`   Status: ${currentTask.status} | Priority: ${currentTask.priority}`);
+          lines.push('');
+        }
+        
+        const completed = tasks.filter((t: any) => t.status === 'completed').length;
+        const active = tasks.filter((t: any) => t.status === 'active').length;
+        if (tasks.length > 0) {
+          lines.push(`📊 Task Progress: ${completed}/${tasks.length} completed, ${active} active`);
+          lines.push('');
+        }
+        
+        if (userFacts && userFacts.length > 0) {
+          lines.push(`👤 Key Facts (${userFacts.length}):`);
+          for (const fact of userFacts.slice(0, 3)) {
+            lines.push(`   • ${fact.fact}`);
+          }
+          lines.push('');
+        }
+        
+        contextSummary = lines.join('\n');
+        
+        // Store summary in working state for reference
+        this.memoryStore.updateWorkingState({
+          lastContextSummary: contextSummary,
+          summaryScope: 'pre-subagent',
+          summaryTimestamp: new Date(),
+        });
+        
+        uiState.addMessage({
+          role: 'system',
+          content: '[Auto-Summary] Context summarized for subagent delegation',
+          timestamp: Date.now(),
+        });
+      }
+    }
 
     // Validate task scope - encourage hierarchical breakdown for complex tasks
     if (this.memoryStore) {
@@ -174,7 +238,11 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
               'Proceeding with delegation anyway...',
             ].join('\n');
             warnings.push(warning);
-            console.log(chalk.yellow('\n' + warning + '\n'));
+            uiState.addMessage({
+              role: 'system',
+              content: warning,
+              timestamp: Date.now(),
+            });
           }
         } else {
           // No current task set - suggest creating and breaking down
@@ -187,7 +255,11 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
             'Proceeding with delegation anyway...',
           ].join('\n');
           warnings.push(warning);
-          console.log(chalk.yellow('\n' + warning + '\n'));
+          uiState.addMessage({
+            role: 'system',
+            content: warning,
+            timestamp: Date.now(),
+          });
         }
       }
     }
@@ -252,7 +324,11 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
         }]);
 
         // Show dispatch message
-        console.log(chalk.cyan('\n' + dispatchMessage + '\n'));
+        uiState.addMessage({
+          role: 'system',
+          content: dispatchMessage,
+          timestamp: Date.now(),
+        });
 
         const brief = buildSubagentBrief(focusedTask, this.memoryStore, {
           role: roleConfig,
@@ -269,6 +345,33 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       task: focusedTask,
       systemPrompt,
       maxIterations,
+    });
+
+    // Add subagent to UIState tracking
+    const currentSubagents = uiState.getState().subagents || { active: [], completed: [], showCompleted: false };
+    uiState.update({
+      subagents: {
+        ...currentSubagents,
+        active: [
+          ...currentSubagents.active,
+          {
+            id: agentId,
+            task,
+            role,
+            status: 'spawning',
+            background,
+            startTime: Date.now(),
+          },
+        ],
+      },
+    });
+
+    // Add updatable subagent-status message to conversation
+    uiState.addMessage({
+      role: 'subagent-status',
+      content: '', // Content is rendered from live state
+      timestamp: Date.now(),
+      subagentId: agentId,
     });
 
     // Create renderer for this subagent
@@ -329,6 +432,19 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       return JSON.stringify(response, null, 2);
     }
 
+    // Update status to running
+    const runningSubagents = uiState.getState().subagents;
+    if (runningSubagents) {
+      uiState.update({
+        subagents: {
+          ...runningSubagents,
+          active: runningSubagents.active.map(a =>
+            a.id === agentId ? { ...a, status: 'running' } : a
+          ),
+        },
+      });
+    }
+
     // Wait for completion with guaranteed cleanup
     try {
       const startTime = Date.now();
@@ -343,6 +459,31 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
         });
       } else {
         renderer.renderError(result.error || 'Unknown error');
+      }
+
+      // Update UIState - move from active to completed
+      const completedSubagents = uiState.getState().subagents;
+      if (completedSubagents) {
+        const completedAgent = completedSubagents.active.find(a => a.id === agentId);
+        if (completedAgent) {
+          uiState.update({
+            subagents: {
+              ...completedSubagents,
+              active: completedSubagents.active.filter(a => a.id !== agentId),
+              completed: [
+                ...completedSubagents.completed,
+                {
+                  ...completedAgent,
+                  status: result.success ? 'completed' : 'failed',
+                  endTime: Date.now(),
+                  iterations: result.iterations,
+                  error: result.error,
+                  result: result.output,
+                },
+              ],
+            },
+          });
+        }
       }
 
       const response: any = {
@@ -416,7 +557,11 @@ The merge message will be displayed showing how the subagent's work integrates i
         result: parsedResult,
       }]);
 
-      console.log(chalk.cyan('\n' + mergeMessage + '\n'));
+      uiState.addMessage({
+        role: 'system',
+        content: mergeMessage,
+        timestamp: Date.now(),
+      });
 
       return JSON.stringify({
         status: result.success ? 'completed' : 'failed',
@@ -430,6 +575,31 @@ The merge message will be displayed showing how the subagent's work integrates i
     // Wait for completion
     const result = await this.subAgentManager.wait(agent_id);
 
+    // Update UIState - move from active to completed
+    const completedSubagents = uiState.getState().subagents;
+    if (completedSubagents) {
+      const completedAgent = completedSubagents.active.find(a => a.id === agent_id);
+      if (completedAgent) {
+        uiState.update({
+          subagents: {
+            ...completedSubagents,
+            active: completedSubagents.active.filter(a => a.id !== agent_id),
+            completed: [
+              ...completedSubagents.completed,
+              {
+                ...completedAgent,
+                status: result.success ? 'completed' : 'failed',
+                endTime: Date.now(),
+                iterations: result.iterations,
+                error: result.error,
+                result: result.output,
+              },
+            ],
+          },
+        });
+      }
+    }
+
     // Parse and show merge message
     const parsedResult = parseSubagentResult(result.output || '');
     const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
@@ -437,7 +607,11 @@ The merge message will be displayed showing how the subagent's work integrates i
       result: parsedResult,
     }]);
 
-    console.log(chalk.cyan('\n' + mergeMessage + '\n'));
+    uiState.addMessage({
+      role: 'system',
+      content: mergeMessage,
+      timestamp: Date.now(),
+    });
 
     return JSON.stringify({
       status: result.success ? 'completed' : 'failed',

@@ -1,6 +1,9 @@
 /**
- * Centralized logging utility that properly handles process.stdout rendering
- * This prevents interference with UI components like StatusBar and SubAgentDashboard
+ * Centralized logging utility for debug/file logging
+ *
+ * NOTE: This logger is NOT for UI output. UI components should use
+ * RenderManager directly to manage their own screen regions.
+ * This logger writes to stderr or log files only.
  */
 
 import chalk from 'chalk';
@@ -26,8 +29,8 @@ export const DEFAULT_LOGGER_CONFIG: LoggerConfig = {
 };
 
 /**
- * Thread-safe logger that uses process.stdout.write
- * Prevents interference with TUI rendering
+ * Debug/diagnostic logger that writes to stderr
+ * NOT for UI output - use RenderManager for that
  */
 export class Logger {
   private config: LoggerConfig;
@@ -51,8 +54,8 @@ export class Logger {
   }
 
   /**
-   * Internal write method that uses process.stdout.write
-   * This prevents interference with cursor position management
+   * Internal write method - writes to stderr for debug logging
+   * UI output should go through RenderManager, not this logger
    */
   private write(message: string, level: LogLevel): void {
     if (!this.shouldLog(level)) {
@@ -65,8 +68,8 @@ export class Logger {
 
     const fullMessage = timestamp + message + '\n';
 
-    // Use process.stdout.write instead of console.log to avoid cursor manipulation
-    process.stdout.write(fullMessage);
+    // Write to stderr - keeps debug output separate from UI
+    process.stderr.write(fullMessage);
   }
 
   /**
@@ -122,11 +125,11 @@ export class Logger {
   }
 
   /**
-   * Log a new line (for spacing)
+   * Log a new line (for spacing) - writes to stderr
    */
   newline(): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      process.stdout.write('\n');
+      process.stderr.write('\n');
     }
   }
 
@@ -147,6 +150,7 @@ export const logger = new Logger();
 
 /**
  * Convenience functions for direct import
+ * NOTE: These write to stderr, not stdout. For UI output use RenderManager.
  */
 export const log = {
   debug: (message: string) => logger.debug(message),

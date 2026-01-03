@@ -11,7 +11,6 @@ import { HookRegistry } from '../hooks/registry.js';
 import { PluginRegistry, RalphWiggumPlugin } from '../plugins/index.js';
 import { CompletionTracker } from '../audit/index.js';
 import { PlanningValidator } from './planning-validator.js';
-import { TaskBarRenderer } from '../ui/task-bar.js';
 import { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import { FileRelationshipTracker } from './file-relationship-tracker.js';
@@ -19,7 +18,6 @@ import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
-import type { ChatUI } from '../ui/chat-ui.js';
 
 export class CopilotAgent {
   private authManager: AuthManager | null = null;
@@ -96,15 +94,6 @@ export class CopilotAgent {
     // Initialize planning validator
     const planningValidator = new PlanningValidator(this.conversation.getMemoryStore());
 
-    // Initialize task bar renderer for persistent task display
-    const taskBarRenderer = new TaskBarRenderer({
-      enabled: true,
-      refreshInterval: 2000,
-      showCompleted: true,
-      showBlocked: true,
-      maxTasks: 3,
-    });
-
     // Initialize proactive context monitor for context warnings
     const proactiveContextMonitor = new ProactiveContextMonitor(
       this.conversation,
@@ -116,7 +105,10 @@ export class CopilotAgent {
     );
 
     // Initialize incomplete work detector for catching unfinished tasks
-    const incompleteWorkDetector = new IncompleteWorkDetector(this.conversation.getMemoryStore());
+    const incompleteWorkDetector = new IncompleteWorkDetector(
+      this.conversation.getMemoryStore(),
+      this.llmClient
+    );
 
     // Initialize file relationship tracker for smart file suggestions
     const fileRelationshipTracker = new FileRelationshipTracker();
@@ -146,7 +138,6 @@ export class CopilotAgent {
     this.loop.setHookRegistry(this.hookRegistry);
     this.loop.setCompletionTracker(this.completionTracker);
     this.loop.setPlanningValidator(planningValidator);
-    this.loop.setTaskBarRenderer(taskBarRenderer);
     this.loop.setProactiveContextMonitor(proactiveContextMonitor);
     this.loop.setIncompleteWorkDetector(incompleteWorkDetector);
     this.loop.setFileRelationshipTracker(fileRelationshipTracker);
@@ -181,10 +172,6 @@ export class CopilotAgent {
     await this.hookRegistry.execute('session:start', {
       sessionId: `session_${Date.now()}`,
     });
-  }
-
-  setChatUI(chatUI: ChatUI): void {
-    this.loop.setChatUI(chatUI);
   }
 
   async shutdown(): Promise<void> {

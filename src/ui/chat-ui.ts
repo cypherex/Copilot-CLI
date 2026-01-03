@@ -1,4 +1,5 @@
 // Enhanced chat UI with persistent status and input
+// NOTE: This is the legacy ChatUI. Consider using ManagedChatUI for new code.
 
 import chalk from 'chalk';
 import { log } from '../utils/index.js';

@@ -1,4 +1,4 @@
-import { ChatMessage } from '../llm/types.js';
+import { ChatMessage, LLMClient } from '../llm/types.js';
 import type { MemoryStore } from '../memory/types.js';
 import chalk from 'chalk';
 
@@ -23,9 +23,11 @@ export interface DetectionResult {
  */
 export class IncompleteWorkDetector {
   private memoryStore?: MemoryStore;
+  private llmClient?: LLMClient;
 
-  constructor(memoryStore?: MemoryStore) {
+  constructor(memoryStore?: MemoryStore, llmClient?: LLMClient) {
     this.memoryStore = memoryStore;
+    this.llmClient = llmClient;
   }
 
   private static readonly COMPLETION_PHRASES = [
@@ -76,10 +78,9 @@ export class IncompleteWorkDetector {
   ];
 
   private static readonly TODO_PATTERNS = [
-    /(?:^|\n)\s*[-*+]\s*(.+)/g,      // Bullet points
-    /(?:^|\n)\s*\d+[.)]\s*(.+)/g,    // Numbered lists
     /(?:^|\n)\s*TODO:\s*(.+)/gi,     // TODO: prefix
     /(?:^|\n)\s*\[\s*\]\s*(.+)/g,    // [ ] checkboxes
+    /(?:^|\n)\s*\[[ xX]\]\s*(.+)/g,  // [x] or [X] checked boxes
   ];
 
   /**
@@ -185,90 +186,103 @@ export class IncompleteWorkDetector {
   }
 
   /**
-   * Filter out obvious non-work items using heuristics
-   * This removes documentation, examples, explanations, etc. before storage
+   * Filter out non-work items using LLM-based batch validation
+   * This intelligently identifies documentation, capability descriptions, explanations, etc.
    */
-  private filterObviousNonWork(items: TrackingItem[]): TrackingItem[] {
-    return items.filter(item => {
-      const text = item.description;
+  private async filterNonWorkWithLLM(items: TrackingItem[]): Promise<TrackingItem[]> {
+    // If no LLM client available, fall back to keeping all items (conservative approach)
+    if (!this.llmClient || items.length === 0) {
+      return items;
+    }
 
-      // Rule 1: Documentation/file reference markers
-      // Matches: "*File:", "**File:", "→ Lines 463-520", etc.
-      if (/^\*\*?File:|→\s+Lines|^\*[A-Z].*\*\*?/.test(text)) {
-        return false;
+    try {
+      // Create a numbered list for the LLM to evaluate
+      const itemsList = items.map((item, index) => `${index + 1}. ${item.description}`).join('\n');
+
+      const response = await this.llmClient.chat([
+        {
+          role: 'system',
+          content: `You are a task classification expert. Analyze each item in the list and determine if it represents ACTUAL INCOMPLETE WORK that should be tracked.
+
+INCOMPLETE WORK includes:
+- Specific implementation tasks (e.g., "Add error handling to API endpoint")
+- Bug fixes (e.g., "Fix login validation")
+- Features to implement (e.g., "Implement dark mode toggle")
+- Tests to write (e.g., "Write unit tests for auth module")
+- Refactoring tasks (e.g., "Refactor database queries")
+- Configuration/setup tasks (e.g., "Configure CI/CD pipeline")
+
+NOT INCOMPLETE WORK (filter these out):
+- Capability descriptions (e.g., "Read and create files", "Run shell commands")
+- Tool/feature listings (e.g., "Execute Python scripts", "Spawn parallel subagents")
+- Documentation references (e.g., "Documentation", "Examples", "File references")
+- Explanatory text (e.g., "The reason is...", "This indicates...")
+- Metadata (e.g., "User preferences: tooling/editor: Neovim")
+- Section headers (e.g., "Examples", "Explanations")
+- Filler phrases (e.g., "And more!", "Or anything else!")
+- System behavior descriptions (e.g., "Validates input", "Stores data")
+- File paths alone without action verbs (e.g., "src/agent/loop.ts")
+
+Return a JSON array with one boolean for each item (true = track as work, false = filter out).
+Example: [true, false, true, false]
+
+IMPORTANT: Only return the JSON array, nothing else.`,
+        },
+        {
+          role: 'user',
+          content: `Classify these items:\n\n${itemsList}`,
+        },
+      ]);
+
+      const responseContent = response.choices[0]?.message?.content?.trim();
+      if (!responseContent) {
+        console.warn('[Tracking] LLM returned empty response, keeping all items');
+        return items;
       }
 
-      // Rule 2: Emoji prefixes (indicating examples, summaries, or status)
-      // Matches: ✅, ❌, ⚠️, 📋, 💡, 🎯, 🔍, 📌, etc.
-      if (/^[✅❌⚠️📋💡🎯🔍📌✓✗]/.test(text)) {
-        return false;
+      // Parse the JSON array
+      let classifications: boolean[];
+      try {
+        classifications = JSON.parse(responseContent);
+      } catch (parseError) {
+        console.warn('[Tracking] Failed to parse LLM response, keeping all items:', responseContent);
+        return items;
       }
 
-      // Rule 3: Explanatory phrases (past tense, descriptive)
-      // Matches: "This is", "This was", "That was", "What happened", etc.
-      if (/^(?:This|That|What|Which|How|Why) (?:is|was|are|were)|happened|occurred/i.test(text)) {
-        return false;
+      // Validate the response
+      if (!Array.isArray(classifications) || classifications.length !== items.length) {
+        console.warn(
+          `[Tracking] LLM returned invalid array (expected ${items.length}, got ${classifications?.length}), keeping all items`
+        );
+        return items;
       }
 
-      // Rule 4: Workflow arrows with function names
-      // Matches: "create_task()", "close_tracking_item()", etc.
-      if (text.includes('→') && /\b[A-Z][a-zA-Z_]+\(\)/.test(text)) {
-        return false;
+      // Filter items based on LLM classifications
+      const filteredItems = items.filter((item, index) => classifications[index] === true);
+
+      if (filteredItems.length < items.length) {
+        const filteredCount = items.length - filteredItems.length;
+        console.log(
+          `[Tracking] LLM filtered ${filteredCount} non-work items (${filteredItems.length}/${items.length} kept)`
+        );
       }
 
-      // Rule 5: Meta-descriptions (review, close, read files)
-      // Matches: "Read files:", "Review:", "Close:", "Stage 1", "Stage 2"
-      if (/^(?:Read files|Review|Close|Store|Prompt|Stage \d+):/i.test(text)) {
-        return false;
-      }
-
-      // Rule 6: Summary/analysis markers
-      // Matches: "detected", "extracted from", "identified as", "found in"
-      if (/detected|extracted from|identified as|found in|contained|consisted of/i.test(text)) {
-        return false;
-      }
-
-      // Rule 7: Example/illustration markers
-      // Matches: "Example:", "E.g.", "For instance:", "Like:", "Such as:"
-      if (/^(?:E\.?xample|E\.?g\.?|For instance|Like|Such as):|^(?:This|That|Which) (?:is an?|was an?) /i.test(text)) {
-        return false;
-      }
-
-      // Rule 8: Code file paths in isolation (not action items)
-      // Matches: "src/agent/loop.ts", "src/ui/chat-ui.ts" (no action verb)
-      if (/^(?:src\/|[a-zA-Z]:\\|\.\/).+\.(?:ts|js|py|json|md|txt)$/i.test(text) &&
-          !/^(?:create|update|modify|fix|add|remove|delete|implement|build)/i.test(text)) {
-        return false;
-      }
-
-      // Rule 9: Explanations of system behavior
-      // Matches: "Requires file verification", "Prompts: LLM", "Stores them as"
-      if (/^(?:Requires|Prompts|Stores|Validates|Enforces|Ensures|Prevents|Allows|Enables)/i.test(text)) {
-        return false;
-      }
-
-      // Include only if it looks like actionable work
-      return true;
-    });
+      return filteredItems;
+    } catch (error) {
+      console.warn('[Tracking] Error during LLM filtering, keeping all items:', error);
+      return items;
+    }
   }
 
   /**
    * Store detected tracking items in memory (called after analysis)
-   * NOW WITH PRE-VALIDATION - filters out obvious false positives before storage
+   * Uses LLM-based filtering to remove false positives before storage
    */
-  storeDetectedItems(items: TrackingItem[], extractedFrom: string): void {
+  async storeDetectedItems(items: TrackingItem[], extractedFrom: string): Promise<void> {
     if (!this.memoryStore) return;
 
-    // Filter out obvious non-work items before storage
-    const validItems = this.filterObviousNonWork(items);
-
-    if (validItems.length < items.length) {
-      // Log filtered items for debugging
-      const filteredCount = items.length - validItems.length;
-      // Note: Can't use chalk here as this module imports it but may be used in non-terminal context
-      // Use console.warn instead
-      console.warn(`[Tracking] Filtered ${filteredCount} non-work items (${validItems.length}/${items.length} kept)`);
-    }
+    // Filter out non-work items using LLM
+    const validItems = await this.filterNonWorkWithLLM(items);
 
     for (const item of validItems) {
       this.memoryStore.addTrackingItem({

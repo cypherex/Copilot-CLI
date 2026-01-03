@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join, normalize } from 'path';
 import chalk from 'chalk';
 import { log } from '../utils/index.js';
+import { uiState } from '../ui/ui-state.js';
 
 export interface FileRelationship {
   file: string;
@@ -152,9 +153,7 @@ export class FileRelationshipTracker {
     const relationship = this.relationships.get(normalizedPath);
     if (!relationship) return;
 
-    log.newline();
-    log.log(chalk.cyan('📁 Related Files:'));
-    log.log(chalk.dim(`   Last time you edited ${this.shortPath(normalizedPath)} with:`));
+    let message = `📁 Related Files:\n   Last time you edited ${this.shortPath(normalizedPath)} with:\n\n`;
 
     suggestions.forEach((suggestion, index) => {
       const coEditCount = this.getCoEditCount(normalizedPath, suggestion);
@@ -162,17 +161,20 @@ export class FileRelationshipTracker {
       const isDependent = relationship.dependedOnBy.includes(suggestion);
 
       let label = '';
-      if (isDependency) label = chalk.dim('[import]');
-      else if (isDependent) label = chalk.dim('[imported by]');
-      else label = chalk.dim(`[${coEditCount} edits]`);
+      if (isDependency) label = '[import]';
+      else if (isDependent) label = '[imported by]';
+      else label = `[${coEditCount} edits]`;
 
-      log.log(chalk.dim(`   ${index + 1}. ${label} ${this.shortPath(suggestion)}`));
+      message += `   ${index + 1}. ${label} ${this.shortPath(suggestion)}\n`;
     });
 
-    log.newline();
-    log.log(chalk.green('💡 Suggestion:'));
-    log.log(chalk.dim('   Consider loading these files for context or editing them together.'));
-    log.newline();
+    message += '\n💡 Suggestion:\n   Consider loading these files for context or editing them together.';
+
+    uiState.addMessage({
+      role: 'system',
+      content: message,
+      timestamp: Date.now(),
+    });
   }
 
   /**

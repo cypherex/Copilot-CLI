@@ -2,6 +2,7 @@
 
 import chalk from 'chalk';
 import { log } from '../utils/index.js';
+import { uiState } from '../ui/ui-state.js';
 import type { MemoryStore, Task, SessionGoal } from '../memory/types.js';
 
 export interface ValidationResult {
@@ -26,60 +27,26 @@ export class PlanningValidator {
   constructor(private memoryStore: MemoryStore) {}
 
   /**
-   * Detect if a user message is a read-only query vs a write operation
-   * Read-only: explanations, questions, information gathering
-   * Write: create, modify, fix, build, implement
+   * Check if tool calls include write operations that require planning
+   * Returns true if any tool call is a write operation
    */
-  isReadOnlyOperation(message: string): boolean {
-    const lower = message.toLowerCase();
-
-    // Read-only patterns (queries, explanations)
-    const readOnlyPatterns = [
-      /^what (does|is|are|do)/,
-      /^how (do|does|can|to)/,
-      /^explain/,
-      /^show me/,
-      /^help (me )?understand/,
-      /^tell me/,
-      /^describe/,
-      /^why (does|is|are|do)/,
-      /^which/,
-      /^where/,
-      /\?$/,
-    ];
-
-    // Write patterns (actions, modifications)
-    const writePatterns = [
-      /create/,
-      /implement/,
-      /add/,
-      /fix/,
-      /build/,
-      /write/,
-      /update/,
-      /modify/,
-      /change/,
-      /delete/,
-      /remove/,
-      /refactor/,
-    ];
-
-    // Check for read-only patterns
-    for (const pattern of readOnlyPatterns) {
-      if (pattern.test(lower)) {
-        return true;
-      }
+  hasWriteOperationTools(toolCalls: Array<{ function: { name: string } }>): boolean {
+    if (!toolCalls || toolCalls.length === 0) {
+      return false;
     }
 
-    // Check for write patterns
-    for (const pattern of writePatterns) {
-      if (pattern.test(lower)) {
-        return false;
-      }
-    }
+    // Tools that modify files or state (require planning)
+    const writeTools = [
+      'write_file',
+      'create_file',
+      'edit_file',
+      'patch_file',
+      'delete_file',
+      'execute_bash', // Can create/modify files
+      'notebook_edit', // Modifies notebooks
+    ];
 
-    // Default: assume write operation if unclear (safer to require planning)
-    return false;
+    return toolCalls.some(tc => writeTools.includes(tc.function.name));
   }
 
   /**
@@ -233,22 +200,31 @@ export class PlanningValidator {
    */
   displayValidation(result: ValidationResult): void {
     if (result.canProceed) {
-      log.success('✓ Planning validated - ready to proceed');
+      uiState.addMessage({
+        role: 'system',
+        content: '✓ Planning validated - ready to proceed',
+        timestamp: Date.now(),
+      });
       return;
     }
 
-    log.error('\n⛔ Planning Validation Failed');
+    let message = '⛔ Planning Validation Failed';
     if (result.reason) {
-      log.warn(`\nReason:\n  ${result.reason}`);
+      message += `\n\nReason:\n  ${result.reason}`;
     }
 
     if (result.suggestions && result.suggestions.length > 0) {
-      log.log('\nSuggestions:', chalk.cyan);
+      message += '\n\nSuggestions:';
       for (const suggestion of result.suggestions) {
-        log.log(`  • ${suggestion}`, chalk.gray);
+        message += `\n  • ${suggestion}`;
       }
     }
-    log.log('');
+
+    uiState.addMessage({
+      role: 'system',
+      content: message,
+      timestamp: Date.now(),
+    });
   }
 
   /**

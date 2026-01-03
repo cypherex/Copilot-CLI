@@ -6,6 +6,7 @@ import type { ToolDefinition, Tool } from './types.js';
 import type { ToolRegistry } from './index.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
+import { uiState } from '../ui/ui-state.js';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -126,23 +127,55 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
       }, null, 2);
     }
 
-    // Display parallel block header
-    if (description) {
-      console.log(chalk.cyan(`\n🔄 Parallel Block: ${description}`));
-    } else {
-      console.log(chalk.cyan(`\n🔄 Parallel Block: Executing ${toolCalls.length} tool(s)`));
-    }
+    const startTime = Date.now();
+    const executionId = `parallel_${startTime}`;
+
+    // Initialize parallel execution state in UIState
+    uiState.update({
+      parallelExecution: {
+        id: executionId,
+        description,
+        tools: toolCalls.map((tc, index) => ({
+          id: `${executionId}_${index}`,
+          tool: tc.tool,
+          status: 'pending',
+          startTime: Date.now(),
+        })),
+        startTime,
+        isActive: true,
+      },
+    });
+
+    // Add updatable parallel-status message to conversation
+    uiState.addMessage({
+      role: 'parallel-status',
+      content: '', // Content is rendered from live state
+      timestamp: Date.now(),
+      parallelExecutionId: executionId,
+    });
 
     // Create spinner
     const spinner = ora(`Running ${toolCalls.length} tool(s) in parallel...`).start();
 
-    const startTime = Date.now();
-
     // Execute all tools in parallel
-    const toolPromises = toolCalls.map(async (toolCall): Promise<ParallelToolResult> => {
+    const toolPromises = toolCalls.map(async (toolCall, index): Promise<ParallelToolResult> => {
       const toolStartTime = Date.now();
       const toolName = toolCall.tool;
+      const toolId = `${executionId}_${index}`;
       let toolArgs = toolCall.parameters;
+
+      // Update tool status to running
+      const currentState = uiState.getState().parallelExecution;
+      if (currentState) {
+        uiState.update({
+          parallelExecution: {
+            ...currentState,
+            tools: currentState.tools.map(t =>
+              t.id === toolId ? { ...t, status: 'running' } : t
+            ),
+          },
+        });
+      }
 
       try {
         // Execute tool:pre-execute hook
@@ -223,6 +256,27 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
           });
         }
 
+        // Update UIState with completion status
+        const finalState = uiState.getState().parallelExecution;
+        if (finalState) {
+          uiState.update({
+            parallelExecution: {
+              ...finalState,
+              tools: finalState.tools.map(t =>
+                t.id === toolId
+                  ? {
+                      ...t,
+                      status: result.success ? 'success' : 'error',
+                      endTime: Date.now(),
+                      executionTime: toolExecutionTime,
+                      error: result.success ? undefined : result.error,
+                    }
+                  : t
+              ),
+            },
+          });
+        }
+
         return {
           tool: toolName,
           success: result.success,
@@ -238,6 +292,27 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
           error: error instanceof Error ? error.message : String(error),
           executionTime: toolExecutionTime,
         };
+
+        // Update UIState with error status
+        const finalState = uiState.getState().parallelExecution;
+        if (finalState) {
+          uiState.update({
+            parallelExecution: {
+              ...finalState,
+              tools: finalState.tools.map(t =>
+                t.id === toolId
+                  ? {
+                      ...t,
+                      status: 'error',
+                      endTime: Date.now(),
+                      executionTime: toolExecutionTime,
+                      error: error instanceof Error ? error.message : String(error),
+                    }
+                  : t
+              ),
+            },
+          });
+        }
 
         // Execute tool:post-execute hook even on error
         if (this.hookRegistry) {
@@ -266,16 +341,22 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
       spinner.warn(`${successful}/${toolCalls.length} tools completed (${failed} failed) in ${totalTime}ms`);
     }
 
-    // Display individual tool results
-    for (const result of results) {
-      if (result.success) {
-        console.log(chalk.green(`  ✓ ${result.tool} (${result.executionTime}ms)`));
-      } else {
-        console.log(chalk.red(`  ✗ ${result.tool} (${result.executionTime}ms): ${result.error}`));
-      }
-    }
+    // Mark parallel execution as completed in UIState
+    const completedState = uiState.getState().parallelExecution;
+    if (completedState) {
+      uiState.update({
+        parallelExecution: {
+          ...completedState,
+          endTime: Date.now(),
+          isActive: false,
+        },
+      });
 
-    console.log();
+      // Clear after a moment to show completion
+      setTimeout(() => {
+        uiState.update({ parallelExecution: null });
+      }, 100);
+    }
 
     // Build result object
     const parallelResult: ParallelResult = {
