@@ -143,6 +143,11 @@ export class CopilotAgent {
       (spawnAgentTool as any).setValidator(spawnValidator);
     }
 
+    const createTaskTool = this.toolRegistry.get('create_task');
+    if (createTaskTool && 'setValidator' in createTaskTool) {
+      (createTaskTool as any).setValidator(spawnValidator);
+    }
+
     const updateTaskStatusTool = this.toolRegistry.get('update_task_status');
     if (updateTaskStatusTool && 'setValidator' in updateTaskStatusTool) {
       (updateTaskStatusTool as any).setValidator(completionWorkflowValidator);

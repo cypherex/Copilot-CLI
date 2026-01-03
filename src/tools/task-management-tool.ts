@@ -6,6 +6,7 @@ import type { ToolDefinition } from './types.js';
 import type { MemoryStore, Task, TrackingItem } from '../memory/types.js';
 import { uiState } from '../ui/ui-state.js';
 import type { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
+import type { SpawnValidator } from '../validators/spawn-validator.js';
 
 // Schema for create_task
 const CreateTaskSchema = z.object({
@@ -48,6 +49,8 @@ const BreakDownTaskSchema = z.object({
 });
 
 export class CreateTaskTool extends BaseTool {
+  private spawnValidator?: SpawnValidator;
+
   readonly definition: ToolDefinition = {
     name: 'create_task',
     description: `Create a new task in the task list.
@@ -62,7 +65,9 @@ Tasks should be specific, actionable, and measurable.
 For hierarchical tasks:
 - Use parent_id to create subtasks under a parent task
 - Break complex tasks into smaller, focused subtasks
-- Aim for 3-7 subtasks per parent for manageable scope`,
+- Aim for 3-7 subtasks per parent for manageable scope
+
+IMPORTANT: Tasks that are too complex will be rejected. Use break_down_task to decompose large tasks into smaller, focused subtasks before creating them.`,
     parameters: {
       type: 'object',
       properties: {
@@ -96,6 +101,10 @@ For hierarchical tasks:
     this.memoryStore = memoryStore;
   }
 
+  setValidator(validator: SpawnValidator): void {
+    this.spawnValidator = validator;
+  }
+
   protected async executeInternal(args: z.infer<typeof CreateTaskSchema>): Promise<string> {
     const { description, priority, related_to_goal, parent_id } = args;
 
@@ -104,6 +113,33 @@ For hierarchical tasks:
       const parent = this.memoryStore.getTasks().find(t => t.id === parent_id);
       if (!parent) {
         throw new Error(`Parent task not found: ${parent_id}`);
+      }
+    }
+
+    // Validate task complexity (same as spawn validation)
+    if (this.spawnValidator) {
+      const validationResult = await this.spawnValidator.validateSpawn({
+        task: description,
+        parent_task_id: parent_id,
+        memoryStore: this.memoryStore,
+      });
+
+      // If task is too complex, reject and force breakdown
+      if (!validationResult.allowed && validationResult.requiresBreakdown) {
+        throw new Error(
+          validationResult.suggestedMessage ||
+          validationResult.reason ||
+          'Task is too complex - use break_down_task to decompose it first'
+        );
+      }
+
+      // Display complexity warning if task is complex but allowed
+      if (validationResult.complexity && validationResult.complexity.rating === 'complex') {
+        uiState.addMessage({
+          role: 'system',
+          content: `⚠️  Complex task created (${validationResult.complexity.rating}): ${validationResult.complexity.reasoning}`,
+          timestamp: Date.now(),
+        });
       }
     }
 

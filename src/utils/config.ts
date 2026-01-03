@@ -73,7 +73,7 @@ function getDefaultConfig(): AppConfig {
       apiVersion: providerDefaults.apiVersion || 'beta',
       apiKey: process.env.ZAI_API_KEY || process.env.LLM_API_KEY || undefined,
       model: process.env.LLM_MODEL || providerDefaults.model,
-      maxTokens: 4096,
+      maxTokens: 40960,
       temperature: 0.7,
       streamingEnabled: true,
     },
