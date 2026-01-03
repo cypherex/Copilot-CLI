@@ -366,10 +366,10 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       },
     });
 
-    // Add updatable subagent-status message to conversation
-    uiState.addMessage({
+    // Add live-updating message
+    uiState.addLiveMessage(agentId, {
       role: 'subagent-status',
-      content: '', // Content is rendered from live state
+      content: '', // Will be rendered from SubagentRenderer
       timestamp: Date.now(),
       subagentId: agentId,
     });
@@ -483,6 +483,9 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
               ],
             },
           });
+
+          // Finalize the live message (moves it to static messages)
+          uiState.finalizeLiveMessage(agentId);
         }
       }
 
@@ -597,6 +600,9 @@ The merge message will be displayed showing how the subagent's work integrates i
             ],
           },
         });
+
+        // Finalize the live message (moves it to static messages)
+        uiState.finalizeLiveMessage(agent_id);
       }
     }
 

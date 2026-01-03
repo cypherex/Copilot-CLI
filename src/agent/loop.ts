@@ -404,15 +404,35 @@ export class AgenticLoop {
             const validation = this.planningValidator.validate(true); // true = write operation
 
             if (!validation.canProceed) {
-              this.planningValidator.displayValidation(validation);
+              // Check if agent is trying to fix validation with task management tools
+              const taskManagementTools = [
+                'create_task', 'update_task_status', 'set_current_task',
+                'list_tasks', 'list_subtasks', 'break_down_task',
+                'review_tracking_item', 'close_tracking_item', 'list_tracking_items'
+              ];
+              const taskToolCalls = response.toolCalls.filter(tc =>
+                taskManagementTools.includes(tc.function.name)
+              );
 
-              // Inject validation message to guide the LLM
-              const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
-              this.conversation.addUserMessage(validationMessage);
+              if (taskToolCalls.length > 0) {
+                // Agent is setting up tasks - execute them and let it continue
+                await this.executeTools(taskToolCalls);
 
-              // Continue loop to let LLM respond and create tasks
-              continueLoop = true;
-              continue;
+                // Continue loop to let LLM respond after setting up tasks
+                continueLoop = true;
+                continue;
+              } else {
+                // No task management tools - this is a real validation failure
+                this.planningValidator.displayValidation(validation);
+
+                // Inject validation message to guide the LLM
+                const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
+                this.conversation.addUserMessage(validationMessage);
+
+                // Continue loop to let LLM respond
+                continueLoop = true;
+                continue;
+              }
             } else if (validation.suggestions && validation.suggestions.length > 0) {
               // Validation passed but has suggestions
               uiState.addMessage({

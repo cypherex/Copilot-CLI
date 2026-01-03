@@ -179,6 +179,17 @@ export class RenderManager {
   }
 
   /**
+   * Replace lines in output buffer (for live-updating messages)
+   * Returns the start line index where content was placed
+   */
+  replaceOutputLines(startLine: number, lineCount: number, newContent: string[]): number {
+    // Remove old lines
+    this.outputBuffer.splice(startLine, lineCount, ...newContent);
+    this.scheduleRender();
+    return startLine;
+  }
+
+  /**
    * Clear output buffer
    */
   clearOutput(): void {

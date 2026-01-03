@@ -146,10 +146,10 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
       },
     });
 
-    // Add updatable parallel-status message to conversation
-    uiState.addMessage({
+    // Add live-updating message
+    uiState.addLiveMessage(executionId, {
       role: 'parallel-status',
-      content: '', // Content is rendered from live state
+      content: '', // Will be rendered from ParallelExecutionRenderer
       timestamp: Date.now(),
       parallelExecutionId: executionId,
     });
@@ -352,7 +352,10 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
         },
       });
 
-      // Clear after a moment to show completion
+      // Finalize the live message (moves it to static messages)
+      uiState.finalizeLiveMessage(executionId);
+
+      // Clear state after a moment
       setTimeout(() => {
         uiState.update({ parallelExecution: null });
       }, 100);

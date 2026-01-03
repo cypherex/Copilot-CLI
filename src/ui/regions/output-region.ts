@@ -13,10 +13,16 @@ import { SubagentRenderer } from './subagent-region.js';
  * Output region handles the scrollable main content area
  * Subscribes to UIState for new messages and streaming content
  */
+interface LiveMessagePosition {
+  startLine: number;  // Start position in output buffer
+  lineCount: number;  // Number of lines occupied
+}
+
 export class OutputRegion {
   private renderManager: RenderManager | null = null;
   private unsubscribe?: () => void;
   private lastStreamContent = '';
+  private liveMessagePositions: Map<string, LiveMessagePosition> = new Map(); // Track spatial position for each live message
 
   constructor() {}
 
@@ -47,30 +53,20 @@ export class OutputRegion {
         }
       }
 
-      // Re-render active parallel execution status when it changes
-      if (changedKeys.includes('parallelExecution') && state.parallelExecution?.isActive) {
-        // Re-render the parallel status
-        const lines = ParallelExecutionRenderer.render(
-          state.parallelExecution,
-          state.parallelExecution.id
-        );
-        // Write as update (this will show progress)
-        for (const line of lines) {
-          this.writeLine(line);
-        }
-      }
-
-      // Re-render active subagents when they change
-      if (changedKeys.includes('subagents') && state.subagents) {
-        const activeAgents = state.subagents.active;
-        if (activeAgents.length > 0) {
-          // Re-render each active subagent
-          for (const agent of activeAgents) {
-            const lines = SubagentRenderer.render(state.subagents, agent.id);
-            for (const line of lines) {
-              this.writeLine(line);
-            }
+      // Handle live message updates
+      if (changedKeys.includes('liveMessages')) {
+        // Clean up finalized messages (removed from live)
+        const currentLiveIds = new Set(state.liveMessages.keys());
+        for (const trackedId of this.liveMessagePositions.keys()) {
+          if (!currentLiveIds.has(trackedId)) {
+            // Message was finalized - remove from tracking
+            this.liveMessagePositions.delete(trackedId);
           }
+        }
+
+        // Update all active live messages
+        for (const [id, msg] of state.liveMessages) {
+          this.updateLiveMessage(id, msg);
         }
       }
 
@@ -103,6 +99,80 @@ export class OutputRegion {
       this.unsubscribe();
       this.unsubscribe = undefined;
     }
+  }
+
+  /**
+   * Update a live message - replaces content in buffer at tracked position
+   */
+  private updateLiveMessage(id: string, msg: MessageState): void {
+    if (!this.renderManager) return;
+
+    // Render the message to lines
+    const lines = this.renderMessageToLines(msg);
+
+    const existingPosition = this.liveMessagePositions.get(id);
+
+    if (existingPosition) {
+      // Replace existing lines in buffer
+      this.renderManager.replaceOutputLines(
+        existingPosition.startLine,
+        existingPosition.lineCount,
+        lines
+      );
+
+      // Update position with new line count (start stays the same)
+      this.liveMessagePositions.set(id, {
+        startLine: existingPosition.startLine,
+        lineCount: lines.length,
+      });
+    } else {
+      // First time rendering - append to buffer and track position
+      const startLine = this.renderManager.getOutputBufferLength();
+
+      for (const line of lines) {
+        this.writeLine(line);
+      }
+
+      // Track the position
+      this.liveMessagePositions.set(id, {
+        startLine,
+        lineCount: lines.length,
+      });
+    }
+  }
+
+  /**
+   * Render a message to lines (without writing)
+   */
+  private renderMessageToLines(msg: MessageState): string[] {
+    const lines: string[] = [];
+
+    switch (msg.role) {
+      case 'parallel-status':
+        if (msg.parallelExecutionId) {
+          const state = uiState.getState();
+          const rendered = ParallelExecutionRenderer.render(
+            state.parallelExecution,
+            msg.parallelExecutionId
+          );
+          lines.push(...rendered);
+        }
+        break;
+      case 'subagent-status':
+        if (msg.subagentId) {
+          const state = uiState.getState();
+          const rendered = SubagentRenderer.render(state.subagents, msg.subagentId);
+          lines.push(...rendered);
+        }
+        break;
+      default:
+        // For other message types, just return the content as single line
+        if (msg.content) {
+          lines.push(msg.content);
+        }
+    }
+
+    return lines;
   }
 
   /**

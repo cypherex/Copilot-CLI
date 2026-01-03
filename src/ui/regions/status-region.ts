@@ -112,6 +112,19 @@ export class StatusRegion extends BaseRegion {
       }
     }
 
+    // Parallel execution progress
+    if (state.parallelExecution?.isActive) {
+      const completed = state.parallelExecution.tools.filter(t => t.status === 'success' || t.status === 'error').length;
+      const total = state.parallelExecution.tools.length;
+      parts.push(chalk.cyan(`⚡ ${completed}/${total} parallel`));
+    }
+
+    // Active subagents
+    if (state.subagents?.active && state.subagents.active.length > 0) {
+      const count = state.subagents.active.length;
+      parts.push(chalk.magenta(`🤖 ${count} agent${count > 1 ? 's' : ''}`));
+    }
+
     // Model name
     if (state.modelName) {
       parts.push(chalk.dim(state.modelName));

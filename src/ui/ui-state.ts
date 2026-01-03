@@ -29,6 +29,7 @@ export interface MessageState {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'parallel-status' | 'subagent-status';
   content: string;
   timestamp: number;
+  id?: string; // Optional ID for updatable messages
   toolCalls?: ToolExecutionState[];
   // For updatable messages - references live state
   parallelExecutionId?: string;
@@ -91,6 +92,7 @@ export interface UIStateData {
 
   // Messages for output
   pendingMessages: MessageState[];
+  liveMessages: Map<string, MessageState>; // Live-updating messages (by ID)
 
   // Model info
   modelName: string;
@@ -122,6 +124,7 @@ class UIStateManager {
     allTasks: [],
     currentToolExecution: null,
     pendingMessages: [],
+    liveMessages: new Map(),
     modelName: '',
     providerName: '',
     isStreaming: false,
@@ -215,6 +218,40 @@ class UIStateManager {
     });
   }
 
+  /**
+   * Add a live-updating message that can be modified in place
+   */
+  addLiveMessage(id: string, message: MessageState): void {
+    const newLiveMessages = new Map(this.state.liveMessages);
+    newLiveMessages.set(id, { ...message, id });
+    this.update({ liveMessages: newLiveMessages });
+  }
+
+  /**
+   * Update a live message by ID
+   */
+  updateLiveMessage(id: string, updates: Partial<MessageState>): void {
+    const existing = this.state.liveMessages.get(id);
+    if (existing) {
+      const newLiveMessages = new Map(this.state.liveMessages);
+      newLiveMessages.set(id, { ...existing, ...updates, id });
+      this.update({ liveMessages: newLiveMessages });
+    }
+  }
+
+  /**
+   * Finalize a live message - removes from live (already rendered, no need to re-add)
+   */
+  finalizeLiveMessage(id: string): void {
+    const liveMessage = this.state.liveMessages.get(id);
+    if (liveMessage) {
+      // Just remove from live messages - it's already rendered in the output
+      const newLiveMessages = new Map(this.state.liveMessages);
+      newLiveMessages.delete(id);
+      this.update({ liveMessages: newLiveMessages });
+    }
+  }
+
   clearPendingMessages(): MessageState[] {
     const messages = this.state.pendingMessages;
     this.update({ pendingMessages: [] });
@@ -250,6 +287,7 @@ class UIStateManager {
       allTasks: [],
       currentToolExecution: null,
       pendingMessages: [],
+      liveMessages: new Map(),
       modelName: this.state.modelName,
       providerName: this.state.providerName,
       isStreaming: false,
