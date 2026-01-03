@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
+import { createFilesystemError } from '../utils/filesystem-errors.js';
 
 const patchFileSchema = z.object({
   path: z.string(),
@@ -33,7 +34,13 @@ export class PatchFileTool extends BaseTool {
 
   protected async executeInternal(args: z.infer<typeof patchFileSchema>): Promise<string> {
     const absolutePath = path.resolve(args.path);
-    const content = await fs.readFile(absolutePath, 'utf-8');
+
+    let content: string;
+    try {
+      content = await fs.readFile(absolutePath, 'utf-8');
+    } catch (error) {
+      throw createFilesystemError(error, absolutePath, 'read');
+    }
 
     // Count occurrences
     const escapedSearch = args.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -48,7 +55,12 @@ export class PatchFileTool extends BaseTool {
     }
 
     const newContent = content.replace(new RegExp(escapedSearch, 'g'), args.replace);
-    await fs.writeFile(absolutePath, newContent, 'utf-8');
+
+    try {
+      await fs.writeFile(absolutePath, newContent, 'utf-8');
+    } catch (error) {
+      throw createFilesystemError(error, absolutePath, 'write');
+    }
 
     return `Successfully patched ${absolutePath}: ${occurrences} occurrence(s) replaced.`;
   }

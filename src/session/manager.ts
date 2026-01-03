@@ -8,6 +8,7 @@ import { formatDistanceToNow } from 'date-fns';
 import type { Session, SessionMetadata } from './types.js';
 import type { ChatMessage } from '../llm/types.js';
 import type { MemoryStore } from '../memory/types.js';
+import { createFilesystemError } from '../utils/filesystem-errors.js';
 
 export class SessionManager {
   private sessionsDir: string;
@@ -64,7 +65,12 @@ export class SessionManager {
   async saveSession(session: Session): Promise<void> {
     await this.initialize();
     const sessionPath = path.join(this.sessionsDir, `${session.id}.json`);
-    await fs.writeFile(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+
+    try {
+      await fs.writeFile(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+    } catch (error) {
+      throw createFilesystemError(error, sessionPath, 'write');
+    }
   }
 
   /**

@@ -469,12 +469,22 @@ export class AgenticLoop {
 
           if (needsCompression) {
             // Compression will happen, continue loop after compression
-            await this.conversation.trimHistory();
-            uiState.addMessage({
-              role: 'system',
-              content: 'Context compressed - continuing work...',
-              timestamp: Date.now(),
-            });
+            try {
+              await this.conversation.trimHistory();
+              uiState.addMessage({
+                role: 'system',
+                content: 'Context compressed - continuing work...',
+                timestamp: Date.now(),
+              });
+            } catch (error) {
+              // Log warning but continue without compression - better to continue work than crash
+              console.warn('[Agent Loop] Failed to compress context:', error);
+              uiState.addMessage({
+                role: 'system',
+                content: '⚠️ Warning: Context compression failed, continuing without compression',
+                timestamp: Date.now(),
+              });
+            }
             continueLoop = true;
             continue;
           }

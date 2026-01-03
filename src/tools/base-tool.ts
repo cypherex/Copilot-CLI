@@ -21,6 +21,19 @@ export abstract class BaseTool implements Tool {
         metadata: this.getMetadata(),
       };
     } catch (error) {
+      // Format Zod validation errors with specific field information
+      if (error instanceof z.ZodError) {
+        const fieldErrors = error.errors.map(err => {
+          const field = err.path.join('.');
+          return `  - ${field}: ${err.message}`;
+        }).join('\n');
+
+        return {
+          success: false,
+          error: `Validation error:\n${fieldErrors}`,
+        };
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

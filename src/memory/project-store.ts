@@ -332,17 +332,29 @@ export class ProjectMemoryStore {
 
   // Persistence
   async save(): Promise<void> {
-    const data: StoredData = {
-      version: CURRENT_VERSION,
-      userFacts: Array.from(this.userFacts.values()),
-      preferences: Array.from(this.preferences.values()),
-      decisions: Array.from(this.decisions.values()),
-      projectContext: Array.from(this.projectContext.values()),
-      featureGroups: Array.from(this.featureGroups.values()),
-      decayConfig: this.decayConfig,
-    };
+    try {
+      const data: StoredData = {
+        version: CURRENT_VERSION,
+        userFacts: Array.from(this.userFacts.values()),
+        preferences: Array.from(this.preferences.values()),
+        decisions: Array.from(this.decisions.values()),
+        projectContext: Array.from(this.projectContext.values()),
+        featureGroups: Array.from(this.featureGroups.values()),
+        decayConfig: this.decayConfig,
+      };
 
-    writeFileSync(this.storePath, JSON.stringify(data, null, 2));
+      writeFileSync(this.storePath, JSON.stringify(data, null, 2));
+    } catch (error: any) {
+      // Log error but don't throw - allow app to continue with degraded functionality
+      const errorMsg = error.code === 'ENOSPC'
+        ? 'Cannot save project memory: Disk full'
+        : error.code === 'EACCES'
+        ? `Cannot save project memory: Permission denied for ${this.storePath}`
+        : `Failed to save project memory: ${error.message}`;
+
+      console.error(`[Project Memory] ${errorMsg}`, error);
+      // Don't throw - graceful degradation is better than crashing
+    }
   }
 
   async load(): Promise<void> {

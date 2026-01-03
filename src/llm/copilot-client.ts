@@ -153,7 +153,14 @@ export class CopilotClient implements LLMClient {
       throw this.createApiError(response.status, errorText);
     }
 
-    const data = await response.json() as CopilotConversation;
+    let data: CopilotConversation;
+    try {
+      data = await response.json() as CopilotConversation;
+    } catch (error) {
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      throw new Error(`Failed to parse Copilot API response as JSON: ${error instanceof Error ? error.message : 'Unknown error'}. Response: ${responseText}`);
+    }
+
     return data.id;
   }
 
@@ -261,7 +268,14 @@ export class CopilotClient implements LLMClient {
       throw this.createApiError(response.status, errorText);
     }
 
-    const data = await response.json() as CopilotChatResponse;
+    let data: CopilotChatResponse;
+    try {
+      data = await response.json() as CopilotChatResponse;
+    } catch (error) {
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      throw new Error(`Failed to parse Copilot API response as JSON: ${error instanceof Error ? error.message : 'Unknown error'}. Response: ${responseText}`);
+    }
+
     return this.parseResponse(data, tools);
   }
 

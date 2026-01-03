@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
+import { createFilesystemError } from '../utils/filesystem-errors.js';
 
 const readFileSchema = z.object({
   path: z.string(),
@@ -45,7 +46,13 @@ Example - BAD (sequential):
 
   protected async executeInternal(args: z.infer<typeof readFileSchema>): Promise<string> {
     const absolutePath = path.resolve(args.path);
-    const content = await fs.readFile(absolutePath, 'utf-8');
+
+    let content: string;
+    try {
+      content = await fs.readFile(absolutePath, 'utf-8');
+    } catch (error) {
+      throw createFilesystemError(error, absolutePath, 'read');
+    }
 
     if (args.lineStart !== undefined || args.lineEnd !== undefined) {
       const lines = content.split('\n');

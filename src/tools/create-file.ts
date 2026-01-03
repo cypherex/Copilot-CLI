@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
+import { createFilesystemError } from '../utils/filesystem-errors.js';
 
 const createFileSchema = z.object({
   path: z.string(),
@@ -55,10 +56,18 @@ Example - BAD (sequential):
     }
 
     // Create parent directories
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    try {
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    } catch (error) {
+      throw createFilesystemError(error, path.dirname(absolutePath), 'create directory');
+    }
 
     // Write file
-    await fs.writeFile(absolutePath, args.content, 'utf-8');
+    try {
+      await fs.writeFile(absolutePath, args.content, 'utf-8');
+    } catch (error) {
+      throw createFilesystemError(error, absolutePath, 'write');
+    }
 
     return `Successfully created file: ${absolutePath}`;
   }

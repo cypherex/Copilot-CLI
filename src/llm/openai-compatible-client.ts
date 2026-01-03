@@ -151,7 +151,14 @@ export class OpenAICompatibleClient implements LLMClient {
       throw this.createApiError(response.status, errorText);
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (error) {
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      throw new Error(`Failed to parse API response as JSON: ${error instanceof Error ? error.message : 'Unknown error'}. Response: ${responseText}`);
+    }
+
     return this.parseResponse(data);
   }
 
