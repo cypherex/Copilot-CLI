@@ -48,15 +48,37 @@ export class SubAgent extends EventEmitter {
   private userMessageQueue: string[] = [];
   private userMessageResolvers: Map<number, (message: string) => void> = new Map();
   private messageCounter = 0;
+  private abortSignal?: AbortSignal;
+  private hookRegistry?: HookRegistry;
+  private completionTracker?: CompletionTracker;
+  private planningValidator?: PlanningValidator;
+  private proactiveContextMonitor?: ProactiveContextMonitor;
+  private incompleteWorkDetector?: IncompleteWorkDetector;
+  private fileRelationshipTracker?: FileRelationshipTracker;
 
   constructor(
     private llmClient: LLMClient,
     private toolRegistry: ToolRegistry,
     private config: SubAgentConfig,
+    abortSignal?: AbortSignal,
+    hookRegistry?: HookRegistry,
+    completionTracker?: CompletionTracker,
+    planningValidator?: PlanningValidator,
+    proactiveContextMonitor?: ProactiveContextMonitor,
+    incompleteWorkDetector?: IncompleteWorkDetector,
+    fileRelationshipTracker?: FileRelationshipTracker,
     private modelName?: string
   ) {
     super();
     this.config = config;
+    this.abortSignal = abortSignal;
+    this.hookRegistry = hookRegistry;
+    this.completionTracker = completionTracker;
+    this.planningValidator = planningValidator;
+    this.proactiveContextMonitor = proactiveContextMonitor;
+    this.incompleteWorkDetector = incompleteWorkDetector;
+    this.fileRelationshipTracker = fileRelationshipTracker;
+
     const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
     this.conversation = new ConversationManager(systemPrompt, {
       // Use same max history as main agent (defaults to 50)
@@ -245,9 +267,23 @@ Remember: You are responsible for delivering complete, production-ready work. No
     let continueLoop = true;
     let currentStage = 'thinking'; // Track current stage
 
+    // Emit start message
+    this.emit('message', {
+      agentId: this.config.name,
+      content: `Starting subagent execution\nTask: ${this.config.task}\nMax iterations: ${this.maxIterations}`,
+      type: 'system',
+    });
+
     try {
       while (continueLoop && iteration < this.maxIterations) {
         iteration++;
+
+        // Emit iteration start message
+        this.emit('message', {
+          agentId: this.config.name,
+          content: `\n${'='.repeat(60)}\nIteration ${iteration}/${this.maxIterations}\n${'='.repeat(60)}`,
+          type: 'system',
+        });
 
         // Update stage to thinking before LLM call
         currentStage = 'thinking';
@@ -311,12 +347,15 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         const response = accumulator.getResponse();
 
+        // Always emit thinking content for logging (even if empty or with tool calls)
         if (response.content) {
           finalOutput = response.content;
-          // Emit message event for real-time display
+          // Emit message event for real-time display and logging
           this.emit('message', {
+            agentId: this.config.name,
             content: response.content,
-            type: 'output',
+            type: 'thinking',
+            iteration,
           });
         }
 
@@ -338,12 +377,26 @@ Remember: You are responsible for delivering complete, production-ready work. No
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
+          // Final response (no tool calls) - emit as completion message
+          this.emit('message', {
+            agentId: this.config.name,
+            content: response.content || '',
+            type: 'final_response',
+            iteration,
+          });
           this.conversation.addAssistantMessage(response.content || '');
           continueLoop = false;
         }
       }
 
       const toolsUsed = Array.from(this.toolsUsed);
+
+      // Emit completion message
+      this.emit('message', {
+        agentId: this.config.name,
+        content: `\n${'='.repeat(60)}\nSubagent Completed Successfully\nTotal iterations: ${iteration}\nTools used: ${toolsUsed.join(', ')}\n${'='.repeat(60)}`,
+        type: 'system',
+      });
 
       return {
         success: true,
@@ -353,6 +406,13 @@ Remember: You are responsible for delivering complete, production-ready work. No
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Emit error message
+      this.emit('message', {
+        agentId: this.config.name,
+        content: `\n${'='.repeat(60)}\nSubagent Failed\nError: ${errorMessage}\nIterations completed: ${iteration}\n${'='.repeat(60)}`,
+        type: 'system',
+      });
 
       return {
         success: false,
@@ -402,8 +462,9 @@ Remember: You are responsible for delivering complete, production-ready work. No
         toolArgs = {};
       }
 
-      // Emit tool call event for real-time display
+      // Emit tool call event for real-time display and logging
       this.emit('tool_call', {
+        agentId: this.config.name,
         toolName,
         args: toolArgs,
         toolCallId: toolCall.id,
@@ -412,8 +473,9 @@ Remember: You are responsible for delivering complete, production-ready work. No
       try {
         const result = await this.toolRegistry.execute(toolName, toolArgs);
 
-        // Emit tool result event for real-time display
+        // Emit tool result event for real-time display and logging
         this.emit('tool_result', {
+          agentId: this.config.name,
           toolCallId: toolCall.id,
           toolName,
           success: result.success,
@@ -423,6 +485,8 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         if (result.success) {
           this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
+          // Audit file modifications for incomplete scaffolding
+          await this.auditFileModification(toolName, toolArgs, result);
         } else {
           this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
         }
@@ -431,6 +495,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         // Emit error result event
         this.emit('tool_result', {
+          agentId: this.config.name,
           toolCallId: toolCall.id,
           toolName,
           success: false,
@@ -439,6 +504,65 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
       }
+    }
+  }
+
+  /**
+   * Audit file modifications for incomplete scaffolding
+   */
+  private async auditFileModification(
+    toolName: string,
+    toolArgs: Record<string, any>,
+    result: { success: boolean; output?: string; error?: string }
+  ): Promise<void> {
+    const fileModificationTools = ['create_file', 'patch_file'];
+    if (!fileModificationTools.includes(toolName) || !result.success || !this.completionTracker) {
+      return;
+    }
+
+    try {
+      // Log audit start
+      this.emit('message', {
+        agentId: this.config.name,
+        type: 'system',
+        content: `🔍 [Subagent] Auditing ${toolName} on ${toolArgs.path || 'unknown'}...`,
+      });
+
+      const context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      const responseId = `subagent_${this.config.name}_${toolName}_${Date.now()}`;
+      const auditResult = await this.completionTracker.auditResponse(context, this.conversation.getMessages(), responseId);
+
+      if (auditResult.newItems.length > 0 || auditResult.resolvedItems.length > 0) {
+        // Emit audit results
+        for (const item of auditResult.newItems) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `Tracking: ${item.type} in ${item.file}: ${item.description}`,
+          });
+        }
+        for (const item of auditResult.resolvedItems) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `Resolved: ${item.type} in ${item.file}`,
+          });
+        }
+      } else {
+        this.emit('message', {
+          agentId: this.config.name,
+          type: 'system',
+          content: `✓ [Subagent] Audit complete: No incomplete scaffolding detected in ${toolArgs.path || 'unknown'}`,
+        });
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.emit('message', {
+        agentId: this.config.name,
+        type: 'system',
+        content: `⚠️ [Subagent] Scaffolding audit failed: ${errorMsg}`,
+      });
+      console.error(`[Subagent ${this.config.name} Scaffold Audit] Failed:`, error);
     }
   }
 }
@@ -452,6 +576,12 @@ export class SubAgentManager extends EventEmitter {
   private agentInstances: Map<string, SubAgent> = new Map();
   private agentCounter = 0;
   private agentQueue: SubAgentQueue;
+  private hookRegistry?: HookRegistry;
+  private completionTracker?: CompletionTracker;
+  private planningValidator?: PlanningValidator;
+  private proactiveContextMonitor?: ProactiveContextMonitor;
+  private incompleteWorkDetector?: IncompleteWorkDetector;
+  private fileRelationshipTracker?: FileRelationshipTracker;
 
   constructor(
     private llmClient: LLMClient,
@@ -466,6 +596,14 @@ export class SubAgentManager extends EventEmitter {
     private modelName?: string
   ) {
     super();
+    // Store validators for use in spawn()
+    this.hookRegistry = hookRegistry;
+    this.completionTracker = completionTracker;
+    this.planningValidator = planningValidator;
+    this.proactiveContextMonitor = proactiveContextMonitor;
+    this.incompleteWorkDetector = incompleteWorkDetector;
+    this.fileRelationshipTracker = fileRelationshipTracker;
+
     // Create the queue with concurrency limit and all infrastructure
     this.agentQueue = new SubAgentQueue(
       maxConcurrency,
@@ -502,10 +640,23 @@ export class SubAgentManager extends EventEmitter {
     const agentId = `agent_${++this.agentCounter}_${Date.now()}`;
 
     // Create agent instance for progress tracking and user messages
-    const agent = new SubAgent(this.llmClient, this.toolRegistry, {
-      ...config,
-      name: agentId,
-    }, this.modelName);
+    // Note: This is just a placeholder for message queueing; actual execution happens in the queue
+    const agent = new SubAgent(
+      this.llmClient,
+      this.toolRegistry,
+      {
+        ...config,
+        name: agentId,
+      },
+      undefined, // abortSignal - not needed for placeholder
+      this.hookRegistry,
+      this.completionTracker,
+      this.planningValidator,
+      this.proactiveContextMonitor,
+      this.incompleteWorkDetector,
+      this.fileRelationshipTracker,
+      this.modelName
+    );
 
     // Store agent instance for progress tracking and user messages
     this.agentInstances.set(agentId, agent);

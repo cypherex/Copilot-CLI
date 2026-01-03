@@ -17,26 +17,29 @@ import type { MemoryStore } from '../memory/types.js';
 
 import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
+import type { CompletionTracker } from '../audit/index.js';
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
   private subAgentManager?: SubAgentManager;
   private hookRegistry?: HookRegistry;
   private conversation?: ConversationManager;
+  private completionTracker?: CompletionTracker;
 
   constructor() {
     this.registerDefaultTools();
   }
 
   // Set execution context for tools that need hooks/tracking
-  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager): void {
+  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager, completionTracker?: CompletionTracker): void {
     this.hookRegistry = hookRegistry;
     this.conversation = conversation;
+    this.completionTracker = completionTracker;
 
     // Update ParallelTool with new context
     const parallelTool = this.get('parallel');
     if (parallelTool && 'setExecutionContext' in parallelTool) {
-      (parallelTool as any).setExecutionContext(hookRegistry, conversation);
+      (parallelTool as any).setExecutionContext(hookRegistry, conversation, completionTracker);
     }
   }
 

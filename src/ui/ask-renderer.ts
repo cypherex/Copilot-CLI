@@ -144,14 +144,36 @@ export class AskRenderer {
   private setupSubagentListeners(): void {
     if (!this.options.subAgentManager || !this.options.logManager) return;
 
-    // Listen for subagent messages
+    // Listen for subagent messages (thinking, responses, system messages)
     this.subagentMessageListener = (data: any) => {
       if (data.agentId && data.content) {
         const state = uiState.getState();
         const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
                         state.subagents?.completed.find(s => s.id === data.agentId);
 
-        const logContent = `\n[${data.type || 'message'}] ${data.content}\n`;
+        let logContent = '';
+
+        // Format based on message type
+        if (data.type === 'thinking') {
+          // Thinking/reasoning content (before tool calls)
+          logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          logContent += `Iteration ${data.iteration || '?'} - Assistant Thinking:\n`;
+          logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          logContent += `${data.content}\n\n`;
+        } else if (data.type === 'final_response') {
+          // Final response (no more tool calls)
+          logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          logContent += `Iteration ${data.iteration || '?'} - Final Response:\n`;
+          logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          logContent += `${data.content}\n\n`;
+        } else if (data.type === 'system') {
+          // System messages (audit results, etc.)
+          logContent = `\n[System] ${data.content}\n`;
+        } else {
+          // Other message types
+          logContent = `\n[${data.type || 'message'}] ${data.content}\n`;
+        }
+
         this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
       }
     };
@@ -164,7 +186,9 @@ export class AskRenderer {
                         state.subagents?.completed.find(s => s.id === data.agentId);
 
         const argsStr = data.args ? JSON.stringify(data.args, null, 2) : '{}';
-        const logContent = `\n→ Tool: ${data.toolName}\n  Args: ${argsStr}\n`;
+        let logContent = `\n⚙️  Executing: ${data.toolName}\n`;
+        logContent += `Arguments:\n${this.indentLines(argsStr, 2)}\n\n`;
+
         this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
       }
     };
@@ -177,13 +201,13 @@ export class AskRenderer {
                         state.subagents?.completed.find(s => s.id === data.agentId);
 
         const statusSymbol = data.success ? '✓' : '✗';
-        let logContent = `${statusSymbol} ${data.toolName} ${data.success ? 'succeeded' : 'failed'}\n`;
+        let logContent = `${statusSymbol} Tool Result: ${data.toolName} ${data.success ? 'succeeded' : 'failed'}\n`;
 
         if (data.output && data.output.trim()) {
-          logContent += `  Output:\n${this.indentLines(data.output, 4)}\n`;
+          logContent += `Output:\n${this.indentLines(data.output, 2)}\n`;
         }
         if (data.error) {
-          logContent += `  Error: ${data.error}\n`;
+          logContent += `Error:\n${this.indentLines(data.error, 2)}\n`;
         }
         logContent += '\n';
 

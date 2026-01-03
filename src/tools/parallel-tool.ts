@@ -6,6 +6,7 @@ import type { ToolDefinition, Tool } from './types.js';
 import type { ToolRegistry } from './index.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
+import type { CompletionTracker } from '../audit/index.js';
 import { uiState } from '../ui/ui-state.js';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -104,6 +105,7 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
   private toolRegistry: ToolRegistry;
   private hookRegistry?: HookRegistry;
   private conversation?: ConversationManager;
+  private completionTracker?: CompletionTracker;
 
   constructor(toolRegistry: ToolRegistry) {
     super();
@@ -111,9 +113,10 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
   }
 
   // Set execution context for hook and tracking support
-  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager): void {
+  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager, completionTracker?: CompletionTracker): void {
     this.hookRegistry = hookRegistry;
     this.conversation = conversation;
+    this.completionTracker = completionTracker;
   }
 
   protected async executeInternal(args: z.infer<typeof ParallelSchema>): Promise<string> {
@@ -246,6 +249,9 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
               relatedTaskId: activeTask?.id,
             });
           }
+
+          // Audit file modifications for incomplete scaffolding
+          await this.auditFileModification(toolName, toolArgs, result);
         }
 
         // Execute tool:post-execute hook
@@ -375,6 +381,64 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
     };
 
     return JSON.stringify(parallelResult, null, 2);
+  }
+
+  /**
+   * Audit file modifications for incomplete scaffolding
+   */
+  private async auditFileModification(
+    toolName: string,
+    toolArgs: Record<string, any>,
+    result: { success: boolean; output?: string; error?: string }
+  ): Promise<void> {
+    const fileModificationTools = ['create_file', 'patch_file'];
+    if (!fileModificationTools.includes(toolName) || !result.success || !this.completionTracker || !this.conversation) {
+      return;
+    }
+
+    try {
+      uiState.addMessage({
+        role: 'system',
+        content: `🔍 [Parallel] Auditing ${toolName} on ${toolArgs.path || 'unknown'}...`,
+        timestamp: Date.now(),
+      });
+
+      const context = `Tool: ${toolName} (parallel)\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      const responseId = `parallel_${toolName}_${Date.now()}`;
+      const auditResult = await this.completionTracker.auditResponse(context, this.conversation.getMessages(), responseId);
+
+      if (auditResult.newItems.length > 0 || auditResult.resolvedItems.length > 0) {
+        // Display audit results
+        for (const item of auditResult.newItems) {
+          uiState.addMessage({
+            role: 'system',
+            content: `Tracking: ${item.type} in ${item.file}: ${item.description}`,
+            timestamp: Date.now(),
+          });
+        }
+        for (const item of auditResult.resolvedItems) {
+          uiState.addMessage({
+            role: 'system',
+            content: `Resolved: ${item.type} in ${item.file}`,
+            timestamp: Date.now(),
+          });
+        }
+      } else {
+        uiState.addMessage({
+          role: 'system',
+          content: `✓ [Parallel] Audit complete: No incomplete scaffolding detected in ${toolArgs.path || 'unknown'}`,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      uiState.addMessage({
+        role: 'system',
+        content: `⚠️ [Parallel] Scaffolding audit failed: ${errorMsg}`,
+        timestamp: Date.now(),
+      });
+      console.error('[Parallel Scaffold Audit] Failed:', error);
+    }
   }
 
   /**
