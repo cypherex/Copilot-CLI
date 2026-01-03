@@ -193,6 +193,10 @@ export class CopilotAgent {
     return this.llmConfig.model;
   }
 
+  getSubAgentManager(): SubAgentManager {
+    return this.subAgentManager;
+  }
+
   // Plugin management
   getPluginRegistry(): PluginRegistry {
     return this.pluginRegistry;

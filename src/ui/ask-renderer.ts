@@ -11,12 +11,14 @@ import { uiState, type MessageState } from './ui-state.js';
 import { ParallelExecutionRenderer } from './regions/parallel-execution-region.js';
 import { SubagentRenderer } from './regions/subagent-region.js';
 import type { LogManager } from './log-manager.js';
+import type { SubAgentManager } from '../agent/subagent.js';
 
 export interface AskRendererOptions {
-  captureMode?: boolean;    // If true, don't use colors and capture output
-  verbose?: boolean;        // Show all details
-  outputFile?: WriteStream; // Optional file stream to write output to (in addition to stdout) - DEPRECATED, use logManager
-  logManager?: LogManager;  // Optional log manager for structured logging with subagent separation
+  captureMode?: boolean;      // If true, don't use colors and capture output
+  verbose?: boolean;          // Show all details
+  outputFile?: WriteStream;   // Optional file stream to write output to (in addition to stdout) - DEPRECATED, use logManager
+  logManager?: LogManager;    // Optional log manager for structured logging with subagent separation
+  subAgentManager?: SubAgentManager; // Optional subagent manager to listen for detailed events
 }
 
 /**
@@ -31,6 +33,11 @@ export class AskRenderer {
   private activeSubagents: Set<string> = new Set(); // Track active subagent IDs
   private lastRenderedSubagentStatus: Map<string, { status: string; result?: string }> = new Map(); // Track what we last rendered
 
+  // Subagent event listeners for cleanup
+  private subagentMessageListener?: (data: any) => void;
+  private subagentToolCallListener?: (data: any) => void;
+  private subagentToolResultListener?: (data: any) => void;
+
   constructor(options: AskRendererOptions = {}) {
     this.options = {
       captureMode: false,
@@ -43,6 +50,11 @@ export class AskRenderer {
    * Start listening to UIState and rendering output
    */
   start(): void {
+    // Subscribe to subagent events for detailed logging if LogManager is available
+    if (this.options.logManager && this.options.subAgentManager) {
+      this.setupSubagentListeners();
+    }
+
     this.unsubscribe = uiState.subscribe((state, changedKeys) => {
       // Handle new messages
       if (changedKeys.includes('pendingMessages') && state.pendingMessages.length > 0) {
@@ -111,6 +123,86 @@ export class AskRenderer {
       this.unsubscribe();
       this.unsubscribe = undefined;
     }
+
+    // Clean up subagent listeners
+    if (this.options.subAgentManager) {
+      if (this.subagentMessageListener) {
+        this.options.subAgentManager.off('message', this.subagentMessageListener);
+      }
+      if (this.subagentToolCallListener) {
+        this.options.subAgentManager.off('tool_call', this.subagentToolCallListener);
+      }
+      if (this.subagentToolResultListener) {
+        this.options.subAgentManager.off('tool_result', this.subagentToolResultListener);
+      }
+    }
+  }
+
+  /**
+   * Setup listeners for detailed subagent events (for log file capture)
+   */
+  private setupSubagentListeners(): void {
+    if (!this.options.subAgentManager || !this.options.logManager) return;
+
+    // Listen for subagent messages
+    this.subagentMessageListener = (data: any) => {
+      if (data.agentId && data.content) {
+        const state = uiState.getState();
+        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
+                        state.subagents?.completed.find(s => s.id === data.agentId);
+
+        const logContent = `\n[${data.type || 'message'}] ${data.content}\n`;
+        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+      }
+    };
+
+    // Listen for tool calls
+    this.subagentToolCallListener = (data: any) => {
+      if (data.agentId && data.toolName) {
+        const state = uiState.getState();
+        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
+                        state.subagents?.completed.find(s => s.id === data.agentId);
+
+        const argsStr = data.args ? JSON.stringify(data.args, null, 2) : '{}';
+        const logContent = `\n→ Tool: ${data.toolName}\n  Args: ${argsStr}\n`;
+        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+      }
+    };
+
+    // Listen for tool results
+    this.subagentToolResultListener = (data: any) => {
+      if (data.agentId && data.toolName) {
+        const state = uiState.getState();
+        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
+                        state.subagents?.completed.find(s => s.id === data.agentId);
+
+        const statusSymbol = data.success ? '✓' : '✗';
+        let logContent = `${statusSymbol} ${data.toolName} ${data.success ? 'succeeded' : 'failed'}\n`;
+
+        if (data.output && data.output.trim()) {
+          logContent += `  Output:\n${this.indentLines(data.output, 4)}\n`;
+        }
+        if (data.error) {
+          logContent += `  Error: ${data.error}\n`;
+        }
+        logContent += '\n';
+
+        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+      }
+    };
+
+    // Attach listeners
+    this.options.subAgentManager.on('message', this.subagentMessageListener);
+    this.options.subAgentManager.on('tool_call', this.subagentToolCallListener);
+    this.options.subAgentManager.on('tool_result', this.subagentToolResultListener);
+  }
+
+  /**
+   * Indent all lines in a string
+   */
+  private indentLines(text: string, spaces: number): string {
+    const indent = ' '.repeat(spaces);
+    return text.split('\n').map(line => indent + line).join('\n');
   }
 
   /**

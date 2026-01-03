@@ -106,9 +106,10 @@ export async function askCommand(
 
     // Create renderer to show agent status, tool execution, and outputs
     const renderer = new AskRenderer({
-      captureMode: options.json, // Capture output in JSON mode
+      captureMode: options.json,              // Capture output in JSON mode
       verbose: true,
-      logManager,                // Use log manager for structured logging
+      logManager,                             // Use log manager for structured logging
+      subAgentManager: agent.getSubAgentManager(), // For detailed subagent event capture
     });
     renderer.start();
 
