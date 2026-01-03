@@ -157,6 +157,7 @@ export class CopilotAgent {
     this.loop.setPlanningValidator(planningValidator);
     this.loop.setProactiveContextMonitor(proactiveContextMonitor);
     this.loop.setIncompleteWorkDetector(incompleteWorkDetector);
+    this.loop.setSubAgentManager(this.subAgentManager);
     this.loop.setFileRelationshipTracker(fileRelationshipTracker);
     this.loop.setWorkContinuityManager(workContinuityManager);
   }

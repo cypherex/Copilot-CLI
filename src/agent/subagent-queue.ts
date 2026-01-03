@@ -153,6 +153,23 @@ export class SubAgentQueue extends EventEmitter {
         this.modelName
       );
 
+      // Forward detailed subagent events for real-time logging
+      agent.on('message', (data: any) => {
+        this.emit('message', { agentId, ...data });
+      });
+
+      agent.on('tool_call', (data: any) => {
+        this.emit('tool_call', { agentId, ...data });
+      });
+
+      agent.on('tool_result', (data: any) => {
+        this.emit('tool_result', { agentId, ...data });
+      });
+
+      agent.on('progress', (data: any) => {
+        this.emit('progress', { agentId, ...data });
+      });
+
       const promise = agent.execute()
         .then(result => {
           this.completedCount++;
@@ -237,28 +254,15 @@ export class SubAgentQueue extends EventEmitter {
       log.log(`  Cancelled ${queuedCount} queued agent(s)`, chalk.gray);
     }
 
-    // Abort all running agents
+    // Wait for all running agents to complete (no timeout - user requested)
     const runningCount = this.runningAgentControllers.size;
     if (runningCount > 0) {
-      log.log(`  Aborting ${runningCount} running agent(s)...`, chalk.gray);
+      log.log(`  Waiting for ${runningCount} running agent(s) to complete...`, chalk.gray);
 
-      for (const [agentId, controller] of this.runningAgentControllers) {
-        controller.abort();
-      }
-
-      // Wait for all agents to finish aborting (with SHORT timeout)
-      const timeout = 2000; // 2 second timeout - aggressive
       const allAgents = Array.from(this.runningAgents.values());
-      const settled = await Promise.race([
-        Promise.allSettled(allAgents),
-        new Promise(resolve => setTimeout(() => resolve('timeout'), timeout))
-      ]);
+      await Promise.allSettled(allAgents);
 
-      if (settled === 'timeout') {
-        log.log('  Timeout waiting for subagents - forcing exit', chalk.yellow);
-      } else {
-        log.log('  All subagents terminated', chalk.green);
-      }
+      log.log('  All subagents completed', chalk.green);
     }
   }
 }
@@ -458,6 +462,13 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
         if (response.content) {
           finalOutput = response.content;
+
+          // Emit message event for thinking/reasoning content
+          this.emit('message', {
+            content: response.content,
+            type: response.toolCalls && response.toolCalls.length > 0 ? 'thinking' : 'final_response',
+            iteration,
+          });
         }
 
         // Execute assistant:response hook
@@ -645,6 +656,13 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
       }
 
+      // Emit tool call event for real-time logging
+      this.emit('tool_call', {
+        toolName,
+        args: toolArgs,
+        toolCallId: toolCall.id,
+      });
+
       let result: { success: boolean; output?: string; error?: string };
 
       try {
@@ -668,6 +686,15 @@ Remember: You are responsible for delivering complete, production-ready work. No
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
         result = { success: false, error: errorMessage };
       }
+
+      // Emit tool result event for real-time logging
+      this.emit('tool_result', {
+        toolCallId: toolCall.id,
+        toolName,
+        success: result.success,
+        output: result.output,
+        error: result.error,
+      });
 
       // Execute tool:post-execute hook
       if (this.hookRegistry) {

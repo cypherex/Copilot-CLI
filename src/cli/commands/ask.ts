@@ -120,6 +120,19 @@ export async function askCommand(
 
     await agent.chat(input);
 
+    // Wait for all background subagents to complete before shutdown
+    const subAgentManager = agent.getSubAgentManager();
+    const activeAgents = subAgentManager.listActive();
+    if (activeAgents.length > 0) {
+      if (!isPrintMode) {
+        log.info(`\n⏳ Waiting for ${activeAgents.length} background subagent(s) to complete...`);
+      }
+      await subAgentManager.waitForAll();
+      if (!isPrintMode) {
+        log.info('✅ All background subagents completed\n');
+      }
+    }
+
     // Stop renderer
     renderer.stop();
 

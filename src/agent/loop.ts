@@ -35,6 +35,7 @@ export class AgenticLoop {
   private fileRelationshipTracker?: FileRelationshipTracker;
   private workContinuityManager?: WorkContinuityManager;
   private memoryStore?: MemoryStore;
+  private subAgentManager?: any; // SubAgentManager - avoid circular dependency
   private responseCounter = 0;
   private currentSubagentOpportunity?: ReturnType<typeof detectSubagentOpportunity>;
 
@@ -89,6 +90,10 @@ export class AgenticLoop {
 
   setWorkContinuityManager(manager: WorkContinuityManager): void {
     this.workContinuityManager = manager;
+  }
+
+  setSubAgentManager(manager: any): void {
+    this.subAgentManager = manager;
   }
 
   /**
@@ -463,6 +468,26 @@ export class AgenticLoop {
             });
             continueLoop = true;
             continue;
+          }
+
+          // Check for active background subagents BEFORE ending loop
+          if (this.subAgentManager) {
+            const activeAgents = this.subAgentManager.listActive();
+            if (activeAgents.length > 0) {
+              // Agent tried to finish but has background agents still running!
+              uiState.addMessage({
+                role: 'system',
+                content: `⚠️  You have ${activeAgents.length} background subagent(s) still running. You must call wait_agent for each one to get their results and complete the task. Active agents: ${activeAgents.join(', ')}`,
+                timestamp: Date.now(),
+              });
+
+              this.conversation.addUserMessage(
+                `You have ${activeAgents.length} background subagent(s) still running. You must call wait_agent for each one to get their results before finishing. Active agent IDs: ${activeAgents.join(', ')}`
+              );
+
+              continueLoop = true;
+              continue; // Go to next iteration
+            }
           }
 
           continueLoop = false;

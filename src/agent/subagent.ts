@@ -805,6 +805,21 @@ export class SubAgentManager extends EventEmitter {
     return this.agentQueue.getStatus();
   }
 
+  /**
+   * Wait for all active background subagents to complete
+   */
+  async waitForAll(): Promise<void> {
+    const activeIds = this.listActive();
+    if (activeIds.length === 0) {
+      return;
+    }
+
+    // Wait for all active agents to complete
+    await Promise.all(activeIds.map(id => this.wait(id).catch(() => {
+      // Ignore errors - we just want to wait for completion
+    })));
+  }
+
   // Shutdown all running subagents
   async shutdown(): Promise<void> {
     await this.agentQueue.shutdown();
