@@ -57,7 +57,7 @@ export class SpawnValidator {
    * Main validation entry point
    */
   async validateSpawn(context: SpawnValidationContext): Promise<SpawnValidationResult> {
-    // If this is a subtask (has parent_task_id), verify parent exists and allow spawn
+    // If this is a subtask (has parent_task_id), verify parent exists
     if (context.parent_task_id) {
       const parentTask = context.memoryStore.getTasks().find(t => t.id === context.parent_task_id);
       if (!parentTask) {
@@ -67,15 +67,12 @@ export class SpawnValidator {
           reason: `Parent task not found: ${context.parent_task_id}`,
         };
       }
-
-      return {
-        allowed: true,
-        requiresBreakdown: false,
-        reason: 'Subtask spawn allowed (has valid parent task)',
-      };
+      // IMPORTANT: Still check complexity even for subtasks!
+      // Just because a task was broken down doesn't mean the subtasks are appropriately scoped.
+      // Subtasks can still be MACRO-level complex and need further breakdown.
     }
 
-    // Assess task complexity
+    // Assess task complexity (for both top-level tasks AND subtasks)
     const complexity = await this.assessTaskComplexity(context.task);
 
     // If task is simple or moderate, allow spawn
