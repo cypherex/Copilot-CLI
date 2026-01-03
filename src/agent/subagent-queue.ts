@@ -480,7 +480,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
 
           // Handle injected user message (used by Ralph Wiggum loop)
           if (responseResult.metadata?.injectUserMessage && !response.toolCalls?.length) {
-            this.conversation.addAssistantMessage(response.content || '');
+            this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
             this.conversation.addUserMessage(responseResult.metadata.injectUserMessage);
             continueLoop = true;
             continue;
@@ -488,7 +488,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
 
         if (response.toolCalls && response.toolCalls.length > 0) {
-          this.conversation.addAssistantMessage(response.content || '', response.toolCalls);
+          this.conversation.addAssistantMessage(response.content || '', response.toolCalls, response.reasoningContent);
 
           // Check if any file modification tools were called
           const fileModificationTools = ['create_file', 'patch_file'];
@@ -502,7 +502,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
-          this.conversation.addAssistantMessage(response.content || '');
+          this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
 
           // Check if we need compression before ending the loop
           const contextManager = this.conversation.getContextManager();

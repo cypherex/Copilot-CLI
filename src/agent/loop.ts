@@ -385,7 +385,7 @@ export class AgenticLoop {
 
           // Handle injected user message (used by Ralph Wiggum loop)
           if (responseResult.metadata?.injectUserMessage && !response.toolCalls?.length) {
-            this.conversation.addAssistantMessage(response.content || '');
+            this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
             this.conversation.addUserMessage(responseResult.metadata.injectUserMessage);
             continueLoop = true;
             continue;
@@ -393,7 +393,7 @@ export class AgenticLoop {
         }
 
         if (response.toolCalls && response.toolCalls.length > 0) {
-          this.conversation.addAssistantMessage(response.content || '', response.toolCalls);
+          this.conversation.addAssistantMessage(response.content || '', response.toolCalls, response.reasoningContent);
 
           // Check if any file modification tools were called
           const fileModificationTools = ['create_file', 'patch_file'];

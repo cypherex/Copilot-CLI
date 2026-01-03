@@ -16,7 +16,7 @@ export const PROVIDER_DEFAULTS: Record<LLMProvider, Partial<LLMConfig>> = {
     endpoint: 'https://api.z.ai/api/coding/paas/v4',
     apiVersion: 'v1',
     model: 'GLM-4.7',
-    enableThinking: true, // Enable extended thinking for GLM models
+    enableThinking: false, // Enable extended thinking for GLM models
   },
   ollama: {
     endpoint: 'http://localhost:11434/v1',

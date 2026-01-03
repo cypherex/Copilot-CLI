@@ -214,6 +214,7 @@ export class OpenAICompatibleClient implements LLMClient {
                 delta: {
                   role: delta.role,
                   content: delta.content,
+                  reasoningContent: delta.reasoning_content,
                   toolCalls: delta.tool_calls?.map((tc: any) => ({
                     index: tc.index,
                     id: tc.id,
@@ -245,6 +246,7 @@ export class OpenAICompatibleClient implements LLMClient {
         message: {
           role: choice.message?.role || 'assistant',
           content: choice.message?.content || '',
+          reasoningContent: choice.message?.reasoning_content,
           toolCalls: choice.message?.tool_calls,
         },
         finishReason: choice.finish_reason || 'stop',

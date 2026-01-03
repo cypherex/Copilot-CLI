@@ -160,11 +160,12 @@ export class ConversationManager {
     }
   }
 
-  addAssistantMessage(content: string, toolCalls?: ToolCall[]): void {
+  addAssistantMessage(content: string, toolCalls?: ToolCall[], reasoningContent?: string): void {
     this.messages.push({
       role: 'assistant',
       content,
       toolCalls,
+      reasoningContent,
     });
   }
 

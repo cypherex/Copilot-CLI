@@ -318,7 +318,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
               
               // Get response and resolve the promise
               const response = await this.getSingleResponse();
-              this.conversation.addAssistantMessage(response.content || '');
+              this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
               
               const resolver = this.userMessageResolvers.get(messageId);
               if (resolver) {
@@ -373,7 +373,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
             status: 'running',
           });
 
-          this.conversation.addAssistantMessage(response.content || '', response.toolCalls);
+          this.conversation.addAssistantMessage(response.content || '', response.toolCalls, response.reasoningContent);
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
@@ -384,7 +384,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
             type: 'final_response',
             iteration,
           });
-          this.conversation.addAssistantMessage(response.content || '');
+          this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
           continueLoop = false;
         }
       }
@@ -424,7 +424,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
     }
   }
 
-  private async getSingleResponse(): Promise<{ content: string; toolCalls?: any[] }> {
+  private async getSingleResponse(): Promise<{ content: string; reasoningContent?: string; toolCalls?: any[] }> {
     const tools = this.toolRegistry.getDefinitions();
     const accumulator = new StreamAccumulator();
 

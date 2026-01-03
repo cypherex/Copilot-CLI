@@ -9,6 +9,7 @@ import { uiState } from '../ui/ui-state.js';
  */
 export class StreamAccumulator {
   private content = '';
+  private reasoningContent = '';
   private toolCalls: Map<number, any> = new Map();
   private role = 'assistant';
   private isStreamingActive = false;
@@ -20,6 +21,10 @@ export class StreamAccumulator {
 
     if (chunk.delta.content) {
       this.content += chunk.delta.content;
+    }
+
+    if (chunk.delta.reasoningContent) {
+      this.reasoningContent += chunk.delta.reasoningContent;
     }
 
     if (chunk.delta.toolCalls) {
@@ -49,6 +54,7 @@ export class StreamAccumulator {
 
     return {
       content: this.content,
+      reasoningContent: this.reasoningContent || undefined,
       toolCalls: toolCallsArray.length > 0 ? toolCallsArray : undefined,
     };
   }

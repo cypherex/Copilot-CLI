@@ -563,7 +563,7 @@ async function handleSessionsCommand(
         if (msg.role === 'user') {
           agent['conversation'].addUserMessage(msg.content);
         } else if (msg.role === 'assistant') {
-          agent['conversation'].addAssistantMessage(msg.content, msg.toolCalls);
+          agent['conversation'].addAssistantMessage(msg.content, msg.toolCalls, msg.reasoningContent);
         } else if (msg.role === 'tool') {
           agent['conversation'].addToolResult(msg.toolCallId || '', msg.name || '', msg.content);
         }

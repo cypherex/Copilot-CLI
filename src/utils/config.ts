@@ -32,7 +32,7 @@ const PROVIDER_CONFIGS: Record<LLMProvider, { endpoint: string; apiVersion: stri
     endpoint: 'https://api.z.ai/api/coding/paas/v4',
     apiVersion: 'v1',
     model: 'GLM-4.7',
-    enableThinking: true,
+    enableThinking: false,
   },
   ollama: {
     endpoint: 'http://localhost:11434/v1',

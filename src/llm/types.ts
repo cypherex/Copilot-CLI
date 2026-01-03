@@ -20,6 +20,7 @@ export interface ChatMessage {
   name?: string; // For tool messages
   toolCalls?: ToolCall[]; // For assistant messages with tool calls
   toolCallId?: string; // For tool response messages
+  reasoningContent?: string; // Extended thinking/reasoning content (GLM, o1, etc.)
 }
 
 export interface ToolCall {
@@ -58,6 +59,7 @@ export interface StreamChunk {
   delta: {
     role?: string;
     content?: string;
+    reasoningContent?: string;
     toolCalls?: Array<{
       index: number;
       id?: string;
