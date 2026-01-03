@@ -1075,8 +1075,17 @@ Start with list_tracking_items to see what needs review.`;
         timestamp: Date.now(),
       });
 
-      // Build context for audit (what the LLM just did)
-      const context = `Tool: ${toolName}\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      // Build context for audit with actual file content
+      let context: string;
+      if (toolName === 'create_file') {
+        // For create_file, include FULL file content so audit can detect all issues
+        context = `Tool: ${toolName}\nFile: ${toolArgs.path || 'unknown'}\n\nFile Content:\n${toolArgs.content || '(no content)'}`;
+      } else if (toolName === 'patch_file') {
+        // For patch_file, include search/replace patterns and context
+        context = `Tool: ${toolName}\nFile: ${toolArgs.path || 'unknown'}\n\nSearch pattern:\n${toolArgs.search || '(no search pattern)'}\n\nReplacement:\n${toolArgs.replace || '(no replacement)'}\n\nResult: ${result.output || ''}`;
+      } else {
+        context = `Tool: ${toolName}\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      }
 
       const responseId = `tool_${toolName}_${Date.now()}`;
       const auditResult = await this.completionTracker.auditResponse(

@@ -403,7 +403,18 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
         timestamp: Date.now(),
       });
 
-      const context = `Tool: ${toolName} (parallel)\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      // Build context with actual file content for audit
+      let context: string;
+      if (toolName === 'create_file') {
+        // For create_file, include FULL file content so audit can detect all issues
+        context = `Tool: ${toolName} (parallel)\nFile: ${toolArgs.path || 'unknown'}\n\nFile Content:\n${toolArgs.content || '(no content)'}`;
+      } else if (toolName === 'patch_file') {
+        // For patch_file, include search/replace patterns and context
+        context = `Tool: ${toolName} (parallel)\nFile: ${toolArgs.path || 'unknown'}\n\nSearch pattern:\n${toolArgs.search || '(no search pattern)'}\n\nReplacement:\n${toolArgs.replace || '(no replacement)'}\n\nResult: ${result.output || ''}`;
+      } else {
+        context = `Tool: ${toolName} (parallel)\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      }
+
       const responseId = `parallel_${toolName}_${Date.now()}`;
       const auditResult = await this.completionTracker.auditResponse(context, this.conversation.getMessages(), responseId);
 

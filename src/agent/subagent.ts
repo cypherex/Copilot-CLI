@@ -528,7 +528,18 @@ Remember: You are responsible for delivering complete, production-ready work. No
         content: `🔍 [Subagent] Auditing ${toolName} on ${toolArgs.path || 'unknown'}...`,
       });
 
-      const context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      // Build context with actual file content for audit
+      let context: string;
+      if (toolName === 'create_file') {
+        // For create_file, include FULL file content so audit can detect all issues
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n\nFile Content:\n${toolArgs.content || '(no content)'}`;
+      } else if (toolName === 'patch_file') {
+        // For patch_file, include search/replace patterns and context
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n\nSearch pattern:\n${toolArgs.search || '(no search pattern)'}\n\nReplacement:\n${toolArgs.replace || '(no replacement)'}\n\nResult: ${result.output || ''}`;
+      } else {
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      }
+
       const responseId = `subagent_${this.config.name}_${toolName}_${Date.now()}`;
       const auditResult = await this.completionTracker.auditResponse(context, this.conversation.getMessages(), responseId);
 
