@@ -24,6 +24,10 @@ export interface SpawnValidationResult {
   complexity?: ComplexityAssessment;
   breakdownDecision?: BreakdownDecision;
   suggestedMessage?: string;
+  autoCreatedTask?: {
+    taskId: string;
+    subtaskIds: string[];
+  };
 }
 
 export interface ComplexityAssessment {
@@ -94,14 +98,41 @@ export class SpawnValidator {
     );
 
     if (breakdownDecision.required) {
+      // Auto-create the task and subtasks to save a round trip
+      const parentTask = context.memoryStore.addTask({
+        description: context.task,
+        status: 'active',
+        priority: 'high',
+        relatedFiles: context.files || [],
+      });
+
+      const subtaskIds: string[] = [];
+      for (const subtaskDesc of breakdownDecision.suggestedSubtasks) {
+        const subtask = context.memoryStore.addTask({
+          description: subtaskDesc,
+          status: 'waiting',
+          priority: 'medium',
+          parentId: parentTask.id,
+          relatedFiles: [],
+        });
+        subtaskIds.push(subtask.id);
+      }
+
       return {
         allowed: false,
         requiresBreakdown: true,
         complexity,
         breakdownDecision,
-        reason: 'Task is too complex - requires breakdown before spawning subagent',
-        suggestedMessage: this.buildBreakdownRequiredMessage(
+        reason: 'Task is too complex - auto-created task with subtasks',
+        autoCreatedTask: {
+          taskId: parentTask.id,
+          subtaskIds,
+        },
+        suggestedMessage: this.buildBreakdownCompletedMessage(
           context.task,
+          parentTask.id,
+          subtaskIds,
+          breakdownDecision.suggestedSubtasks,
           complexity,
           breakdownDecision
         ),
@@ -366,15 +397,22 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
   /**
    * Build error message when breakdown is required
    */
-  private buildBreakdownRequiredMessage(
+  private buildBreakdownCompletedMessage(
     task: string,
+    taskId: string,
+    subtaskIds: string[],
+    subtaskDescriptions: string[],
     complexity: ComplexityAssessment,
     breakdownDecision: BreakdownDecision
   ): string {
     const lines: string[] = [
-      'Task Breakdown Required',
+      'Task Automatically Broken Down',
       '',
-      `The task "${task}" is too complex to spawn directly as a subagent.`,
+      `The task "${task}" was too complex to execute directly.`,
+      '',
+      '✓ AUTOMATICALLY CREATED:',
+      `  - Parent Task ID: ${taskId}`,
+      `  - Created ${subtaskIds.length} subtasks`,
       '',
       'Complexity Assessment:',
       `  Rating: ${complexity.rating}`,
@@ -402,17 +440,15 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
     }
 
     lines.push('');
-    lines.push('Breakdown Recommendation:');
+    lines.push('Breakdown Reasoning:');
     lines.push(`  ${breakdownDecision.reasoning}`);
     lines.push('');
 
-    if (breakdownDecision.suggestedSubtasks.length > 0) {
-      lines.push('Suggested Subtasks:');
-      for (let i = 0; i < breakdownDecision.suggestedSubtasks.length; i++) {
-        lines.push(`  ${i + 1}. ${breakdownDecision.suggestedSubtasks[i]}`);
-      }
-      lines.push('');
+    lines.push('Created Subtasks:');
+    for (let i = 0; i < subtaskDescriptions.length; i++) {
+      lines.push(`  ${i + 1}. [${subtaskIds[i]}] ${subtaskDescriptions[i]}`);
     }
+    lines.push('');
 
     if (breakdownDecision.integrationConsiderations.length > 0) {
       lines.push('Integration Considerations:');
@@ -422,30 +458,21 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
       lines.push('');
     }
 
-    lines.push('REQUIRED ACTION:');
-    lines.push('  You MUST respond with structured schema - no text explanations.');
+    lines.push('NEXT STEPS:');
+    lines.push('  1. Review the created subtasks above');
+    lines.push('  2. If any subtask is still too complex, use break_down_task to further break it down');
+    lines.push('  3. Once subtasks are appropriately scoped, spawn subagents for each or work on them directly');
     lines.push('');
-    lines.push('Step 1: Call create_task tool with schema:');
-    lines.push('  {');
-    lines.push('    "description": "' + task + '",');
-    lines.push('    "priority": "high" | "medium" | "low" (optional)');
-    lines.push('  }');
-    lines.push('');
-    lines.push('Step 2: Call break_down_task tool with the task_id from step 1:');
-    lines.push('  {');
-    lines.push('    "task_id": "<id from create_task result>",');
+    lines.push('To further break down a complex subtask, use:');
+    lines.push('  break_down_task({');
+    lines.push('    "task_id": "<subtask_id>",');
     lines.push('    "subtasks": [');
-    for (let i = 0; i < Math.min(breakdownDecision.suggestedSubtasks.length, 7); i++) {
-      const comma = i < Math.min(breakdownDecision.suggestedSubtasks.length, 7) - 1 ? ',' : '';
-      lines.push(`      { "description": "${breakdownDecision.suggestedSubtasks[i]}" }${comma}`);
-    }
-    if (breakdownDecision.suggestedSubtasks.length > 7) {
-      lines.push('      ... (include all suggested subtasks)');
-    }
+    lines.push('      { "description": "..." },');
+    lines.push('      { "description": "..." }');
     lines.push('    ]');
-    lines.push('  }');
+    lines.push('  })');
     lines.push('');
-    lines.push('IMPORTANT: Respond with ONLY with structured schema. Do NOT include explanatory text.');
+    lines.push('You can also use list_tasks to see all tasks and their hierarchy.');
 
     return lines.join('\n');
   }
