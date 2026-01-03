@@ -36,7 +36,7 @@ async function testConcurrentRequests() {
   console.log('\n=== Test: Concurrent Requests ===');
   const rateLimiter = new RateLimiter(100);
 
-  const timestamps: number[] = [];
+  const timestamps: any[] = [];
   const promises = Array(5).fill(null).map(async (index) => {
     const before = Date.now();
     await rateLimiter.acquire();
