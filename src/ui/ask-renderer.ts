@@ -6,13 +6,17 @@
  */
 
 import chalk from 'chalk';
+import type { WriteStream } from 'fs';
 import { uiState, type MessageState } from './ui-state.js';
 import { ParallelExecutionRenderer } from './regions/parallel-execution-region.js';
 import { SubagentRenderer } from './regions/subagent-region.js';
+import type { LogManager } from './log-manager.js';
 
 export interface AskRendererOptions {
-  captureMode?: boolean; // If true, don't use colors and capture output
-  verbose?: boolean;     // Show all details
+  captureMode?: boolean;    // If true, don't use colors and capture output
+  verbose?: boolean;        // Show all details
+  outputFile?: WriteStream; // Optional file stream to write output to (in addition to stdout) - DEPRECATED, use logManager
+  logManager?: LogManager;  // Optional log manager for structured logging with subagent separation
 }
 
 /**
@@ -24,6 +28,7 @@ export class AskRenderer {
   private output: string[] = [];
   private lastStreamContent = '';
   private liveMessageContent: Map<string, string> = new Map(); // Track last rendered content for live messages
+  private activeSubagents: Set<string> = new Set(); // Track active subagent IDs
 
   constructor(options: AskRendererOptions = {}) {
     this.options = {
@@ -48,8 +53,30 @@ export class AskRenderer {
 
       // Handle live message updates
       if (changedKeys.includes('liveMessages')) {
+        // Track which subagents are currently live
+        const currentLiveSubagents = new Set<string>();
+
         for (const [id, msg] of state.liveMessages) {
           this.renderLiveMessage(id, msg);
+
+          // Track subagent if it's a subagent message
+          if (msg.role === 'subagent-status' && msg.subagentId) {
+            currentLiveSubagents.add(msg.subagentId);
+            this.activeSubagents.add(msg.subagentId);
+          }
+        }
+
+        // Close streams for subagents that are no longer live
+        for (const subagentId of this.activeSubagents) {
+          if (!currentLiveSubagents.has(subagentId)) {
+            // Subagent was finalized - close its stream
+            if (this.options.logManager) {
+              this.options.logManager.closeSubagentStream(subagentId).catch(err => {
+                console.error('Failed to close subagent stream:', err);
+              });
+            }
+            this.activeSubagents.delete(subagentId);
+          }
         }
       }
 
@@ -103,6 +130,12 @@ export class AskRenderer {
    * Render a live-updating message (updates in place conceptually, but we just re-render)
    */
   private renderLiveMessage(id: string, msg: MessageState): void {
+    // Special handling for subagent messages
+    if (msg.role === 'subagent-status' && msg.subagentId) {
+      this.renderSubagentMessage(msg.subagentId);
+      return;
+    }
+
     const lines = this.renderMessageToLines(msg);
     const newContent = lines.join('\n');
 
@@ -196,19 +229,51 @@ export class AskRenderer {
         }
         break;
       case 'subagent-status':
-        // Live subagent status
+        // Live subagent status - render summary to main, full details to subagent log
         if (msg.subagentId) {
-          const state = uiState.getState();
-          const lines = SubagentRenderer.render(
-            state.subagents,
-            msg.subagentId
-          );
-          for (const line of lines) {
-            this.writeLine(this.stripAnsiIfNeeded(line));
-          }
-          this.writeLine('');
+          this.renderSubagentMessage(msg.subagentId);
         }
         break;
+    }
+  }
+
+  /**
+   * Render subagent status - summary to main output, full details to subagent log
+   */
+  private renderSubagentMessage(subagentId: string): void {
+    const state = uiState.getState();
+    const subagentState = state.subagents?.active.find(s => s.id === subagentId) ||
+                          state.subagents?.completed.find(s => s.id === subagentId);
+
+    if (!subagentState) return;
+
+    // Render full details to subagent log if using LogManager
+    if (this.options.logManager) {
+      const lines = SubagentRenderer.render(state.subagents, subagentId);
+      const content = lines.map(line => this.stripAnsi(line)).join('\n') + '\n\n';
+      this.options.logManager.writeToSubagent(subagentId, content, subagentState.role).catch(err => {
+        console.error('Failed to write to subagent log:', err);
+      });
+
+      // Render summary to main output
+      this.writeLine(this.colorize(`▶ Subagent: ${subagentState.role || 'agent'} (${subagentState.status})`, 'dim'));
+      this.writeLine(this.colorize(`  Task: ${subagentState.task}`, 'dim'));
+      if (subagentState.result) {
+        this.writeLine(this.colorize(`  Result: ${subagentState.result.substring(0, 100)}${subagentState.result.length > 100 ? '...' : ''}`, 'dim'));
+      }
+      if (subagentState.status === 'completed' || subagentState.status === 'failed') {
+        const duration = subagentState.endTime ? ((subagentState.endTime - subagentState.startTime) / 1000).toFixed(1) : '?';
+        this.writeLine(this.colorize(`  Duration: ${duration}s`, 'dim'));
+        this.writeLine(this.colorize(`  → See ${subagentState.role || 'subagent'}-${subagentId.slice(0, 8)}.log for full output`, 'dim'));
+      }
+      this.writeLine('');
+    } else {
+      // No log manager - render full details to main output (backward compatibility)
+      const lines = SubagentRenderer.render(state.subagents, subagentId);
+      for (const line of lines) {
+        this.writeLine(this.stripAnsiIfNeeded(line));
+      }
+      this.writeLine('');
     }
   }
 
@@ -220,6 +285,15 @@ export class AskRenderer {
       this.output.push(content);
     } else {
       console.log(content);
+    }
+
+    // Write to file (prefer logManager over direct outputFile)
+    if (this.options.logManager) {
+      const cleanContent = this.stripAnsi(content);
+      this.options.logManager.writeToMain(cleanContent + '\n');
+    } else if (this.options.outputFile) {
+      const cleanContent = this.stripAnsi(content);
+      this.options.outputFile.write(cleanContent + '\n');
     }
   }
 
@@ -235,6 +309,22 @@ export class AskRenderer {
     } else {
       process.stdout.write(content);
     }
+
+    // Write to file (prefer logManager over direct outputFile)
+    if (this.options.logManager) {
+      const cleanContent = this.stripAnsi(content);
+      this.options.logManager.writeToMain(cleanContent);
+    } else if (this.options.outputFile) {
+      const cleanContent = this.stripAnsi(content);
+      this.options.outputFile.write(cleanContent);
+    }
+  }
+
+  /**
+   * Strip ANSI codes from text
+   */
+  private stripAnsi(text: string): string {
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
   /**
@@ -258,7 +348,7 @@ export class AskRenderer {
    */
   private stripAnsiIfNeeded(text: string): string {
     if (this.options.captureMode) {
-      return text.replace(/\x1b\[[0-9;]*m/g, '');
+      return this.stripAnsi(text);
     }
     return text;
   }

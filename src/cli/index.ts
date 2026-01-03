@@ -30,6 +30,7 @@ export function createCLI(): Command {
     .option('--json', 'Output response as JSON')
     .option('--no-tools', 'Disable tool execution (answer only)')
     .option('--max-iterations <n>', 'Limit iterations (default: unlimited)', parseInt)
+    .option('-o, --output-file <path>', 'Save output to file (in addition to displaying)')
     .action(askCommand);
 
   // Configuration management

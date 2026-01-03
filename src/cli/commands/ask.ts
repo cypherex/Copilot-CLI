@@ -6,6 +6,7 @@ import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { log } from '../../utils/index.js';
 import { AskRenderer } from '../../ui/ask-renderer.js';
+import { LogManager } from '../../ui/log-manager.js';
 
 interface AskOptions {
   directory: string;
@@ -13,6 +14,7 @@ interface AskOptions {
   json?: boolean;
   tools?: boolean;
   maxIterations?: number;
+  outputFile?: string;
 }
 
 async function readStdin(): Promise<string> {
@@ -78,6 +80,20 @@ export async function askCommand(
 
   const spinner = isPrintMode ? null : ora('Initializing...').start();
 
+  // Create log manager if output file requested
+  let logManager: LogManager | undefined;
+  if (options.outputFile) {
+    try {
+      logManager = new LogManager({
+        mainOutputPath: options.outputFile,
+      });
+    } catch (error) {
+      logError(`Error: Failed to create output file: ${options.outputFile}`);
+      logError(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  }
+
   try {
     const agent = new CopilotAgent(config.auth, config.llm, options.directory);
 
@@ -92,6 +108,7 @@ export async function askCommand(
     const renderer = new AskRenderer({
       captureMode: options.json, // Capture output in JSON mode
       verbose: true,
+      logManager,                // Use log manager for structured logging
     });
     renderer.start();
 
@@ -117,8 +134,20 @@ export async function askCommand(
     }
 
     await agent.shutdown();
+
+    // Close all log streams
+    if (logManager) {
+      await logManager.closeAll();
+    }
   } catch (error) {
     spinner?.fail('Failed');
+
+    // Close log streams on error
+    if (logManager) {
+      await logManager.closeAll().catch(() => {
+        // Ignore errors during cleanup
+      });
+    }
 
     if (options.json) {
       log.info(JSON.stringify({
