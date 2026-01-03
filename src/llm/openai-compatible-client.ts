@@ -76,7 +76,7 @@ export class OpenAICompatibleClient implements LLMClient {
   constructor(config: LLMConfig, providerName: string = 'OpenAI-compatible') {
     this.config = config;
     this.providerName = providerName;
-    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 100);
+    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 25);
   }
 
   private get chatEndpoint(): string {

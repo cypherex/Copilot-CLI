@@ -107,7 +107,7 @@ export class CopilotClient implements LLMClient {
   ) {
     this.authManager = authManager;
     this.config = config;
-    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 100);
+    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 25);
   }
 
   private get baseUrl(): string {
