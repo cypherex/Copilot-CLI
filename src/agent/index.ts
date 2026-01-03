@@ -15,6 +15,8 @@ import { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
+import { SpawnValidator } from '../validators/spawn-validator.js';
+import { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
@@ -116,6 +118,10 @@ export class CopilotAgent {
     // Initialize work continuity manager for session resume
     const workContinuityManager = new WorkContinuityManager(this.conversation.getMemoryStore());
 
+    // Initialize spawn validator and completion workflow validator
+    const spawnValidator = new SpawnValidator(this.llmClient);
+    const completionWorkflowValidator = new CompletionWorkflowValidator(this.llmClient);
+
     // Create SubAgentManager with all infrastructure and register subagent tools
     this.subAgentManager = new SubAgentManager(
       this.llmClient,
@@ -130,6 +136,17 @@ export class CopilotAgent {
       llmConfig.model // Pass model name for context limit configuration
     );
     this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
+
+    // Wire validators into tools
+    const spawnAgentTool = this.toolRegistry.get('spawn_agent');
+    if (spawnAgentTool && 'setValidator' in spawnAgentTool) {
+      (spawnAgentTool as any).setValidator(spawnValidator);
+    }
+
+    const updateTaskStatusTool = this.toolRegistry.get('update_task_status');
+    if (updateTaskStatusTool && 'setValidator' in updateTaskStatusTool) {
+      (updateTaskStatusTool as any).setValidator(completionWorkflowValidator);
+    }
 
     // Set execution context for parallel tool (hooks + file tracking + auditing)
     this.toolRegistry.setExecutionContext(this.hookRegistry, this.conversation, this.completionTracker);

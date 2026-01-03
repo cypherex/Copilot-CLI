@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import type { MemoryStore, Task, TrackingItem } from '../memory/types.js';
+import { uiState } from '../ui/ui-state.js';
+import type { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
 
 // Schema for create_task
 const CreateTaskSchema = z.object({
@@ -125,6 +127,8 @@ For hierarchical tasks:
 }
 
 export class UpdateTaskStatusTool extends BaseTool {
+  private completionValidator?: CompletionWorkflowValidator;
+
   readonly definition: ToolDefinition = {
     name: 'update_task_status',
     description: `Update the status of a task.
@@ -135,7 +139,9 @@ Use this to:
 - Mark a task as blocked if you encounter issues
 - Mark a task as waiting if you need user input
 
-Always update task status as you work to track progress.`,
+Always update task status as you work to track progress.
+
+Note: Task completion is validated to ensure proper workflow and next step planning.`,
     parameters: {
       type: 'object',
       properties: {
@@ -165,6 +171,10 @@ Always update task status as you work to track progress.`,
     this.memoryStore = memoryStore;
   }
 
+  setValidator(validator: CompletionWorkflowValidator): void {
+    this.completionValidator = validator;
+  }
+
   protected async executeInternal(args: z.infer<typeof UpdateTaskStatusSchema>): Promise<string> {
     const { task_id, status, notes } = args;
 
@@ -173,11 +183,105 @@ Always update task status as you work to track progress.`,
       throw new Error(`Task not found: ${task_id}`);
     }
 
-    this.memoryStore.updateTask(task_id, { status, updatedAt: new Date() });
+    // VALIDATION: Check if completion should be allowed
+    if (status === 'completed' && this.completionValidator) {
+      const allTasks = this.memoryStore.getTasks();
+      const workingState = this.memoryStore.getWorkingState();
+
+      // Get files modified during this task
+      const relatedEdits = workingState.editHistory.filter(
+        edit => edit.relatedTaskId === task_id
+      );
+      const completedTaskFiles = Array.from(new Set(relatedEdits.map(edit => edit.file)));
+
+      const validationResult = await this.completionValidator.validateCompletion({
+        completedTask: task,
+        allTasks,
+        completedTaskFiles,
+      });
+
+      // If not allowed (blocked), throw error
+      if (!validationResult.allowed) {
+        throw new Error(validationResult.blockReason || 'Completion validation failed');
+      }
+
+      // Display warnings
+      if (validationResult.warnings && validationResult.warnings.length > 0) {
+        const warningMessage = [
+          '⚠️  Completion Warnings:',
+          ...validationResult.warnings.map((w: string) => `  • ${w}`),
+        ].join('\n');
+
+        uiState.addMessage({
+          role: 'system',
+          content: warningMessage,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Display suggestions
+      if (validationResult.suggestions && validationResult.suggestions.length > 0) {
+        const suggestionMessage = [
+          '📋 Next Steps:',
+          ...validationResult.suggestions.map((s: string) => `  • ${s}`),
+        ].join('\n');
+
+        uiState.addMessage({
+          role: 'system',
+          content: suggestionMessage,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Update task with completion data
+      this.memoryStore.updateTask(task_id, {
+        status,
+        updatedAt: new Date(),
+        completedAt: new Date(),
+        filesModified: completedTaskFiles.length > 0 ? completedTaskFiles : undefined,
+      });
+
+      // Build enhanced completion response
+      let message = `✓ Completed task: "${task.description}"`;
+      if (notes) {
+        message += `\n  Notes: ${notes}`;
+      }
+
+      if (completedTaskFiles.length > 0) {
+        message += `\n  Files modified: ${completedTaskFiles.join(', ')}`;
+      }
+
+      return message;
+    }
+
+    // Non-completion status update (no validation needed)
+    const updates: Partial<Task> = { status, updatedAt: new Date() };
+
+    // For completion without validator, still populate filesModified
+    if (status === 'completed') {
+      const workingState = this.memoryStore.getWorkingState();
+      const relatedEdits = workingState.editHistory.filter(
+        edit => edit.relatedTaskId === task_id
+      );
+
+      if (relatedEdits.length > 0) {
+        updates.filesModified = Array.from(
+          new Set(relatedEdits.map(edit => edit.file))
+        );
+      }
+      updates.completedAt = new Date();
+    }
+
+    this.memoryStore.updateTask(task_id, updates);
 
     let message = `Updated task "${task.description}": ${task.status} → ${status}`;
     if (notes) {
       message += `\n  Notes: ${notes}`;
+    }
+
+    // Show files modified when marking as completed
+    if (status === 'completed' && updates.filesModified && updates.filesModified.length > 0) {
+      message += `\n  Files modified: ${updates.filesModified.join(', ')}`;
     }
 
     return message;

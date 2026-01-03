@@ -101,6 +101,9 @@ export interface Task {
   actualComplexity?: TaskComplexity;
   actualIterations?: number; // How many iterations/LLM calls to complete
   shouldHaveSpawnedSubagent?: boolean; // Retrospective flag
+
+  // File tracking
+  filesModified?: string[]; // Files created/modified during task execution (from EditRecords)
 }
 
 // Tracking items - incomplete work items detected in LLM responses

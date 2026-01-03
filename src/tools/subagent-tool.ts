@@ -18,6 +18,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { SubagentRenderer, subagentRendererRegistry } from '../ui/subagent-renderer.js';
 import { uiState } from '../ui/ui-state.js';
+import type { SpawnValidator } from '../validators/spawn-validator.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
@@ -44,6 +45,8 @@ const ListAgentsSchema = z.object({
 const GetAgentQueueStatusSchema = z.object({});
 
 export class SpawnAgentTool extends BaseTool {
+  private spawnValidator?: SpawnValidator;
+
   readonly definition: ToolDefinition = {
     name: 'spawn_agent',
     description: `Spawn an autonomous subagent to handle a focused, specific task.
@@ -139,10 +142,44 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
     this.memoryStore = memoryStore;
   }
 
+  setValidator(validator: SpawnValidator): void {
+    this.spawnValidator = validator;
+  }
+
   protected async executeInternal(args: z.infer<typeof SpawnAgentSchema>): Promise<string> {
     const { task, name, role, files, success_criteria, background } = args;
 
     const warnings: string[] = [];
+
+    // VALIDATION: Check if spawn should be allowed
+    if (this.spawnValidator && this.memoryStore) {
+      const currentTask = this.memoryStore.getActiveTask();
+
+      const validationResult = await this.spawnValidator.validateSpawn({
+        task,
+        parent_task_id: currentTask?.id,
+        memoryStore: this.memoryStore,
+      });
+
+      // If not allowed and requires breakdown, throw error with detailed message
+      if (!validationResult.allowed && validationResult.requiresBreakdown) {
+        throw new Error(validationResult.suggestedMessage || validationResult.reason || 'Task is too complex - requires breakdown');
+      }
+
+      // Display warnings/info if task is complex but allowed
+      if (validationResult.complexity && validationResult.complexity.rating === 'complex') {
+        const complexityMessage = [
+          `⚠️  Complex task detected (${validationResult.complexity.rating}):`,
+          `  Reasoning: ${validationResult.complexity.reasoning}`,
+        ].join('\n');
+
+        uiState.addMessage({
+          role: 'system',
+          content: complexityMessage,
+          timestamp: Date.now(),
+        });
+      }
+    }
     let contextSummary: string | undefined;
 
     // AUTOMATIC CONTEXT MANAGEMENT: Summarize context if conversation is getting long

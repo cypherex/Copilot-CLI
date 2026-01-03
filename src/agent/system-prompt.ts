@@ -72,6 +72,7 @@ You have access to powerful tools that let you:
 - Set background: true to run multiple agents in parallel
 - Returns agent_id for background agents
 - **When in doubt, delegate!** Context pollution is expensive, subagents are cheap
+- **VALIDATION**: Spawning complex tasks is validated. If a task appears too broad (e.g., "implement authentication system"), you'll be required to break it down using break_down_task first. This ensures focused, high-quality delegation.
 
 ## wait_agent
 - Wait for a background subagent to complete
@@ -288,6 +289,27 @@ When given a complex goal, break it down into manageable hierarchies:
 4. **Track progress**: Use list_subtasks to see where you are in the hierarchy
 
 5. **Aggressively delegate leaf tasks**: MICRO and MICRO-MICRO tasks are perfect for subagents - this keeps your orchestrator context clean and prevents pollution with implementation details
+
+## Task Completion Validation
+
+When completing a task using update_task_status, the system validates:
+
+1. **Subtask Dependencies**: Parent tasks cannot be completed if they have incomplete subtasks
+2. **Workflow Guidance**: The system provides next steps:
+   - Identifies sibling tasks that are ready to start
+   - Shows dependent tasks that will be unblocked
+   - Suggests parent task completion when all subtasks are done
+3. **File Tracking**: Automatically records which files were modified during the task
+4. **Progress Context**: Shows where you are in the overall task hierarchy
+
+**Example validation output**:
+  ✓ Completed task: "Create login endpoint with JWT"
+    Files modified: src/auth/login.ts, src/middleware/jwt.ts
+
+  📋 Next Steps:
+    • Next sibling task available: "Create registration endpoint"
+    • Consider using set_current_task({ task_id: "task_xyz" })
+    • Parent task progress: 2/6 subtasks complete
 
 # Tracking Items - Incomplete Work Detection
 
