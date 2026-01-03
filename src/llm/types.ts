@@ -11,6 +11,7 @@ export interface LLMConfig {
   maxTokens: number;
   temperature: number;
   streamingEnabled: boolean;
+  enableThinking?: boolean; // Enable extended thinking/reasoning (GLM, o1, etc.)
 }
 
 export interface ChatMessage {

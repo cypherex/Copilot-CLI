@@ -165,6 +165,7 @@ export class CopilotAgent {
     this.loop.setSubAgentManager(this.subAgentManager);
     this.loop.setFileRelationshipTracker(fileRelationshipTracker);
     this.loop.setWorkContinuityManager(workContinuityManager);
+    this.loop.setMemoryStore(this.conversation.getMemoryStore());
   }
 
   async chat(userMessage: string): Promise<void> {

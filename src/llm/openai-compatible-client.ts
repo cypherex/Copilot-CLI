@@ -124,6 +124,13 @@ export class OpenAICompatibleClient implements LLMClient {
       body.tool_choice = 'auto';
     }
 
+    // Add thinking parameter for providers that support it (GLM, o1, etc.)
+    if (this.config.enableThinking) {
+      body.thinking = {
+        type: 'enabled'
+      };
+    }
+
     return body;
   }
 

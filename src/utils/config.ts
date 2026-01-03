@@ -21,21 +21,24 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 import type { LLMProvider } from '../llm/types.js';
 
 // Provider defaults (inline to avoid circular imports)
-const PROVIDER_CONFIGS: Record<LLMProvider, { endpoint: string; apiVersion: string; model?: string }> = {
+const PROVIDER_CONFIGS: Record<LLMProvider, { endpoint: string; apiVersion: string; model?: string; enableThinking?: boolean }> = {
   copilot: {
     endpoint: 'https://graph.microsoft.com',
     apiVersion: 'beta',
     model: undefined,
+    enableThinking: false,
   },
   zai: {
     endpoint: 'https://api.z.ai/api/coding/paas/v4',
     apiVersion: 'v1',
     model: 'GLM-4.7',
+    enableThinking: true,
   },
   ollama: {
     endpoint: 'http://localhost:11434/v1',
     apiVersion: 'v1',
     model: 'qwen2.5-coder:7b',
+    enableThinking: false,
   },
 };
 
@@ -73,9 +76,10 @@ function getDefaultConfig(): AppConfig {
       apiVersion: providerDefaults.apiVersion || 'beta',
       apiKey: process.env.ZAI_API_KEY || process.env.LLM_API_KEY || undefined,
       model: process.env.LLM_MODEL || providerDefaults.model,
-      maxTokens: 40960,
+      maxTokens: 120000, // Support modern models like GLM-4.7 with 128k output tokens
       temperature: 0.7,
       streamingEnabled: true,
+      enableThinking: providerDefaults.enableThinking ?? false,
     },
   };
 }
