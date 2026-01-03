@@ -140,6 +140,7 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
           tool: tc.tool,
           status: 'pending',
           startTime: Date.now(),
+          args: tc.parameters,  // Store arguments
         })),
         startTime,
         isActive: true,
@@ -270,6 +271,7 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
                       endTime: Date.now(),
                       executionTime: toolExecutionTime,
                       error: result.success ? undefined : result.error,
+                      output: result.output,  // Store output
                     }
                   : t
               ),

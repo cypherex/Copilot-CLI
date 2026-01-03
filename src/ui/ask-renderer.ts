@@ -229,6 +229,12 @@ export class AskRenderer {
       return;
     }
 
+    // Special handling for parallel messages
+    if (msg.role === 'parallel-status' && msg.parallelExecutionId) {
+      this.renderParallelMessage(msg.parallelExecutionId);
+      return;
+    }
+
     const lines = this.renderMessageToLines(msg);
     const newContent = lines.join('\n');
 
@@ -310,15 +316,7 @@ export class AskRenderer {
       case 'parallel-status':
         // Live parallel execution status
         if (msg.parallelExecutionId) {
-          const state = uiState.getState();
-          const lines = ParallelExecutionRenderer.render(
-            state.parallelExecution,
-            msg.parallelExecutionId
-          );
-          for (const line of lines) {
-            this.writeLine(this.stripAnsiIfNeeded(line));
-          }
-          this.writeLine('');
+          this.renderParallelMessage(msg.parallelExecutionId);
         }
         break;
       case 'subagent-status':
@@ -327,6 +325,101 @@ export class AskRenderer {
           this.renderSubagentMessage(msg.subagentId);
         }
         break;
+    }
+  }
+
+  /**
+   * Render parallel execution - show detailed info for log files
+   */
+  private renderParallelMessage(executionId: string): void {
+    const state = uiState.getState();
+    const execution = state.parallelExecution;
+
+    if (!execution || execution.id !== executionId) {
+      return;
+    }
+
+    // If using LogManager (file output), show detailed info
+    if (this.options.logManager) {
+      if (execution.isActive) {
+        // Show header
+        const header = execution.description
+          ? `🔄 Parallel: ${execution.description}`
+          : `🔄 Parallel: ${execution.tools.length} operations`;
+        this.writeLine(header);
+
+        // Show each tool with args and status
+        for (const tool of execution.tools) {
+          const icon = this.getParallelStatusIcon(tool.status);
+          const timeStr = tool.executionTime ? ` (${tool.executionTime}ms)` : '';
+
+          this.writeLine(`  ${icon} ${tool.tool}${timeStr}`);
+
+          if (tool.args) {
+            const argsStr = JSON.stringify(tool.args, null, 2);
+            this.writeLine(`    Args: ${argsStr}`);
+          }
+
+          if (tool.output && tool.status === 'success') {
+            const preview = tool.output.substring(0, 200);
+            this.writeLine(`    Output: ${preview}${tool.output.length > 200 ? '...' : ''}`);
+          }
+
+          if (tool.error) {
+            this.writeLine(`    Error: ${tool.error}`);
+          }
+        }
+        this.writeLine('');
+      } else if (execution.endTime) {
+        // Completed - show final summary with full results
+        const totalTime = execution.endTime - execution.startTime;
+        const successCount = execution.tools.filter(t => t.status === 'success').length;
+        const errorCount = execution.tools.filter(t => t.status === 'error').length;
+
+        this.writeLine(`✓ Parallel completed: ${successCount} succeeded, ${errorCount} failed (${totalTime}ms)`);
+
+        // Show all tool results
+        for (const tool of execution.tools) {
+          const icon = tool.status === 'success' ? '✓' : '✗';
+          const timeStr = tool.executionTime ? ` (${tool.executionTime}ms)` : '';
+          this.writeLine(`  ${icon} ${tool.tool}${timeStr}`);
+
+          if (tool.args) {
+            const argsStr = JSON.stringify(tool.args, null, 2);
+            this.writeLine(`    Args: ${argsStr}`);
+          }
+
+          if (tool.output) {
+            this.writeLine(`    Output:`);
+            this.writeLine(this.indentLines(tool.output, 6));
+          }
+
+          if (tool.error) {
+            this.writeLine(`    Error: ${tool.error}`);
+          }
+        }
+        this.writeLine('');
+      }
+    } else {
+      // No log manager - use standard renderer (terminal display)
+      const lines = ParallelExecutionRenderer.render(execution, executionId);
+      for (const line of lines) {
+        this.writeLine(this.stripAnsiIfNeeded(line));
+      }
+      this.writeLine('');
+    }
+  }
+
+  /**
+   * Get status icon for parallel tools
+   */
+  private getParallelStatusIcon(status: string): string {
+    switch (status) {
+      case 'pending': return '○';
+      case 'running': return '◐';
+      case 'success': return '✓';
+      case 'error': return '✗';
+      default: return '○';
     }
   }
 

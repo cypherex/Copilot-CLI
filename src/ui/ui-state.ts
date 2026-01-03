@@ -44,6 +44,8 @@ export interface ParallelToolState {
   endTime?: number;
   executionTime?: number;
   error?: string;
+  args?: Record<string, any>;  // Tool arguments
+  output?: string;              // Tool output
 }
 
 export interface ParallelExecutionState {
