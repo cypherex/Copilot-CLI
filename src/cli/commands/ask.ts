@@ -5,6 +5,7 @@ import ora from 'ora';
 import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { log } from '../../utils/index.js';
+import { AskRenderer } from '../../ui/ask-renderer.js';
 
 interface AskOptions {
   directory: string;
@@ -87,30 +88,28 @@ export async function askCommand(
     await agent.initialize();
     spinner?.stop();
 
+    // Create renderer to show agent status, tool execution, and outputs
+    const renderer = new AskRenderer({
+      captureMode: options.json, // Capture output in JSON mode
+      verbose: true,
+    });
+    renderer.start();
+
     if (!isPrintMode) {
       log.info(chalk.green('You:') + ' ' + input);
       log.newline();
     }
 
-    // Capture output for JSON mode
-    let capturedOutput = '';
-    const originalConsoleLog = console.log;
-
-    if (options.json) {
-      console.log = (...args: unknown[]) => {
-        const text = args.map(a => String(a)).join(' ');
-        capturedOutput += text + '\n';
-      };
-    }
-
     await agent.chat(input);
 
+    // Stop renderer
+    renderer.stop();
+
     if (options.json) {
-      console.log = originalConsoleLog;
       const result = {
         success: true,
         input,
-        output: capturedOutput.trim(),
+        output: renderer.getCapturedOutput().trim(),
         provider: agent.getProviderName(),
         model: agent.getModelName(),
       };

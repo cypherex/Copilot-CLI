@@ -37,13 +37,8 @@ export class PlanningValidator {
 
     // Tools that modify files or state (require planning)
     const writeTools = [
-      'write_file',
       'create_file',
-      'edit_file',
       'patch_file',
-      'delete_file',
-      'execute_bash', // Can create/modify files
-      'notebook_edit', // Modifies notebooks
     ];
 
     return toolCalls.some(tc => writeTools.includes(tc.function.name));
