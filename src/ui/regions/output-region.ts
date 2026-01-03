@@ -194,7 +194,15 @@ export class OutputRegion {
         this.writeLine(chalk.blue('→ ') + msg.content);
         break;
       case 'system':
-        this.writeLine(chalk.dim(msg.content));
+        // Critical system messages (scaffolding audit, incomplete work) should be visible
+        if (msg.content.includes('Tracking:') ||
+            msg.content.includes('Resolved:') ||
+            msg.content.includes('incomplete work') ||
+            msg.content.includes('Scaffolding audit')) {
+          this.writeLine(chalk.yellow(msg.content));
+        } else {
+          this.writeLine(chalk.dim(msg.content));
+        }
         break;
       case 'parallel-status':
         // Render live parallel execution status

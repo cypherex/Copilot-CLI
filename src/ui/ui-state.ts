@@ -171,7 +171,16 @@ class UIStateManager {
         listener(this.state, changedKeys);
       } catch (error) {
         // Don't let listener errors break other listeners
-        console.error('UIState listener error:', error);
+        // Simplified error logging to avoid recursion in test environments
+        try {
+          if (error instanceof Error) {
+            console.error(`UIState listener error: ${error.message}`);
+          } else {
+            console.error('UIState listener error (non-Error thrown)');
+          }
+        } catch {
+          // Ignore errors in error logging
+        }
       }
     }
   }

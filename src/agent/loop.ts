@@ -492,9 +492,15 @@ export class AgenticLoop {
                 content: response.content,
                 toolCalls: response.toolCalls || []
               });
-              // Check for open tracking items in memory
+              // Check for open tracking items and tasks in memory
               const openTrackingItems = this.memoryStore?.getTrackingItems('open') || [];
               const hasTrackingItems = openTrackingItems.length > 0;
+
+              // Check for open tasks (active, blocked, or waiting)
+              const allTasks = this.memoryStore?.getTasks() || [];
+              const openTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'abandoned');
+              const hasOpenTasks = openTasks.length > 0;
+
               const detection = this.incompleteWorkDetector.analyze(
                 response.content,
                 hasTrackingItems
@@ -542,6 +548,26 @@ export class AgenticLoop {
             } else {
               this.consecutiveIdenticalDetections = 0;
               this.lastDetectionHash = detectionHash;
+            }
+
+            // Case 0: LLM says it's done but has open tasks (priority check)
+            if (isToolFree && detection.completionPhrases.length > 0 && hasOpenTasks) {
+              const taskList = openTasks.map(t => `- [${t.status}] ${t.description}`).join('\n');
+              const taskPrompt = `You said the work is complete, but there are ${openTasks.length} open tasks that need to be completed:
+
+${taskList}
+
+Please continue working on these tasks. Use mark_task_complete when you finish each one, or mark_task_blocked if you encounter issues.`;
+
+              uiState.addMessage({
+                role: 'system',
+                content: `⚠️ Cannot complete: ${openTasks.length} open tasks remaining`,
+                timestamp: Date.now(),
+              });
+
+              this.conversation.addUserMessage(taskPrompt);
+              continueLoop = true;
+              continue;
             }
 
             // Case 1: LLM says it's done but has tracking items (pre-response check)
@@ -815,6 +841,9 @@ Start with list_tracking_items to see what needs review.`;
 
           // Track file edits in memory
           this.trackFileEdit(toolName, toolArgs);
+
+          // Audit file modifications immediately for incomplete scaffolding
+          await this.auditFileModification(toolName, toolArgs, result);
         } else {
           uiState.addMessage({
             role: 'tool',
@@ -895,6 +924,9 @@ Start with list_tracking_items to see what needs review.`;
       if (result.success) {
         this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
         this.trackFileEdit(toolName, toolArgs);
+
+        // Audit file modifications immediately for incomplete scaffolding
+        await this.auditFileModification(toolName, toolArgs, result);
       } else {
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
       }
@@ -1013,6 +1045,66 @@ Start with list_tracking_items to see what needs review.`;
         content: lines.join('\n'),
         timestamp: Date.now(),
       });
+    }
+  }
+
+  /**
+   * Audit file modification immediately after tool execution
+   * Checks for incomplete scaffolding (stubs, placeholders, TODOs, etc.)
+   */
+  private async auditFileModification(
+    toolName: string,
+    toolArgs: Record<string, any>,
+    result: { success: boolean; output?: string; error?: string }
+  ): Promise<void> {
+    // Only audit successful file modifications
+    if (!result.success || !this.completionTracker) {
+      return;
+    }
+
+    const fileModificationTools = ['create_file', 'patch_file'];
+    if (!fileModificationTools.includes(toolName)) {
+      return;
+    }
+
+    try {
+      // Log audit start for verbose logging in ask mode
+      uiState.addMessage({
+        role: 'system',
+        content: `🔍 Auditing ${toolName} on ${toolArgs.path || 'unknown'}...`,
+        timestamp: Date.now(),
+      });
+
+      // Build context for audit (what the LLM just did)
+      const context = `Tool: ${toolName}\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+
+      const responseId = `tool_${toolName}_${Date.now()}`;
+      const auditResult = await this.completionTracker.auditResponse(
+        context,
+        this.conversation.getMessages(),
+        responseId
+      );
+
+      // Display audit results if any issues found
+      if (auditResult.newItems.length > 0 || auditResult.resolvedItems.length > 0) {
+        this.displayAuditResults(auditResult);
+      } else {
+        // Log that audit completed with no issues
+        uiState.addMessage({
+          role: 'system',
+          content: `✓ Audit complete: No incomplete scaffolding detected in ${toolArgs.path || 'unknown'}`,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (error) {
+      // Surface audit failures to UI instead of silent stderr
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      uiState.addMessage({
+        role: 'system',
+        content: `⚠️ Scaffolding audit failed: ${errorMsg}`,
+        timestamp: Date.now(),
+      });
+      console.error('[Scaffold Audit] Failed:', error);
     }
   }
 

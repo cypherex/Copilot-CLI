@@ -311,7 +311,22 @@ export class AskRenderer {
         break;
       case 'system':
         // System messages (agent status, etc.)
-        this.writeLine(this.stripAnsiIfNeeded(msg.content));
+        // Make audit messages more verbose in ask mode for detailed logging
+        if (this.options.logManager &&
+            (msg.content.includes('Tracking:') ||
+             msg.content.includes('Resolved:') ||
+             msg.content.includes('Scaffolding audit'))) {
+          // Audit message - add prominent header and formatting
+          this.writeLine('');
+          this.writeLine('═══════════════════════════════════════════════════════════');
+          this.writeLine('📋 SCAFFOLDING AUDIT RESULTS');
+          this.writeLine('═══════════════════════════════════════════════════════════');
+          this.writeLine(this.stripAnsiIfNeeded(msg.content));
+          this.writeLine('═══════════════════════════════════════════════════════════');
+          this.writeLine('');
+        } else {
+          this.writeLine(this.stripAnsiIfNeeded(msg.content));
+        }
         break;
       case 'parallel-status':
         // Live parallel execution status
