@@ -11,17 +11,20 @@ export const PROVIDER_DEFAULTS: Record<LLMProvider, Partial<LLMConfig>> = {
     endpoint: 'https://graph.microsoft.com',
     apiVersion: 'beta',
     model: undefined, // Copilot doesn't use model selection
+    rateLimitInterval: 100, // Default 100ms minimum between requests
   },
   zai: {
     endpoint: 'https://api.z.ai/api/coding/paas/v4',
     apiVersion: 'v1',
     model: 'GLM-4.7',
-    enableThinking: false, // Enable extended thinking for GLM models
+    enableThinking: true, // Enable extended thinking for GLM models
+    rateLimitInterval: 100, // Default 100ms minimum between requests
   },
   ollama: {
     endpoint: 'http://localhost:11434/v1',
     apiVersion: 'v1',
     model: 'qwen2.5-coder:7b',
+    rateLimitInterval: 100, // Default 100ms minimum between requests (can be disabled by setting to 0)
   },
 };
 

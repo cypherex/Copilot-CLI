@@ -11,6 +11,7 @@ export interface LLMConfig {
   maxTokens: number;
   temperature: number;
   streamingEnabled: boolean;
+  rateLimitInterval?: number; // Minimum time between API requests in milliseconds (default: 100)
   enableThinking?: boolean; // Enable extended thinking/reasoning (GLM, o1, etc.)
 }
 

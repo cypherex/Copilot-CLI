@@ -8,6 +8,7 @@ import type {
   StreamChunk,
   ToolDefinition,
 } from './types.js';
+import { RateLimiter } from './rate-limiter.js';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -70,10 +71,12 @@ async function fetchWithRetry(
 export class OpenAICompatibleClient implements LLMClient {
   private config: LLMConfig;
   private providerName: string;
+  private rateLimiter: RateLimiter;
 
   constructor(config: LLMConfig, providerName: string = 'OpenAI-compatible') {
     this.config = config;
     this.providerName = providerName;
+    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 100);
   }
 
   private get chatEndpoint(): string {
@@ -138,6 +141,9 @@ export class OpenAICompatibleClient implements LLMClient {
     messages: ChatMessage[],
     tools?: ToolDefinition[]
   ): Promise<ChatCompletionResponse> {
+    // Apply rate limiting before making API request
+    await this.rateLimiter.acquire();
+
     const requestBody = this.buildRequestBody(messages, tools, false);
 
     const response = await fetchWithRetry(this.chatEndpoint, {
@@ -166,6 +172,9 @@ export class OpenAICompatibleClient implements LLMClient {
     messages: ChatMessage[],
     tools?: ToolDefinition[]
   ): AsyncIterable<StreamChunk> {
+    // Apply rate limiting before making API request
+    await this.rateLimiter.acquire();
+
     const requestBody = this.buildRequestBody(messages, tools, true);
 
     const response = await fetchWithRetry(this.chatEndpoint, {

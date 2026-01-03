@@ -11,6 +11,7 @@ import type {
   StreamChunk,
   ToolDefinition,
 } from './types.js';
+import { RateLimiter } from './rate-limiter.js';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -98,6 +99,7 @@ export class CopilotClient implements LLMClient {
   private conversationId: string | null = null;
   private config: LLMConfig;
   private authManager: AuthManager;
+  private rateLimiter: RateLimiter;
 
   constructor(
     authManager: AuthManager,
@@ -105,6 +107,7 @@ export class CopilotClient implements LLMClient {
   ) {
     this.authManager = authManager;
     this.config = config;
+    this.rateLimiter = new RateLimiter(config.rateLimitInterval || 100);
   }
 
   private get baseUrl(): string {
@@ -243,6 +246,9 @@ export class CopilotClient implements LLMClient {
     messages: ChatMessage[],
     tools?: ToolDefinition[]
   ): Promise<ChatCompletionResponse> {
+    // Apply rate limiting before making API request
+    await this.rateLimiter.acquire();
+
     const conversationId = await this.ensureConversation();
     const requestBody = this.buildChatRequestBody(messages, tools);
     const headers = await this.getAuthHeaders();
@@ -283,6 +289,9 @@ export class CopilotClient implements LLMClient {
     messages: ChatMessage[],
     tools?: ToolDefinition[]
   ): AsyncIterable<StreamChunk> {
+    // Apply rate limiting before making API request
+    await this.rateLimiter.acquire();
+
     const conversationId = await this.ensureConversation();
     const requestBody = this.buildChatRequestBody(messages, tools);
     const headers = await this.getAuthHeaders();
