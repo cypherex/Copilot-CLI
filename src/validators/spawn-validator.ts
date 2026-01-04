@@ -793,19 +793,21 @@ Return JSON array: [
   }
 
   /**
-   * Log verbose message to UI state (for ask mode capture) or console (for demos)
+   * Log verbose message to UI state (for ask mode capture) and console (for demos)
    */
   private logVerbose(message: string): void {
+    // Always log to console for demos and debugging
+    console.log(message);
+
+    // Also try to add to uiState for ask mode logging (won't throw if uiState not initialized)
     try {
-      // Try to use uiState for proper ask mode logging
       uiState.addMessage({
         role: 'system',
         content: message,
         timestamp: Date.now(),
       });
     } catch (error) {
-      // Fallback to console.log for demos or when uiState is not initialized
-      console.log(message);
+      // Silently ignore - console.log above will handle output
     }
   }
 
@@ -911,21 +913,43 @@ Return JSON array: [
       integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
     };
 
-    // Sleep before recursive calls
-    await this.sleep(300);
-
-    // Batch analyze all subtasks for efficiency
+    // Process subtasks in batches to balance speed and rate limiting
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
+    const batchSize = 5; // Process 5 tasks at a time
 
     if (verbose) {
-      this.logVerbose(`${indent}  ⤷ Analyzing subtasks recursively...`);
+      this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
     }
 
-    const subtaskNodes = await Promise.all(
-      subtaskDescriptions.map((desc: string) =>
-        this.breakdownNode(desc, currentDepth + 1, maxDepth, enrichedContext, memoryStore, verbose)
-      )
-    );
+    const subtaskNodes: TaskNode[] = [];
+    for (let i = 0; i < subtaskDescriptions.length; i += batchSize) {
+      const batch = subtaskDescriptions.slice(i, i + batchSize);
+
+      if (verbose && subtaskDescriptions.length > batchSize) {
+        this.logVerbose(`${indent}    [Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(subtaskDescriptions.length / batchSize)}] Processing ${batch.length} tasks...`);
+      }
+
+      // Process batch in parallel
+      const batchNodes = await Promise.all(
+        batch.map((desc: string) =>
+          this.breakdownNode(
+            desc,
+            currentDepth + 1,
+            maxDepth,
+            enrichedContext,
+            memoryStore,
+            verbose
+          )
+        )
+      );
+
+      subtaskNodes.push(...batchNodes);
+
+      // Delay between batches (but not after the last batch)
+      if (i + batchSize < subtaskDescriptions.length) {
+        await this.sleep(1000); // 1 second between batches
+      }
+    }
 
     if (verbose) {
       this.logVerbose(`${indent}  ✓ Completed breakdown`);
