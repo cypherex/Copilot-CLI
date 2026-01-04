@@ -21,6 +21,7 @@ const UpdateTaskStatusSchema = z.object({
   task_id: z.string().describe('The ID of the task to update'),
   status: z.enum(['active', 'blocked', 'waiting', 'completed', 'abandoned']).describe('New status'),
   notes: z.string().optional().describe('Optional notes about the status change'),
+  completion_message: z.string().optional().describe('REQUIRED when status is "completed": Summary of what was accomplished (files created/modified, functions implemented, etc.)'),
 });
 
 // Schema for set_current_task
@@ -180,6 +181,12 @@ Use this to:
 
 Always update task status as you work to track progress.
 
+IMPORTANT: When marking a task as "completed", you MUST provide a completion_message summarizing:
+- What was accomplished
+- Files created or modified (with specific filenames)
+- Functions/classes implemented
+- Any key decisions made
+
 Note: Task completion is validated to ensure proper workflow and next step planning.`,
     parameters: {
       type: 'object',
@@ -196,6 +203,10 @@ Note: Task completion is validated to ensure proper workflow and next step plann
         notes: {
           type: 'string',
           description: 'Optional notes about the status change',
+        },
+        completion_message: {
+          type: 'string',
+          description: 'REQUIRED when status is "completed": Summary of what was accomplished (files created/modified, functions implemented, etc.)',
         },
       },
       required: ['task_id', 'status'],
@@ -215,11 +226,16 @@ Note: Task completion is validated to ensure proper workflow and next step plann
   }
 
   protected async executeInternal(args: z.infer<typeof UpdateTaskStatusSchema>): Promise<string> {
-    const { task_id, status, notes } = args;
+    const { task_id, status, notes, completion_message } = args;
 
     const task = this.memoryStore.getTasks().find((t: any) => t.id === task_id);
     if (!task) {
       throw new Error(`Task not found: ${task_id}`);
+    }
+
+    // VALIDATION: Require completion_message when marking as completed
+    if (status === 'completed' && !completion_message) {
+      throw new Error('completion_message is required when marking a task as completed. Provide a summary of what was accomplished (files created/modified, functions implemented, etc.)');
     }
 
     // VALIDATION: Check if completion should be allowed
@@ -277,11 +293,15 @@ Note: Task completion is validated to ensure proper workflow and next step plann
         status,
         updatedAt: new Date(),
         completedAt: new Date(),
+        completionMessage: completion_message,
         filesModified: completedTaskFiles.length > 0 ? completedTaskFiles : undefined,
       });
 
       // Build enhanced completion response
       let message = `✓ Completed task: "${task.description}"`;
+      if (completion_message) {
+        message += `\n  Summary: ${completion_message}`;
+      }
       if (notes) {
         message += `\n  Notes: ${notes}`;
       }
@@ -296,7 +316,7 @@ Note: Task completion is validated to ensure proper workflow and next step plann
     // Non-completion status update (no validation needed)
     const updates: Partial<Task> = { status, updatedAt: new Date() };
 
-    // For completion without validator, still populate filesModified
+    // For completion without validator, still populate filesModified and completionMessage
     if (status === 'completed') {
       const workingState = this.memoryStore.getWorkingState();
       const relatedEdits = workingState.editHistory.filter(
@@ -309,11 +329,15 @@ Note: Task completion is validated to ensure proper workflow and next step plann
         );
       }
       updates.completedAt = new Date();
+      updates.completionMessage = completion_message;
     }
 
     this.memoryStore.updateTask(task_id, updates);
 
     let message = `Updated task "${task.description}": ${task.status} → ${status}`;
+    if (completion_message) {
+      message += `\n  Summary: ${completion_message}`;
+    }
     if (notes) {
       message += `\n  Notes: ${notes}`;
     }
@@ -440,6 +464,11 @@ Always review the task list before starting new work.`,
       lines.push(`${indent}${statusIcon} ${task.description}${priority}`);
       lines.push(`${indent}  ID: ${task.id} | Status: ${task.status}`);
 
+      // Show completion message for completed tasks
+      if (task.status === 'completed' && task.completionMessage) {
+        lines.push(`${indent}  ✓ ${task.completionMessage}`);
+      }
+
       // Find and render children (if any)
       const children = allTasks.filter(t => t.parentId === task.id);
       if (children.length > 0) {
@@ -560,6 +589,11 @@ This helps understand the task structure and delegate focused work.`,
 
       lines.push(`${indent}${statusIcon} ${task.description}${priority}`);
       lines.push(`${indent}  ID: ${task.id} | Status: ${task.status}`);
+
+      // Show completion message for completed tasks
+      if (task.status === 'completed' && task.completionMessage) {
+        lines.push(`${indent}  ✓ ${task.completionMessage}`);
+      }
 
       if (include_nested) {
         const children = this.memoryStore.getTasks().filter(t => t.parentId === task.id);

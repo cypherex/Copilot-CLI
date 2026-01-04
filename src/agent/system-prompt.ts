@@ -308,7 +308,22 @@ When given a complex goal, break it down into manageable hierarchies:
 
 ## Task Completion Validation
 
-When completing a task using update_task_status, the system validates:
+When completing a task using update_task_status, you MUST provide a completion_message:
+
+**REQUIRED**: completion_message parameter when marking as "completed"
+- Summarize what was accomplished
+- List files created or modified (with specific filenames)
+- Note functions/classes implemented
+- Document any key decisions made
+
+**Example**:
+  update_task_status({
+    task_id: "task_123",
+    status: "completed",
+    completion_message: "Created src/auth/login.ts with loginUser() and generateJWT() functions. Added JWT middleware in src/middleware/jwt.ts with verifyToken() function. All tests passing."
+  })
+
+The system also validates:
 
 1. **Subtask Dependencies**: Parent tasks cannot be completed if they have incomplete subtasks
 2. **Workflow Guidance**: The system provides next steps:
@@ -320,6 +335,7 @@ When completing a task using update_task_status, the system validates:
 
 **Example validation output**:
   ✓ Completed task: "Create login endpoint with JWT"
+    Summary: Created src/auth/login.ts with loginUser() and generateJWT() functions. Added JWT middleware in src/middleware/jwt.ts with verifyToken() function. All tests passing.
     Files modified: src/auth/login.ts, src/middleware/jwt.ts
 
   📋 Next Steps:

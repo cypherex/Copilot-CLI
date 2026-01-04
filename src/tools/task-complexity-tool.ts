@@ -250,6 +250,9 @@ This helps improve planning and delegation decisions.`,
       lines.push(`⚠️  Tasks that should have used subagents: ${subagentTasks.length}`);
       subagentTasks.forEach(task => {
         lines.push(`  - ${task.description}`);
+        if (task.completionMessage) {
+          lines.push(`    ✓ ${task.completionMessage}`);
+        }
       });
       lines.push('');
     }

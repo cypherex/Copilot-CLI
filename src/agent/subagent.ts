@@ -202,6 +202,15 @@ If you encounter tracking items during your work, you have access to these tools
    - Follow existing code patterns and conventions
    - Make changes that fit naturally with the codebase
 
+6. **TASK COMPLETION**: If you have access to update_task_status:
+   - When marking a task as "completed", you MUST provide a completion_message
+   - Summarize what was accomplished (files created/modified, functions implemented, etc.)
+   - Example: update_task_status({
+       task_id: "task_123",
+       status: "completed",
+       completion_message: "Created lexer.rs with Token enum and tokenize() function. Added tests covering all token types."
+     })
+
 Working directory: ${this.config.workingDirectory || process.cwd()}
 
 Remember: You are responsible for delivering complete, production-ready work. No shortcuts, no placeholders.

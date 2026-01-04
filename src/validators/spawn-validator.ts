@@ -947,7 +947,7 @@ Return JSON array: [
 
       // Delay between batches (but not after the last batch)
       if (i + batchSize < subtaskDescriptions.length) {
-        await this.sleep(2500); // 2.5 seconds between batches
+        await this.sleep(3000); // 3 seconds between batches
       }
     }
 

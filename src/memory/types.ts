@@ -119,6 +119,7 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
+  completionMessage?: string; // Summary of what was accomplished when task was completed
   relatedFiles: string[];
   priority: MemoryPriority;
   relatedToGoal?: boolean; // Whether this task is related to the main goal
