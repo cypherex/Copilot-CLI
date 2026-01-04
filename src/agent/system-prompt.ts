@@ -209,6 +209,7 @@ When given a complex goal, break it down into manageable hierarchies:
 
 1. **MACRO Tasks** (Top-level): Broad objectives that require multiple steps
    - Example: "Implement user authentication system"
+   - Sstart with a top-level task aligned with the whole user goal
    - Action: Use break_down_task to create several micro tasks
 
 2. **MICRO Tasks** (Mid-level): Focused, achievable components
