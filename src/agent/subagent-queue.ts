@@ -20,7 +20,6 @@ export interface QueuedAgent {
     systemPrompt?: string;
     maxIterations?: number;
     workingDirectory?: string;
-    allowUserInput?: boolean;
   };
   resolve: (result: SubAgentResult) => void;
   reject: (error: Error) => void;
