@@ -45,7 +45,7 @@ const BreakDownTaskSchema = z.object({
   subtasks: z.array(z.object({
     description: z.string().describe('Subtask description'),
     priority: z.enum(['high', 'medium', 'low']).optional().describe('Subtask priority'),
-  })).min(2).max(15).describe('Array of subtasks to create (2-15 subtasks recommended)'),
+  })).min(2).max(25).describe('Array of subtasks to create (2-25 subtasks recommended)'),
 });
 
 export class CreateTaskTool extends BaseTool {
