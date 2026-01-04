@@ -648,11 +648,8 @@ Example:
       throw new Error(`Parent task not found: ${task_id}`);
     }
 
-    // Check if task already has subtasks
+    // Allow adding more subtasks even if task already has some
     const existingSubtasks = this.memoryStore.getTasks().filter(t => t.parentId === task_id);
-    if (existingSubtasks.length > 0) {
-      throw new Error(`Task already has ${existingSubtasks.length} subtasks. Use list_subtasks to view them.`);
-    }
 
     const createdTasks: Task[] = [];
 
@@ -668,12 +665,22 @@ Example:
       createdTasks.push(task);
     }
 
+    const totalSubtasks = existingSubtasks.length + createdTasks.length;
+
     const lines = [
-      `Broke down task into ${createdTasks.length} subtasks:`,
+      existingSubtasks.length > 0
+        ? `Added ${createdTasks.length} more subtasks (total: ${totalSubtasks}):`
+        : `Broke down task into ${createdTasks.length} subtasks:`,
       `Parent: ${parent.description}`,
       ``,
-      `Subtasks created:`,
     ];
+
+    if (existingSubtasks.length > 0) {
+      lines.push(`Existing subtasks: ${existingSubtasks.length}`);
+      lines.push(``);
+    }
+
+    lines.push(`New subtasks created:`);
 
     for (let i = 0; i < createdTasks.length; i++) {
       const task = createdTasks[i];
@@ -684,7 +691,7 @@ Example:
     lines.push(``);
     lines.push(`Next steps:`);
     lines.push(`  - Use set_current_task to start working on a subtask`);
-    lines.push(`  - Use list_subtasks to view the breakdown`);
+    lines.push(`  - Use list_subtasks to view all ${totalSubtasks} subtasks`);
     lines.push(`  - Delegate subtasks to subagents for parallel work`);
 
     return lines.join('\n');

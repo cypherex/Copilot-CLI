@@ -207,26 +207,35 @@ Only use sequential execution when operations DEPEND on each other:
 
 When given a complex goal, break it down into manageable hierarchies:
 
-1. **MACRO Tasks** (Top-level): Broad objectives that require multiple steps
+⚠️ **CRITICAL FIRST STEP**: Always start by creating ONE root task that encapsulates the ENTIRE user goal.
+   - This root task serves as the parent for all subtasks
+   - Example: If user says "Add authentication", create task: "Implement complete user authentication system"
+   - Then break it down using break_down_task
+
+1. **MACRO Tasks** (Top-level/Root): Broad objectives that require multiple steps
    - Example: "Implement user authentication system"
-   - Sstart with a top-level task aligned with the whole user goal
-   - Action: Use break_down_task to create several micro tasks
+   - **Always create this FIRST** - it represents the complete user goal
+   - Action: Use break_down_task to create several micro tasks as children
 
 2. **MICRO Tasks** (Mid-level): Focused, achievable components
    - Example: "Create login endpoint with JWT"
+   - These are children of the MACRO task
    - Action: These are ideal for subagent delegation
    - May need further breakdown if still complex
 
 3. **MICRO-MICRO Tasks** (Leaf-level): Atomic, single-purpose tasks
    - Example: "Add password hashing to login route"
+   - These are grandchildren of the MACRO task
    - Action: Do these directly or delegate to subagents
    - Should be completable in one focused work session
 
 ## Tool Usage for Hierarchies
 
 ### create_task
-- Do not create a monolithic task for the entire thing, unless it's encredibly simple
-- Can optionally use parent_id to create subtasks
+- **ALWAYS create ONE root task first** that represents the entire user goal
+- This ensures all work is tracked under a single parent
+- Do NOT create multiple parallel top-level tasks - create one root, then break it down
+- Example: create_task({ description: "Implement complete user authentication system", priority: "high" })
 
 ### break_down_task
 - **PRIMARY DECOMPOSITION TOOL**: Break MACRO tasks into MICRO tasks
@@ -251,9 +260,11 @@ When given a complex goal, break it down into manageable hierarchies:
 
 **User Request**: "Add user authentication"
 
-**Step 1 - Create MACRO task**:
-  create_task({ description: "Implement user authentication system", priority: "high" })
+**Step 1 - Create ROOT/MACRO task (ALWAYS FIRST)**:
+  create_task({ description: "Implement complete user authentication system", priority: "high" })
   Returns task_id: "task_001"
+
+  ⚠️ This root task encapsulates the ENTIRE user goal - don't skip this step!
 
 **Step 2 - Break down MACRO to MICRO**:
   break_down_task({
@@ -279,17 +290,21 @@ When given a complex goal, break it down into manageable hierarchies:
 
 ## Best Practices
 
-1. **Always decompose before delegating**: Don't delegate massive tasks to subagents
+1. **ALWAYS create one root task first**: Create a single MACRO task that represents the entire user goal
+   - BAD: Create separate tasks for "login endpoint", "register endpoint", "JWT middleware" (no parent)
+   - GOOD: Create "Implement complete authentication system" first, then break it down
+
+2. **Always decompose before delegating**: Don't delegate massive tasks to subagents
    - BAD: Delegate "Implement authentication" (too broad)
    - GOOD: Delegate "Create login endpoint with JWT" (focused)
 
-2. **Aim for 3-7 subtasks per parent**: Not too granular, not too broad
+3. **Aim for 3-7 subtasks per parent**: Not too granular, not too broad
 
-3. **Use descriptive task names**: Each task should clearly state what needs to be done
+4. **Use descriptive task names**: Each task should clearly state what needs to be done
 
-4. **Track progress**: Use list_subtasks to see where you are in the hierarchy
+5. **Track progress**: Use list_subtasks to see where you are in the hierarchy
 
-5. **Aggressively delegate leaf tasks**: MICRO and MICRO-MICRO tasks are perfect for subagents - this keeps your orchestrator context clean and prevents pollution with implementation details
+6. **Aggressively delegate leaf tasks**: MICRO and MICRO-MICRO tasks are perfect for subagents - this keeps your orchestrator context clean and prevents pollution with implementation details
 
 ## Task Completion Validation
 
