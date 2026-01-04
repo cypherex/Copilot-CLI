@@ -2,6 +2,7 @@
 
 import type { LLMClient, ChatMessage } from '../llm/types.js';
 import type { Task, MemoryStore } from '../memory/types.js';
+import { uiState } from '../ui/ui-state.js';
 
 // ============================================
 // Type Definitions
@@ -734,13 +735,13 @@ Return JSON array: [
     };
 
     if (verbose) {
-      console.log('\n═══════════════════════════════════════════════════════════');
-      console.log('STARTING RECURSIVE TASK BREAKDOWN');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`Root Task: "${rootTask}"`);
-      console.log(`Max Depth: ${maxDepth}`);
-      console.log(`Project Goal: ${parentContext.projectGoal || 'None'}`);
-      console.log('');
+      this.logVerbose('\n═══════════════════════════════════════════════════════════');
+      this.logVerbose('STARTING RECURSIVE TASK BREAKDOWN');
+      this.logVerbose('═══════════════════════════════════════════════════════════');
+      this.logVerbose(`Root Task: "${rootTask}"`);
+      this.logVerbose(`Max Depth: ${maxDepth}`);
+      this.logVerbose(`Project Goal: ${parentContext.projectGoal || 'None'}`);
+      this.logVerbose('');
     }
 
     const taskTree = await this.breakdownNode(
@@ -761,15 +762,15 @@ Return JSON array: [
     const stats = this.collectTreeStats(taskTree);
 
     if (verbose) {
-      console.log('\n═══════════════════════════════════════════════════════════');
-      console.log('BREAKDOWN COMPLETE');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`Total Tasks: ${stats.totalTasks}`);
-      console.log(`Ready Tasks: ${stats.readyTasks}`);
-      console.log(`Max Depth Reached: ${stats.maxDepth}`);
-      console.log(`Integration Points: ${stats.allIntegrationPoints.length}`);
-      console.log(`Design Decisions: ${stats.allDesignDecisions.length}`);
-      console.log('');
+      this.logVerbose('\n═══════════════════════════════════════════════════════════');
+      this.logVerbose('BREAKDOWN COMPLETE');
+      this.logVerbose('═══════════════════════════════════════════════════════════');
+      this.logVerbose(`Total Tasks: ${stats.totalTasks}`);
+      this.logVerbose(`Ready Tasks: ${stats.readyTasks}`);
+      this.logVerbose(`Max Depth Reached: ${stats.maxDepth}`);
+      this.logVerbose(`Integration Points: ${stats.allIntegrationPoints.length}`);
+      this.logVerbose(`Design Decisions: ${stats.allDesignDecisions.length}`);
+      this.logVerbose('');
     }
 
     return {
@@ -792,6 +793,23 @@ Return JSON array: [
   }
 
   /**
+   * Log verbose message to UI state (for ask mode capture) or console (for demos)
+   */
+  private logVerbose(message: string): void {
+    try {
+      // Try to use uiState for proper ask mode logging
+      uiState.addMessage({
+        role: 'system',
+        content: message,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      // Fallback to console.log for demos or when uiState is not initialized
+      console.log(message);
+    }
+  }
+
+  /**
    * Recursively break down a single task node
    */
   private async breakdownNode(
@@ -805,7 +823,7 @@ Return JSON array: [
     const indent = '  '.repeat(currentDepth);
 
     if (verbose) {
-      console.log(`${indent}[Depth ${currentDepth}] Analyzing: "${taskDescription}"`);
+      this.logVerbose(`${indent}[Depth ${currentDepth}] Analyzing: "${taskDescription}"`);
     }
 
     // Sleep before complexity assessment
@@ -815,13 +833,13 @@ Return JSON array: [
     const complexity = await this.assessTaskComplexity(taskDescription);
 
     if (verbose) {
-      console.log(`${indent}  → Complexity: ${complexity.rating.toUpperCase()}`);
+      this.logVerbose(`${indent}  → Complexity: ${complexity.rating.toUpperCase()}`);
     }
 
     // If simple or moderate, this is a leaf node - ready to spawn
     if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
       if (verbose) {
-        console.log(`${indent}  ✓ Ready to spawn (leaf task)`);
+        this.logVerbose(`${indent}  ✓ Ready to spawn (leaf task)`);
       }
       return {
         description: taskDescription,
@@ -834,7 +852,7 @@ Return JSON array: [
     // Complex task - check if we should break it down
     if (currentDepth >= maxDepth) {
       if (verbose) {
-        console.log(`${indent}  ⚠ Max depth reached - cannot break down further`);
+        this.logVerbose(`${indent}  ⚠ Max depth reached - cannot break down further`);
       }
       // Hit max depth - mark as needing manual breakdown
       return {
@@ -846,7 +864,7 @@ Return JSON array: [
     }
 
     if (verbose) {
-      console.log(`${indent}  ⚙ Breaking down into subtasks...`);
+      this.logVerbose(`${indent}  ⚙ Breaking down into subtasks...`);
     }
 
     // Sleep before breakdown analysis
@@ -862,8 +880,8 @@ Return JSON array: [
 
     if (!breakdownResult.requiresBreakdown) {
       if (verbose) {
-        console.log(`${indent}  → LLM decided breakdown not needed`);
-        console.log(`${indent}  ✓ Ready to spawn`);
+        this.logVerbose(`${indent}  → LLM decided breakdown not needed`);
+        this.logVerbose(`${indent}  ✓ Ready to spawn`);
       }
       // LLM decided breakdown not needed despite complexity
       return {
@@ -877,12 +895,12 @@ Return JSON array: [
     }
 
     if (verbose) {
-      console.log(`${indent}  → Created ${breakdownResult.subtasks.length} subtasks`);
+      this.logVerbose(`${indent}  → Created ${breakdownResult.subtasks.length} subtasks`);
       if (breakdownResult.designDecisions?.length) {
-        console.log(`${indent}  → Captured ${breakdownResult.designDecisions.length} design decisions`);
+        this.logVerbose(`${indent}  → Captured ${breakdownResult.designDecisions.length} design decisions`);
       }
       if (breakdownResult.integrationPoints?.length) {
-        console.log(`${indent}  → Identified ${breakdownResult.integrationPoints.length} integration points`);
+        this.logVerbose(`${indent}  → Identified ${breakdownResult.integrationPoints.length} integration points`);
       }
     }
 
@@ -900,7 +918,7 @@ Return JSON array: [
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
 
     if (verbose) {
-      console.log(`${indent}  ⤷ Analyzing subtasks recursively...`);
+      this.logVerbose(`${indent}  ⤷ Analyzing subtasks recursively...`);
     }
 
     const subtaskNodes = await Promise.all(
@@ -910,7 +928,7 @@ Return JSON array: [
     );
 
     if (verbose) {
-      console.log(`${indent}  ✓ Completed breakdown`);
+      this.logVerbose(`${indent}  ✓ Completed breakdown`);
     }
 
     return {
