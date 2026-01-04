@@ -1,3 +1,0 @@
-/ralph-loop
-
-Read the full specification at C:/dev/copilot-cli/testbox/prompt.md and implement the complete distributed task queue system in the current working directory (do NOT create a separate distributed-task-queue folder - create all files directly in the current directory).

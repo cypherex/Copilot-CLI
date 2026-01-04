@@ -44,6 +44,10 @@ const ListAgentsSchema = z.object({
 // Schema for get_agent_queue_status
 const GetAgentQueueStatusSchema = z.object({});
 
+// Store cleanup functions for background agents to prevent memory leaks
+// Shared across SpawnAgentTool and WaitAgentTool
+const backgroundAgentCleanupFunctions = new Map<string, () => void>();
+
 export class SpawnAgentTool extends BaseTool {
   private spawnValidator?: SpawnValidator;
 
@@ -454,8 +458,18 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
     };
 
     if (background) {
-      // For background tasks, listeners stay attached until agent completes
-      // They will be cleaned up when wait_agent is called
+      // For background tasks, store cleanup function for later
+      backgroundAgentCleanupFunctions.set(agentId, cleanup);
+
+      // Also set up auto-cleanup when agent completes
+      this.subAgentManager.wait(agentId).finally(() => {
+        const storedCleanup = backgroundAgentCleanupFunctions.get(agentId);
+        if (storedCleanup) {
+          storedCleanup();
+          backgroundAgentCleanupFunctions.delete(agentId);
+        }
+      });
+
       const response: any = {
         status: 'spawned',
         agent_id: agentId,
@@ -590,6 +604,13 @@ The merge message will be displayed showing how the subagent's work integrates i
     if (status === 'completed') {
       const result = this.subAgentManager.getResult(agent_id)!;
 
+      // Cleanup event listeners if this was a background agent
+      const cleanup = backgroundAgentCleanupFunctions.get(agent_id);
+      if (cleanup) {
+        cleanup();
+        backgroundAgentCleanupFunctions.delete(agent_id);
+      }
+
       // Parse and show merge message
       const parsedResult = parseSubagentResult(result.output || '');
       const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
@@ -655,6 +676,13 @@ The merge message will be displayed showing how the subagent's work integrates i
       content: mergeMessage,
       timestamp: Date.now(),
     });
+
+    // Cleanup event listeners if this was a background agent
+    const cleanup = backgroundAgentCleanupFunctions.get(agent_id);
+    if (cleanup) {
+      cleanup();
+      backgroundAgentCleanupFunctions.delete(agent_id);
+    }
 
     return JSON.stringify({
       status: result.success ? 'completed' : 'failed',

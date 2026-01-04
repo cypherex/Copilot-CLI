@@ -48,6 +48,7 @@ export class SubAgent extends EventEmitter {
   private userMessageQueue: string[] = [];
   private userMessageResolvers: Map<number, (message: string) => void> = new Map();
   private messageCounter = 0;
+  private currentIteration = 0; // Track current iteration for progress reporting
   private abortSignal?: AbortSignal;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
@@ -136,7 +137,7 @@ export class SubAgent extends EventEmitter {
     return {
       agentId: this.config.name,
       name: this.config.name,
-      iteration: 0,
+      iteration: this.currentIteration,
       maxIterations: this.maxIterations,
       status: 'running',
       stage: 'thinking',
@@ -277,6 +278,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
     try {
       while (continueLoop && iteration < this.maxIterations) {
         iteration++;
+        this.currentIteration = iteration; // Update instance variable for progress tracking
 
         // Emit iteration start message
         this.emit('message', {
@@ -421,6 +423,14 @@ Remember: You are responsible for delivering complete, production-ready work. No
         iterations: iteration,
         toolsUsed: Array.from(this.toolsUsed),
       };
+    } finally {
+      // Cleanup: Reject all pending user message resolvers to prevent memory leaks
+      if (this.userMessageResolvers.size > 0) {
+        for (const [messageId, resolver] of this.userMessageResolvers.entries()) {
+          resolver('[Agent terminated before response]');
+          this.userMessageResolvers.delete(messageId);
+        }
+      }
     }
   }
 
@@ -447,7 +457,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
       this.emit('progress', {
         agentId: this.config.name,
         name: this.config.name,
-        iteration: 0, // We don't track iteration here
+        iteration: this.currentIteration,
         maxIterations: this.maxIterations,
         currentTool: toolName,
         stage: `executing: ${toolName}`,
@@ -645,60 +655,30 @@ export class SubAgentManager extends EventEmitter {
     this.agentQueue.on('agent_failed', (data) => {
       this.emit('agent_failed', data);
     });
+
+    // Forward execution events from the real SubAgent in the queue
+    this.agentQueue.on('message', (data) => {
+      this.emit('message', data);
+    });
+
+    this.agentQueue.on('tool_call', (data) => {
+      this.emit('tool_call', data);
+    });
+
+    this.agentQueue.on('tool_result', (data) => {
+      this.emit('tool_result', data);
+    });
+
+    this.agentQueue.on('progress', (data) => {
+      this.emit('progress', data);
+    });
   }
 
   spawn(config: SubAgentConfig): string {
     const agentId = `agent_${++this.agentCounter}_${Date.now()}`;
 
-    // Create agent instance for progress tracking and user messages
-    // Note: This is just a placeholder for message queueing; actual execution happens in the queue
-    const agent = new SubAgent(
-      this.llmClient,
-      this.toolRegistry,
-      {
-        ...config,
-        name: agentId,
-      },
-      undefined, // abortSignal - not needed for placeholder
-      this.hookRegistry,
-      this.completionTracker,
-      this.planningValidator,
-      this.proactiveContextMonitor,
-      this.incompleteWorkDetector,
-      this.fileRelationshipTracker,
-      this.modelName
-    );
-
-    // Store agent instance for progress tracking and user messages
-    this.agentInstances.set(agentId, agent);
-
-    // Forward progress events
-    agent.on('progress', (progress: SubAgentProgress) => {
-      const progressWithAgentId = { ...progress, agentId };
-      this.emit('progress', progressWithAgentId);
-    });
-
-    // Forward user_message_queued events
-    agent.on('user_message_queued', (data: any) => {
-      this.emit('user_message_queued', { agentId, ...data });
-    });
-
-    // Forward message events for real-time display
-    agent.on('message', (data: any) => {
-      this.emit('message', { agentId, ...data });
-    });
-
-    // Forward tool_call events for real-time display
-    agent.on('tool_call', (data: any) => {
-      this.emit('tool_call', { agentId, ...data });
-    });
-
-    // Forward tool_result events for real-time display
-    agent.on('tool_result', (data: any) => {
-      this.emit('tool_result', { agentId, ...data });
-    });
-
     // Add to queue (will wait for slot)
+    // The real SubAgent instance is created by the queue when a slot is available
     const queueConfig = {
       name: agentId,
       task: config.task,
@@ -711,7 +691,6 @@ export class SubAgentManager extends EventEmitter {
     const promise = this.agentQueue.addToQueue(queueConfig).then((result) => {
       this.activeAgents.delete(agentId);
       this.completedAgents.set(agentId, result);
-      this.agentInstances.delete(agentId);
       this.emit('completed', { agentId, result });
       return result;
     });

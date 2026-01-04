@@ -194,7 +194,7 @@ export class SubAgentQueue extends EventEmitter {
           this.runningAgents.delete(agentId);
           this.runningAgentControllers.delete(agentId);
 
-          // Process next in queue
+          // Process next in queue - this will eventually set processing=false when queue is fully processed
           this.processQueue().catch(err => {
             log.error('Error processing queue: ' + err);
             this.processing = false;
@@ -204,7 +204,13 @@ export class SubAgentQueue extends EventEmitter {
       this.runningAgents.set(agentId, promise);
     }
 
-    this.processing = false;
+    // Only set processing=false if we didn't start any agents (queue empty or at max concurrency with nothing to do)
+    if (this.runningAgents.size === 0 && this.waitingQueue.length === 0) {
+      this.processing = false;
+    } else {
+      // If we started agents, don't reset processing yet - let the finally() callbacks handle it
+      // This prevents race condition where processing=false before agents complete
+    }
   }
 
   /**
