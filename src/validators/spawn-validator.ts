@@ -915,7 +915,7 @@ Return JSON array: [
 
     // Process subtasks in batches to balance speed and rate limiting
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
-    const batchSize = 5; // Process 5 tasks at a time
+    const batchSize = 4; // Process 4 tasks at a time
 
     if (verbose) {
       this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
@@ -947,7 +947,7 @@ Return JSON array: [
 
       // Delay between batches (but not after the last batch)
       if (i + batchSize < subtaskDescriptions.length) {
-        await this.sleep(1000); // 1 second between batches
+        await this.sleep(2500); // 2.5 seconds between batches
       }
     }
 
