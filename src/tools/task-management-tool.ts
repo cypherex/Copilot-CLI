@@ -122,6 +122,8 @@ IMPORTANT: Tasks that are too complex will be rejected. Use break_down_task to d
         task: description,
         parent_task_id: parent_id,
         memoryStore: this.memoryStore,
+        useRecursiveBreakdown: true,  // Enable full recursive breakdown for task creation
+        maxBreakdownDepth: 4,          // Up to 4 levels deep
       });
 
       // If task is too complex, reject and force breakdown

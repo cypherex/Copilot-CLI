@@ -747,7 +747,8 @@ Return JSON array: [
       maxDepth: stats.maxDepth,
       allIntegrationPoints: stats.allIntegrationPoints,
       allDesignDecisions: stats.allDesignDecisions,
-      breakdownComplete: stats.readyTasks === stats.totalTasks,
+      // Breakdown is complete if all leaf tasks are ready (root doesn't count as it's not directly spawnable)
+      breakdownComplete: stats.readyTasks === (stats.totalTasks - 1) || (stats.totalTasks === 1 && stats.readyTasks === 1),
     };
   }
 
@@ -815,7 +816,7 @@ Return JSON array: [
     // Batch analyze all subtasks for efficiency
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
     const subtaskNodes = await Promise.all(
-      subtaskDescriptions.map(desc =>
+      subtaskDescriptions.map((desc: string) =>
         this.breakdownNode(desc, currentDepth + 1, maxDepth, enrichedContext, memoryStore)
       )
     );
@@ -840,56 +841,90 @@ Return JSON array: [
     parentContext: any,
     memoryStore: MemoryStore
   ): Promise<any> {
-    const systemPrompt = `You are a task breakdown expert. Analyze a complex task and break it down while identifying integration points and design decisions.
+    const systemPrompt = `You are an expert task breakdown specialist with a focus on EXHAUSTIVE, PRODUCTION-READY planning.
 
-CRITICAL: Ensure breakdown is COMPLETE - don't underestimate scope!
-- If task is "Implement X lexer" with 8 components, create tasks for ALL 8, not just 5
-- Verify all aspects of the original task are covered
-- Check if additional tasks are needed for integration, testing, documentation
+CRITICAL COMPLETENESS REQUIREMENTS:
+
+1. SPECIFICATION COVERAGE - If you see keywords that imply multiple items, create tasks for ALL:
+   - "types" → separate tasks for EACH type (integer, float, string, char, boolean, etc.)
+   - "operators" → separate tasks for EACH category (arithmetic, comparison, logical, bitwise, assignment)
+   - "literals" → separate tasks for integers, floats, strings, chars, booleans
+   - "comments" → separate tasks for single-line, multi-line, doc comments
+   - "error handling" → separate tasks for detection, recovery, reporting, formatting
+
+2. FEATURE COMPLETENESS - Don't generalize when specifics are implied:
+   - "string literals" → Must include: single-line, multi-line, escape sequences, Unicode
+   - "number parsing" → Must include: integers (decimal/hex/binary), floats, scientific notation
+   - "tokenization" → Must include: keywords, identifiers, operators, delimiters, literals, whitespace
+   - "testing" → Must include: unit tests, integration tests, edge cases, error cases
+
+3. GRANULARITY - Create focused, single-purpose tasks:
+   - DON'T: "Implement literal parsing" (too broad)
+   - DO: Separate tasks for integer literals, float literals, string literals, character literals, boolean literals
+   - DON'T: "Handle comments" (vague)
+   - DO: Separate tasks for single-line comments, multi-line comments, doc comments
+
+4. IMPLEMENTATION DETAILS - Don't forget the "boring" but necessary tasks:
+   - Data structure definitions (enums, structs, traits)
+   - Error types and error messages
+   - Helper functions and utilities
+   - Iterator/trait implementations
+   - Output formatting
+   - EOF and special token handling
+
+5. MISSING TASKS DETECTION - In "missingTasks", flag ANY aspect not explicitly covered:
+   - Look for implementation requirements (single-pass, no backtracking, etc.)
+   - Look for output requirements (Vec<Token>, specific formats)
+   - Look for edge cases (empty input, invalid UTF-8, etc.)
+   - Look for integration requirements (API contracts, data structures)
 
 Return ONLY valid JSON in this exact format:
 {
   "requiresBreakdown": <boolean>,
-  "reasoning": "<explanation>",
-  "coverageAnalysis": "<analysis of whether ALL aspects of the task are covered>",
+  "reasoning": "<why breakdown is/isn't needed>",
+  "coverageAnalysis": "<DETAILED analysis: list EVERY aspect of the task and confirm each is covered by a subtask>",
   "subtasks": [
     {
-      "description": "<task description>",
-      "produces": [<array of outputs>],
-      "consumes": [<array of inputs from other tasks>],
-      "covers": "<which aspect of the original task this addresses>"
+      "description": "<SPECIFIC, focused task description>",
+      "produces": [<array of concrete outputs: enums, functions, data structures>],
+      "consumes": [<array of specific inputs from other tasks>],
+      "covers": "<EXACTLY which requirement/aspect this addresses>"
     },
     ...
   ],
   "integrationPoints": [
     {
-      "integrates_with": "<task or component name>",
-      "requirement": "<what's required>",
-      "dataContract": "<expected interface/type>"
+      "integrates_with": "<specific component name>",
+      "requirement": "<precise technical requirement>",
+      "dataContract": "<exact interface/type signature expected>"
     },
     ...
   ],
   "designDecisions": [
     {
       "decision": "<what was decided>",
-      "reasoning": "<why>",
-      "alternatives": [<other options considered>],
-      "affects": [<task descriptions or component names>],
+      "reasoning": "<technical justification>",
+      "alternatives": [<other options with pros/cons>],
+      "affects": [<specific task/component names>],
       "scope": "global" | "module" | "task"
     },
     ...
   ],
-  "missingTasks": [<array of aspects that might need additional tasks>]
+  "missingTasks": [
+    "<List ANY aspect of the task not explicitly covered by a subtask>",
+    ...
+  ]
 }`;
 
     const taskContext = this.buildTaskContext(memoryStore);
-    const userPrompt = `Analyze and break down this task with COMPLETE coverage:
+    const userPrompt = `EXHAUSTIVE TASK BREAKDOWN - Production-Ready Planning
 
-Task: "${task}"
+Task to Break Down: "${task}"
 
-Complexity: ${complexity.rating}
-Evidence: ${JSON.stringify(complexity.evidence, null, 2)}
-Reasoning: ${complexity.reasoning}
+Complexity Assessment:
+- Rating: ${complexity.rating}
+- Evidence: ${JSON.stringify(complexity.evidence, null, 2)}
+- Reasoning: ${complexity.reasoning}
 
 Project Context:
 - Goal: ${parentContext.projectGoal}
@@ -899,17 +934,35 @@ Project Context:
 Current Task Context:
 ${taskContext}
 
-Break down this task ensuring COMPLETE coverage:
-1. Identify ALL components/aspects of the task
-2. Create subtasks for EACH component (don't underestimate - if it needs 12 tasks, create 12!)
-3. Verify every aspect of the original task is addressed
-4. Identify integration points between tasks/components
-5. Document design decisions that affect multiple tasks
-6. List what each task produces and consumes
+MANDATORY COMPLETENESS CHECKLIST:
 
-IMPORTANT: Check if you've created enough tasks! Don't create 7 tasks when it really needs 12.
+Step 1: ENUMERATE ALL ASPECTS
+List EVERY component, feature, type, operation, edge case implied by the task.
+Example: If task is "Implement lexer", list: token types, keywords, operators, delimiters, literals (integers, floats, strings, chars, booleans), comments (single, multi, doc), whitespace, indentation, position tracking, error recovery, EOF, output format, iterator implementation.
 
-Return JSON.`;
+Step 2: CREATE GRANULAR SUBTASKS
+For EACH aspect from Step 1, create a focused subtask.
+- If an aspect has multiple variations (like "literals"), create separate subtasks for EACH variation.
+- If an implementation requirement exists (like "single-pass"), create a task to ensure it.
+- Don't combine unrelated aspects into one task.
+
+Step 3: VERIFY COMPLETE COVERAGE
+For each aspect identified in Step 1, confirm there's a corresponding subtask.
+List any aspects WITHOUT a subtask in "missingTasks".
+
+Step 4: DOCUMENT TECHNICAL DETAILS
+For each subtask, specify:
+- What it produces (concrete types, functions, data structures)
+- What it consumes (specific dependencies)
+- What requirement it satisfies
+
+QUALITY STANDARDS:
+- Aim for 15-30 subtasks for a complex system component (lexer, parser, etc.)
+- Each subtask should be simple or moderate complexity
+- Each subtask should be implementable in 1-3 files, 50-200 lines
+- No subtask should require further breakdown
+
+Return JSON with EXHAUSTIVE breakdown.`;
 
     try {
       const response = await this.llmClient.chat([

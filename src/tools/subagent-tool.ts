@@ -155,37 +155,8 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
 
     const warnings: string[] = [];
 
-    // VALIDATION: Check if spawn should be allowed
-    if (this.spawnValidator && this.memoryStore) {
-      const currentTask = this.memoryStore.getActiveTask();
-
-      const validationResult = await this.spawnValidator.validateSpawn({
-        task,
-        parent_task_id: currentTask?.id,
-        memoryStore: this.memoryStore,
-        useRecursiveBreakdown: true, // Enable full recursive breakdown
-        maxBreakdownDepth: 4, // Up to 4 levels deep
-      });
-
-      // If not allowed and requires breakdown, throw error with detailed message
-      if (!validationResult.allowed && validationResult.requiresBreakdown) {
-        throw new Error(validationResult.suggestedMessage || validationResult.reason || 'Task is too complex - requires breakdown');
-      }
-
-      // Display warnings/info if task is complex but allowed
-      if (validationResult.complexity && validationResult.complexity.rating === 'complex') {
-        const complexityMessage = [
-          `⚠️  Complex task detected (${validationResult.complexity.rating}):`,
-          `  Reasoning: ${validationResult.complexity.reasoning}`,
-        ].join('\n');
-
-        uiState.addMessage({
-          role: 'system',
-          content: complexityMessage,
-          timestamp: Date.now(),
-        });
-      }
-    }
+    // VALIDATION: Disabled for spawn_agent - agents can work on any task
+    // Validation only enabled for create_task to enforce upfront breakdown
     let contextSummary: string | undefined;
 
     // AUTOMATIC CONTEXT MANAGEMENT: Summarize context if conversation is getting long
