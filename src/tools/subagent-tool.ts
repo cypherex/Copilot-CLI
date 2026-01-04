@@ -163,6 +163,8 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
         task,
         parent_task_id: currentTask?.id,
         memoryStore: this.memoryStore,
+        useRecursiveBreakdown: true, // Enable full recursive breakdown
+        maxBreakdownDepth: 4, // Up to 4 levels deep
       });
 
       // If not allowed and requires breakdown, throw error with detailed message

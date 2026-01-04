@@ -8,6 +8,8 @@ import type {
   TaskStatus,
   TrackingItem,
   TrackingItemStatus,
+  IntegrationPoint,
+  DesignDecision,
   WorkingState,
   ActiveFile,
   FileSection,
@@ -21,6 +23,8 @@ export interface SessionMemoryData {
   goals: SessionGoal[];
   tasks: Task[];
   trackingItems: TrackingItem[];
+  integrationPoints: IntegrationPoint[];
+  designDecisions: DesignDecision[];
   workingState: WorkingState;
   archive: ArchiveEntry[];
   retrievalHistory: RetrievalResult[];
@@ -31,6 +35,8 @@ export class SessionMemoryStore {
   private rootGoalId?: string;
   private tasks: Map<string, Task> = new Map();
   private trackingItems: Map<string, TrackingItem> = new Map();
+  private integrationPoints: Map<string, IntegrationPoint> = new Map();
+  private designDecisions: Map<string, DesignDecision> = new Map();
   private workingState: WorkingState;
   private archiveEntries: ArchiveEntry[] = [];
   private retrievalHistory: RetrievalResult[] = [];
@@ -58,6 +64,8 @@ export class SessionMemoryStore {
       goals: Array.from(this.goals.values()),
       tasks: Array.from(this.tasks.values()),
       trackingItems: Array.from(this.trackingItems.values()),
+      integrationPoints: Array.from(this.integrationPoints.values()),
+      designDecisions: Array.from(this.designDecisions.values()),
       workingState: this.workingState,
       archive: this.archiveEntries,
       retrievalHistory: this.retrievalHistory,
@@ -69,6 +77,8 @@ export class SessionMemoryStore {
     this.goals.clear();
     this.tasks.clear();
     this.trackingItems.clear();
+    this.integrationPoints.clear();
+    this.designDecisions.clear();
     this.rootGoalId = undefined;
 
     for (const goal of data.goals) {
@@ -84,6 +94,14 @@ export class SessionMemoryStore {
 
     for (const item of data.trackingItems || []) {
       this.trackingItems.set(item.id, item);
+    }
+
+    for (const point of data.integrationPoints || []) {
+      this.integrationPoints.set(point.id, point);
+    }
+
+    for (const decision of data.designDecisions || []) {
+      this.designDecisions.set(decision.id, decision);
     }
 
     this.workingState = data.workingState;
@@ -245,6 +263,48 @@ export class SessionMemoryStore {
 
   deleteTrackingItem(id: string): void {
     this.trackingItems.delete(id);
+  }
+
+  // Integration Points
+  getIntegrationPoints(): IntegrationPoint[] {
+    return Array.from(this.integrationPoints.values());
+  }
+
+  getIntegrationPointsForTask(taskId: string): IntegrationPoint[] {
+    return Array.from(this.integrationPoints.values()).filter(
+      point => point.sourceTask === taskId || point.targetTask === taskId
+    );
+  }
+
+  addIntegrationPoint(point: Omit<IntegrationPoint, 'id' | 'createdAt'>): IntegrationPoint {
+    const full: IntegrationPoint = {
+      ...point,
+      id: this.generateId('integration'),
+      createdAt: new Date(),
+    };
+    this.integrationPoints.set(full.id, full);
+    return full;
+  }
+
+  // Design Decisions
+  getDesignDecisions(): DesignDecision[] {
+    return Array.from(this.designDecisions.values());
+  }
+
+  getDesignDecisionsForTask(taskId: string): DesignDecision[] {
+    return Array.from(this.designDecisions.values()).filter(
+      decision => decision.parentTaskId === taskId || decision.affects.includes(taskId)
+    );
+  }
+
+  addDesignDecision(decision: Omit<DesignDecision, 'id' | 'createdAt'>): DesignDecision {
+    const full: DesignDecision = {
+      ...decision,
+      id: this.generateId('design'),
+      createdAt: new Date(),
+    };
+    this.designDecisions.set(full.id, full);
+    return full;
   }
 
   // Working state

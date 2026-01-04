@@ -82,6 +82,33 @@ export interface ProjectContext {
 export type TaskStatus = 'active' | 'blocked' | 'waiting' | 'completed' | 'abandoned';
 export type TaskComplexity = 'simple' | 'moderate' | 'complex';
 
+// Integration point - describes how tasks/components integrate
+export interface IntegrationPoint {
+  id: string;
+  sourceTask?: string; // Task ID that produces
+  targetTask?: string; // Task ID that consumes
+  sourceComponent?: string; // Component/module name
+  targetComponent?: string; // Component/module name
+  requirement: string; // What's required (e.g., "tokens must include span info")
+  dataContract?: string; // Expected interface/type/structure
+  createdAt: Date;
+  relatedFiles?: string[]; // Files involved in this integration
+}
+
+// Design decision - architectural/implementation choices made during breakdown
+export interface DesignDecision {
+  id: string;
+  decision: string; // What was decided
+  reasoning: string; // Why this decision was made
+  alternatives?: string[]; // Other options considered
+  affects: string[]; // Task IDs or component names affected
+  scope: 'global' | 'module' | 'task'; // How broad the impact is
+  createdDuringBreakdown?: boolean; // Was this created during task breakdown?
+  parentTaskId?: string; // Task being broken down when this was decided
+  createdAt: Date;
+  relatedFiles?: string[]; // Files this decision impacts
+}
+
 export interface Task {
   id: string;
   description: string;
@@ -104,6 +131,14 @@ export interface Task {
 
   // File tracking
   filesModified?: string[]; // Files created/modified during task execution (from EditRecords)
+
+  // Task breakdown metadata
+  breakdownDepth?: number; // How many levels deep in the breakdown tree (0 = root)
+  produces?: string[]; // What this task produces (interfaces, data structures, etc.)
+  consumes?: string[]; // What this task depends on from other tasks
+  integrationPointIds?: string[]; // IDs of IntegrationPoints related to this task
+  designDecisionIds?: string[]; // IDs of DesignDecisions made for/affecting this task
+  breakdownComplete?: boolean; // Whether this task has been fully broken down (all subtasks are ready)
 }
 
 // Tracking items - incomplete work items detected in LLM responses
@@ -363,6 +398,17 @@ export interface MemoryStore {
   getActiveTask(): Task | undefined;
   addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Task;
   updateTask(id: string, updates: Partial<Task>): void;
+  getTaskById(id: string): Task | undefined;
+
+  // Integration Points
+  getIntegrationPoints(): IntegrationPoint[];
+  getIntegrationPointsForTask(taskId: string): IntegrationPoint[];
+  addIntegrationPoint(point: Omit<IntegrationPoint, 'id' | 'createdAt'>): IntegrationPoint;
+
+  // Design Decisions (breakdown-specific)
+  getDesignDecisions(): DesignDecision[];
+  getDesignDecisionsForTask(taskId: string): DesignDecision[];
+  addDesignDecision(decision: Omit<DesignDecision, 'id' | 'createdAt'>): DesignDecision;
 
   // Tracking items (incomplete work detection)
   getTrackingItems(status?: TrackingItemStatus): TrackingItem[];

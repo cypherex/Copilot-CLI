@@ -108,6 +108,32 @@ export class LocalMemoryStore implements MemoryStore {
     return this.sessionStore.deleteTrackingItem(id);
   }
 
+  // Integration Points (session-scoped)
+  getIntegrationPoints() {
+    return this.sessionStore.getIntegrationPoints();
+  }
+
+  getIntegrationPointsForTask(taskId: string) {
+    return this.sessionStore.getIntegrationPointsForTask(taskId);
+  }
+
+  addIntegrationPoint(point: any) {
+    return this.sessionStore.addIntegrationPoint(point);
+  }
+
+  // Design Decisions (session-scoped)
+  getDesignDecisions() {
+    return this.sessionStore.getDesignDecisions();
+  }
+
+  getDesignDecisionsForTask(taskId: string) {
+    return this.sessionStore.getDesignDecisionsForTask(taskId);
+  }
+
+  addDesignDecision(decision: any) {
+    return this.sessionStore.addDesignDecision(decision);
+  }
+
   // Working state (session-scoped)
   getWorkingState() {
     return this.sessionStore.getWorkingState();

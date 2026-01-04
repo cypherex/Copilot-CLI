@@ -15,6 +15,8 @@ export interface SpawnValidationContext {
   success_criteria?: string;
   parent_task_id?: string;
   memoryStore: MemoryStore;
+  useRecursiveBreakdown?: boolean; // If true, perform full recursive breakdown
+  maxBreakdownDepth?: number; // Max depth for recursive breakdown (default: 4)
 }
 
 export interface SpawnValidationResult {
@@ -28,6 +30,8 @@ export interface SpawnValidationResult {
     taskId: string;
     subtaskIds: string[];
   };
+  recursiveBreakdownResult?: RecursiveBreakdownResult; // If recursive breakdown was used
+  breakdownComplete?: boolean; // True if all tasks are ready to spawn
 }
 
 export interface ComplexityAssessment {
@@ -48,6 +52,40 @@ export interface BreakdownDecision {
   reasoning: string;
   suggestedSubtasks: string[];
   integrationConsiderations: string[];
+}
+
+// Task tree node for recursive breakdown
+export interface TaskNode {
+  description: string;
+  complexity: ComplexityAssessment;
+  subtasks?: TaskNode[];
+  integrationPoints?: {
+    integrates_with: string; // Task description or component
+    requirement: string;
+    dataContract?: string;
+  }[];
+  produces?: string[];
+  consumes?: string[];
+  designDecisions?: {
+    decision: string;
+    reasoning: string;
+    alternatives?: string[];
+    affects: string[];
+    scope: 'global' | 'module' | 'task';
+  }[];
+  readyToSpawn: boolean; // True if this task is simple/moderate enough to execute
+  breakdownDepth: number;
+}
+
+// Result of recursive breakdown
+export interface RecursiveBreakdownResult {
+  taskTree: TaskNode;
+  totalTasks: number;
+  readyTasks: number; // Tasks that can be spawned immediately
+  maxDepth: number;
+  allIntegrationPoints: any[];
+  allDesignDecisions: any[];
+  breakdownComplete: boolean; // True if all leaf tasks are ready to spawn
 }
 
 // ============================================
@@ -74,6 +112,11 @@ export class SpawnValidator {
       // IMPORTANT: Still check complexity even for subtasks!
       // Just because a task was broken down doesn't mean the subtasks are appropriately scoped.
       // Subtasks can still be MACRO-level complex and need further breakdown.
+    }
+
+    // If recursive breakdown is requested, perform it
+    if (context.useRecursiveBreakdown) {
+      return await this.validateSpawnWithRecursiveBreakdown(context);
     }
 
     // Assess task complexity (for both top-level tasks AND subtasks)
@@ -147,6 +190,117 @@ export class SpawnValidator {
       breakdownDecision,
       reason: `Task is complex but LLM determined breakdown not needed: ${breakdownDecision.reasoning}`,
     };
+  }
+
+  /**
+   * Validate spawn with full recursive breakdown
+   */
+  private async validateSpawnWithRecursiveBreakdown(
+    context: SpawnValidationContext
+  ): Promise<SpawnValidationResult> {
+    // Perform full recursive breakdown
+    const breakdownResult = await this.recursiveBreakdownWithContext(
+      context.task,
+      context.memoryStore,
+      {
+        maxDepth: context.maxBreakdownDepth || 4,
+      }
+    );
+
+    // Create task hierarchy in memory store
+    const { rootTaskId, allTaskIds } = this.createTaskHierarchy(
+      breakdownResult.taskTree,
+      context.memoryStore
+    );
+
+    // Build comprehensive message
+    const message = this.buildRecursiveBreakdownMessage(
+      context.task,
+      rootTaskId,
+      breakdownResult
+    );
+
+    return {
+      allowed: false, // Don't allow spawning the root task - use subtasks instead
+      requiresBreakdown: true,
+      complexity: breakdownResult.taskTree.complexity,
+      recursiveBreakdownResult: breakdownResult,
+      breakdownComplete: breakdownResult.breakdownComplete,
+      reason: 'Task fully broken down with recursive analysis',
+      autoCreatedTask: {
+        taskId: rootTaskId,
+        subtaskIds: allTaskIds.slice(1), // All except root
+      },
+      suggestedMessage: message,
+    };
+  }
+
+  /**
+   * Build message for recursive breakdown result
+   */
+  private buildRecursiveBreakdownMessage(
+    task: string,
+    rootTaskId: string,
+    result: RecursiveBreakdownResult
+  ): string {
+    const lines: string[] = [
+      '═══════════════════════════════════════════════════════════',
+      'RECURSIVE TASK BREAKDOWN COMPLETE',
+      '═══════════════════════════════════════════════════════════',
+      '',
+      `Original Task: "${task}"`,
+      `Root Task ID: ${rootTaskId}`,
+      '',
+      'BREAKDOWN STATISTICS:',
+      `  Total Tasks Created: ${result.totalTasks}`,
+      `  Ready to Spawn: ${result.readyTasks}`,
+      `  Max Breakdown Depth: ${result.maxDepth}`,
+      `  Breakdown Complete: ${result.breakdownComplete ? '✓ YES' : '✗ NO - Some tasks need manual breakdown'}`,
+      '',
+    ];
+
+    if (result.allDesignDecisions.length > 0) {
+      lines.push('DESIGN DECISIONS IDENTIFIED:');
+      for (const decision of result.allDesignDecisions) {
+        lines.push(`  • ${decision.decision}`);
+        lines.push(`    Reasoning: ${decision.reasoning}`);
+        lines.push(`    Scope: ${decision.scope}`);
+        lines.push(`    Affects: ${decision.affects.join(', ')}`);
+        lines.push('');
+      }
+    }
+
+    if (result.allIntegrationPoints.length > 0) {
+      lines.push('INTEGRATION POINTS IDENTIFIED:');
+      for (const point of result.allIntegrationPoints) {
+        lines.push(`  • ${point.integrates_with}`);
+        lines.push(`    Requirement: ${point.requirement}`);
+        if (point.dataContract) {
+          lines.push(`    Contract: ${point.dataContract}`);
+        }
+        lines.push('');
+      }
+    }
+
+    lines.push('NEXT STEPS:');
+    if (result.breakdownComplete) {
+      lines.push('  ✓ All tasks are appropriately scoped!');
+      lines.push('  1. Review the task hierarchy using list_tasks');
+      lines.push('  2. Review integration points and design decisions');
+      lines.push('  3. Spawn subagents for leaf tasks or work on them directly');
+      lines.push('  4. Tasks are already ordered by dependency - start with tasks that have no "consumes"');
+    } else {
+      lines.push('  ⚠ Some tasks still need further breakdown:');
+      lines.push('  1. Use list_tasks to see the full hierarchy');
+      lines.push('  2. Identify tasks marked as complex but at max depth');
+      lines.push('  3. Manually break down those tasks using break_down_task');
+      lines.push('  4. Then proceed with spawning subagents');
+    }
+
+    lines.push('');
+    lines.push('═══════════════════════════════════════════════════════════');
+
+    return lines.join('\n');
   }
 
   /**
@@ -476,5 +630,417 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
     lines.push('You can also use list_tasks to see all tasks and their hierarchy.');
 
     return lines.join('\n');
+  }
+
+  /**
+   * Batched complexity analysis - analyze multiple tasks in a single LLM call
+   */
+  async batchAssessComplexity(tasks: string[]): Promise<Map<string, ComplexityAssessment>> {
+    if (tasks.length === 0) {
+      return new Map();
+    }
+
+    if (tasks.length === 1) {
+      const assessment = await this.assessTaskComplexity(tasks[0]);
+      return new Map([[tasks[0], assessment]]);
+    }
+
+    const systemPrompt = `You are a task complexity analyzer. Analyze multiple tasks in batch and return complexity assessments for each.
+
+For each task, determine:
+- Rating: simple | moderate | complex
+- Evidence: files, functions, lines, integration points, steps, coordination needs
+- Reasoning: Why this rating was chosen
+
+Complexity Guidelines:
+- SIMPLE: Single file, single function/class, < 50 lines, no integration, 1-2 steps
+- MODERATE: 2-3 files, 2-5 functions, 50-200 lines, minimal integration, 3-5 steps
+- COMPLEX: 4+ files, 6+ functions, 200+ lines, multiple integrations, 6+ steps
+
+Return ONLY valid JSON array with one assessment per task IN THE SAME ORDER.`;
+
+    const userPrompt = `Analyze these ${tasks.length} tasks for complexity:
+
+${tasks.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+
+Return JSON array: [
+  {
+    "rating": "simple" | "moderate" | "complex",
+    "evidence": { "filesCount": <number>, "functionsEstimate": <number>, "linesEstimate": <number>, "integrationPoints": [<array>], "hasMultipleSteps": <boolean>, "requiresCoordination": <boolean> },
+    "reasoning": "<explanation>"
+  },
+  ...
+]`;
+
+    try {
+      const response = await this.llmClient.chat([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ]);
+
+      const content = response.choices[0]?.message.content || '';
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as ComplexityAssessment[];
+
+        if (Array.isArray(parsed) && parsed.length === tasks.length) {
+          const result = new Map<string, ComplexityAssessment>();
+          for (let i = 0; i < tasks.length; i++) {
+            result.set(tasks[i], parsed[i]);
+          }
+          return result;
+        }
+      }
+    } catch (error) {
+      console.error('[SpawnValidator] Batch complexity assessment failed:', error);
+    }
+
+    // Fallback: assess individually
+    const result = new Map<string, ComplexityAssessment>();
+    for (const task of tasks) {
+      result.set(task, await this.assessTaskComplexity(task));
+    }
+    return result;
+  }
+
+  /**
+   * Recursive task breakdown with full context preservation
+   * This performs a complete breakdown until all leaf tasks are simple/moderate
+   */
+  async recursiveBreakdownWithContext(
+    rootTask: string,
+    memoryStore: MemoryStore,
+    options: {
+      maxDepth?: number;
+      parentContext?: {
+        projectGoal?: string;
+        designDecisions?: any[];
+        integrationPoints?: any[];
+        siblingTasks?: string[];
+      };
+    } = {}
+  ): Promise<RecursiveBreakdownResult> {
+    const maxDepth = options.maxDepth || 4;
+    const parentContext = options.parentContext || {
+      projectGoal: memoryStore.getGoal()?.description || '',
+      designDecisions: [],
+      integrationPoints: [],
+      siblingTasks: [],
+    };
+
+    const taskTree = await this.breakdownNode(
+      rootTask,
+      0,
+      maxDepth,
+      parentContext,
+      memoryStore
+    );
+
+    // Collect statistics
+    const stats = this.collectTreeStats(taskTree);
+
+    return {
+      taskTree,
+      totalTasks: stats.totalTasks,
+      readyTasks: stats.readyTasks,
+      maxDepth: stats.maxDepth,
+      allIntegrationPoints: stats.allIntegrationPoints,
+      allDesignDecisions: stats.allDesignDecisions,
+      breakdownComplete: stats.readyTasks === stats.totalTasks,
+    };
+  }
+
+  /**
+   * Recursively break down a single task node
+   */
+  private async breakdownNode(
+    taskDescription: string,
+    currentDepth: number,
+    maxDepth: number,
+    parentContext: any,
+    memoryStore: MemoryStore
+  ): Promise<TaskNode> {
+    // Assess complexity
+    const complexity = await this.assessTaskComplexity(taskDescription);
+
+    // If simple or moderate, this is a leaf node - ready to spawn
+    if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
+      return {
+        description: taskDescription,
+        complexity,
+        readyToSpawn: true,
+        breakdownDepth: currentDepth,
+      };
+    }
+
+    // Complex task - check if we should break it down
+    if (currentDepth >= maxDepth) {
+      // Hit max depth - mark as needing manual breakdown
+      return {
+        description: taskDescription,
+        complexity,
+        readyToSpawn: false, // NOT ready - too complex and at max depth
+        breakdownDepth: currentDepth,
+      };
+    }
+
+    // Perform breakdown with full context
+    const breakdownResult = await this.analyzeTaskWithFullContext(
+      taskDescription,
+      complexity,
+      parentContext,
+      memoryStore
+    );
+
+    if (!breakdownResult.requiresBreakdown) {
+      // LLM decided breakdown not needed despite complexity
+      return {
+        description: taskDescription,
+        complexity,
+        readyToSpawn: true,
+        breakdownDepth: currentDepth,
+        designDecisions: breakdownResult.designDecisions,
+        integrationPoints: breakdownResult.integrationPoints,
+      };
+    }
+
+    // Break down into subtasks and recursively analyze each
+    const enrichedContext = {
+      ...parentContext,
+      designDecisions: [...parentContext.designDecisions, ...(breakdownResult.designDecisions || [])],
+      integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
+    };
+
+    // Batch analyze all subtasks for efficiency
+    const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
+    const subtaskNodes = await Promise.all(
+      subtaskDescriptions.map(desc =>
+        this.breakdownNode(desc, currentDepth + 1, maxDepth, enrichedContext, memoryStore)
+      )
+    );
+
+    return {
+      description: taskDescription,
+      complexity,
+      subtasks: subtaskNodes,
+      integrationPoints: breakdownResult.integrationPoints,
+      designDecisions: breakdownResult.designDecisions,
+      readyToSpawn: false, // Parent node - not directly spawnable
+      breakdownDepth: currentDepth,
+    };
+  }
+
+  /**
+   * Analyze task with full context including integration points and design decisions
+   */
+  private async analyzeTaskWithFullContext(
+    task: string,
+    complexity: ComplexityAssessment,
+    parentContext: any,
+    memoryStore: MemoryStore
+  ): Promise<any> {
+    const systemPrompt = `You are a task breakdown expert. Analyze a complex task and break it down while identifying integration points and design decisions.
+
+CRITICAL: Ensure breakdown is COMPLETE - don't underestimate scope!
+- If task is "Implement X lexer" with 8 components, create tasks for ALL 8, not just 5
+- Verify all aspects of the original task are covered
+- Check if additional tasks are needed for integration, testing, documentation
+
+Return ONLY valid JSON in this exact format:
+{
+  "requiresBreakdown": <boolean>,
+  "reasoning": "<explanation>",
+  "coverageAnalysis": "<analysis of whether ALL aspects of the task are covered>",
+  "subtasks": [
+    {
+      "description": "<task description>",
+      "produces": [<array of outputs>],
+      "consumes": [<array of inputs from other tasks>],
+      "covers": "<which aspect of the original task this addresses>"
+    },
+    ...
+  ],
+  "integrationPoints": [
+    {
+      "integrates_with": "<task or component name>",
+      "requirement": "<what's required>",
+      "dataContract": "<expected interface/type>"
+    },
+    ...
+  ],
+  "designDecisions": [
+    {
+      "decision": "<what was decided>",
+      "reasoning": "<why>",
+      "alternatives": [<other options considered>],
+      "affects": [<task descriptions or component names>],
+      "scope": "global" | "module" | "task"
+    },
+    ...
+  ],
+  "missingTasks": [<array of aspects that might need additional tasks>]
+}`;
+
+    const taskContext = this.buildTaskContext(memoryStore);
+    const userPrompt = `Analyze and break down this task with COMPLETE coverage:
+
+Task: "${task}"
+
+Complexity: ${complexity.rating}
+Evidence: ${JSON.stringify(complexity.evidence, null, 2)}
+Reasoning: ${complexity.reasoning}
+
+Project Context:
+- Goal: ${parentContext.projectGoal}
+- Existing Design Decisions: ${parentContext.designDecisions.length}
+- Known Integration Points: ${parentContext.integrationPoints.length}
+
+Current Task Context:
+${taskContext}
+
+Break down this task ensuring COMPLETE coverage:
+1. Identify ALL components/aspects of the task
+2. Create subtasks for EACH component (don't underestimate - if it needs 12 tasks, create 12!)
+3. Verify every aspect of the original task is addressed
+4. Identify integration points between tasks/components
+5. Document design decisions that affect multiple tasks
+6. List what each task produces and consumes
+
+IMPORTANT: Check if you've created enough tasks! Don't create 7 tasks when it really needs 12.
+
+Return JSON.`;
+
+    try {
+      const response = await this.llmClient.chat([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ]);
+
+      const content = response.choices[0]?.message.content || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return parsed;
+      }
+    } catch (error) {
+      console.error('[SpawnValidator] Context-aware breakdown failed:', error);
+    }
+
+    // Fallback
+    return {
+      requiresBreakdown: true,
+      reasoning: 'Failed to parse LLM response - using fallback',
+      subtasks: [
+        { description: 'Break this task into smaller parts', produces: [], consumes: [] },
+        { description: 'Identify integration requirements', produces: [], consumes: [] },
+      ],
+      integrationPoints: [],
+      designDecisions: [],
+    };
+  }
+
+  /**
+   * Collect statistics from the task tree
+   */
+  private collectTreeStats(node: TaskNode): {
+    totalTasks: number;
+    readyTasks: number;
+    maxDepth: number;
+    allIntegrationPoints: any[];
+    allDesignDecisions: any[];
+  } {
+    let totalTasks = 1;
+    let readyTasks = node.readyToSpawn ? 1 : 0;
+    let maxDepth = node.breakdownDepth;
+    const allIntegrationPoints = [...(node.integrationPoints || [])];
+    const allDesignDecisions = [...(node.designDecisions || [])];
+
+    if (node.subtasks) {
+      for (const subtask of node.subtasks) {
+        const subtaskStats = this.collectTreeStats(subtask);
+        totalTasks += subtaskStats.totalTasks;
+        readyTasks += subtaskStats.readyTasks;
+        maxDepth = Math.max(maxDepth, subtaskStats.maxDepth);
+        allIntegrationPoints.push(...subtaskStats.allIntegrationPoints);
+        allDesignDecisions.push(...subtaskStats.allDesignDecisions);
+      }
+    }
+
+    return { totalTasks, readyTasks, maxDepth, allIntegrationPoints, allDesignDecisions };
+  }
+
+  /**
+   * Create tasks in memory store from the task tree
+   */
+  createTaskHierarchy(
+    taskTree: TaskNode,
+    memoryStore: MemoryStore,
+    parentTaskId?: string
+  ): { rootTaskId: string; allTaskIds: string[] } {
+    const allTaskIds: string[] = [];
+
+    // Create the current task
+    const task = memoryStore.addTask({
+      description: taskTree.description,
+      status: parentTaskId ? 'waiting' : 'active',
+      priority: 'high',
+      parentId: parentTaskId,
+      relatedFiles: [],
+      estimatedComplexity: taskTree.complexity.rating,
+      breakdownDepth: taskTree.breakdownDepth,
+      produces: taskTree.produces,
+      consumes: taskTree.consumes,
+      breakdownComplete: taskTree.readyToSpawn || (taskTree.subtasks?.every(st => st.readyToSpawn) ?? false),
+    });
+
+    allTaskIds.push(task.id);
+    const rootTaskId = task.id;
+
+    // Add integration points for this task
+    if (taskTree.integrationPoints) {
+      for (const point of taskTree.integrationPoints) {
+        const integrationPoint = memoryStore.addIntegrationPoint({
+          sourceTask: task.id,
+          requirement: point.requirement,
+          dataContract: point.dataContract,
+          targetComponent: point.integrates_with,
+        });
+        // Link to task
+        const integrationPointIds = task.integrationPointIds || [];
+        integrationPointIds.push(integrationPoint.id);
+        memoryStore.updateTask(task.id, { integrationPointIds });
+      }
+    }
+
+    // Add design decisions for this task
+    if (taskTree.designDecisions) {
+      for (const decision of taskTree.designDecisions) {
+        const designDecision = memoryStore.addDesignDecision({
+          decision: decision.decision,
+          reasoning: decision.reasoning,
+          alternatives: decision.alternatives,
+          affects: decision.affects,
+          scope: decision.scope,
+          createdDuringBreakdown: true,
+          parentTaskId: task.id,
+        });
+        // Link to task
+        const designDecisionIds = task.designDecisionIds || [];
+        designDecisionIds.push(designDecision.id);
+        memoryStore.updateTask(task.id, { designDecisionIds });
+      }
+    }
+
+    // Recursively create subtasks
+    if (taskTree.subtasks) {
+      for (const subtaskNode of taskTree.subtasks) {
+        const result = this.createTaskHierarchy(subtaskNode, memoryStore, task.id);
+        allTaskIds.push(...result.allTaskIds);
+      }
+    }
+
+    return { rootTaskId, allTaskIds };
   }
 }
