@@ -796,7 +796,7 @@ async function runDemo() {
   const result = await validator.recursiveBreakdownWithContext(
     'Implement Flux lexer',
     memoryStore,
-    { maxDepth: 4 }
+    { maxDepth: 4, verbose: true }
   );
 
   console.log('\n═══════════════════════════════════════════════════════════');

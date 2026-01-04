@@ -124,6 +124,7 @@ IMPORTANT: Tasks that are too complex will be rejected. Use break_down_task to d
         memoryStore: this.memoryStore,
         useRecursiveBreakdown: true,  // Enable full recursive breakdown for task creation
         maxBreakdownDepth: 4,          // Up to 4 levels deep
+        verbose: true,                 // Enable verbose logging during breakdown
       });
 
       // If task is too complex, reject and force breakdown

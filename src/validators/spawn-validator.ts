@@ -17,6 +17,7 @@ export interface SpawnValidationContext {
   memoryStore: MemoryStore;
   useRecursiveBreakdown?: boolean; // If true, perform full recursive breakdown
   maxBreakdownDepth?: number; // Max depth for recursive breakdown (default: 4)
+  verbose?: boolean; // If true, enable verbose logging during breakdown
 }
 
 export interface SpawnValidationResult {
@@ -204,6 +205,7 @@ export class SpawnValidator {
       context.memoryStore,
       {
         maxDepth: context.maxBreakdownDepth || 4,
+        verbose: context.verbose ?? false,
       }
     );
 
@@ -719,9 +721,11 @@ Return JSON array: [
         integrationPoints?: any[];
         siblingTasks?: string[];
       };
+      verbose?: boolean;
     } = {}
   ): Promise<RecursiveBreakdownResult> {
     const maxDepth = options.maxDepth || 4;
+    const verbose = options.verbose ?? false;
     const parentContext = options.parentContext || {
       projectGoal: memoryStore.getGoal()?.description || '',
       designDecisions: [],
@@ -729,16 +733,44 @@ Return JSON array: [
       siblingTasks: [],
     };
 
+    if (verbose) {
+      console.log('\n═══════════════════════════════════════════════════════════');
+      console.log('STARTING RECURSIVE TASK BREAKDOWN');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log(`Root Task: "${rootTask}"`);
+      console.log(`Max Depth: ${maxDepth}`);
+      console.log(`Project Goal: ${parentContext.projectGoal || 'None'}`);
+      console.log('');
+    }
+
     const taskTree = await this.breakdownNode(
       rootTask,
       0,
       maxDepth,
       parentContext,
-      memoryStore
+      memoryStore,
+      verbose
     );
+
+    // Small delay before collecting stats
+    if (verbose) {
+      await this.sleep(500);
+    }
 
     // Collect statistics
     const stats = this.collectTreeStats(taskTree);
+
+    if (verbose) {
+      console.log('\n═══════════════════════════════════════════════════════════');
+      console.log('BREAKDOWN COMPLETE');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log(`Total Tasks: ${stats.totalTasks}`);
+      console.log(`Ready Tasks: ${stats.readyTasks}`);
+      console.log(`Max Depth Reached: ${stats.maxDepth}`);
+      console.log(`Integration Points: ${stats.allIntegrationPoints.length}`);
+      console.log(`Design Decisions: ${stats.allDesignDecisions.length}`);
+      console.log('');
+    }
 
     return {
       taskTree,
@@ -753,6 +785,13 @@ Return JSON array: [
   }
 
   /**
+   * Sleep utility for rate limiting
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
    * Recursively break down a single task node
    */
   private async breakdownNode(
@@ -760,13 +799,30 @@ Return JSON array: [
     currentDepth: number,
     maxDepth: number,
     parentContext: any,
-    memoryStore: MemoryStore
+    memoryStore: MemoryStore,
+    verbose: boolean = false
   ): Promise<TaskNode> {
+    const indent = '  '.repeat(currentDepth);
+
+    if (verbose) {
+      console.log(`${indent}[Depth ${currentDepth}] Analyzing: "${taskDescription}"`);
+    }
+
+    // Sleep before complexity assessment
+    await this.sleep(300);
+
     // Assess complexity
     const complexity = await this.assessTaskComplexity(taskDescription);
 
+    if (verbose) {
+      console.log(`${indent}  → Complexity: ${complexity.rating.toUpperCase()}`);
+    }
+
     // If simple or moderate, this is a leaf node - ready to spawn
     if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
+      if (verbose) {
+        console.log(`${indent}  ✓ Ready to spawn (leaf task)`);
+      }
       return {
         description: taskDescription,
         complexity,
@@ -777,6 +833,9 @@ Return JSON array: [
 
     // Complex task - check if we should break it down
     if (currentDepth >= maxDepth) {
+      if (verbose) {
+        console.log(`${indent}  ⚠ Max depth reached - cannot break down further`);
+      }
       // Hit max depth - mark as needing manual breakdown
       return {
         description: taskDescription,
@@ -785,6 +844,13 @@ Return JSON array: [
         breakdownDepth: currentDepth,
       };
     }
+
+    if (verbose) {
+      console.log(`${indent}  ⚙ Breaking down into subtasks...`);
+    }
+
+    // Sleep before breakdown analysis
+    await this.sleep(500);
 
     // Perform breakdown with full context
     const breakdownResult = await this.analyzeTaskWithFullContext(
@@ -795,6 +861,10 @@ Return JSON array: [
     );
 
     if (!breakdownResult.requiresBreakdown) {
+      if (verbose) {
+        console.log(`${indent}  → LLM decided breakdown not needed`);
+        console.log(`${indent}  ✓ Ready to spawn`);
+      }
       // LLM decided breakdown not needed despite complexity
       return {
         description: taskDescription,
@@ -806,6 +876,16 @@ Return JSON array: [
       };
     }
 
+    if (verbose) {
+      console.log(`${indent}  → Created ${breakdownResult.subtasks.length} subtasks`);
+      if (breakdownResult.designDecisions?.length) {
+        console.log(`${indent}  → Captured ${breakdownResult.designDecisions.length} design decisions`);
+      }
+      if (breakdownResult.integrationPoints?.length) {
+        console.log(`${indent}  → Identified ${breakdownResult.integrationPoints.length} integration points`);
+      }
+    }
+
     // Break down into subtasks and recursively analyze each
     const enrichedContext = {
       ...parentContext,
@@ -813,13 +893,25 @@ Return JSON array: [
       integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
     };
 
+    // Sleep before recursive calls
+    await this.sleep(300);
+
     // Batch analyze all subtasks for efficiency
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
+
+    if (verbose) {
+      console.log(`${indent}  ⤷ Analyzing subtasks recursively...`);
+    }
+
     const subtaskNodes = await Promise.all(
       subtaskDescriptions.map((desc: string) =>
-        this.breakdownNode(desc, currentDepth + 1, maxDepth, enrichedContext, memoryStore)
+        this.breakdownNode(desc, currentDepth + 1, maxDepth, enrichedContext, memoryStore, verbose)
       )
     );
+
+    if (verbose) {
+      console.log(`${indent}  ✓ Completed breakdown`);
+    }
 
     return {
       description: taskDescription,
