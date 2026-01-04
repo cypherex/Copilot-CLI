@@ -209,7 +209,7 @@ When given a complex goal, break it down into manageable hierarchies:
 
 1. **MACRO Tasks** (Top-level): Broad objectives that require multiple steps
    - Example: "Implement user authentication system"
-   - Action: Use break_down_task to create 3-7 micro tasks
+   - Action: Use break_down_task to create several micro tasks
 
 2. **MICRO Tasks** (Mid-level): Focused, achievable components
    - Example: "Create login endpoint with JWT"
@@ -224,7 +224,6 @@ When given a complex goal, break it down into manageable hierarchies:
 ## Tool Usage for Hierarchies
 
 ### create_task
-- Create top-level (MACRO) tasks from the user's goal
 - Do not create a monolithic task for the entire thing, unless it's encredibly simple
 - Can optionally use parent_id to create subtasks
 

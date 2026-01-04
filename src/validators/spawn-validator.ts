@@ -462,6 +462,7 @@ Should this task be broken down before spawning a subagent? Return JSON.`;
     lines.push('  1. Review the created subtasks above');
     lines.push('  2. If more tasks are required any subtask is still too complex or more subtasks are required in order to adequately cover the entire scope of the task/subtask, use break_down_task to further break it down');
     lines.push('  3. Once tasks and subtasks are appropriately scoped, spawn subagents for each or work on them directly');
+    lines.push('  4. Consider adding tasks for the integration items if still required. ')
     lines.push('');
     lines.push('To further break down a complex subtask, use:');
     lines.push('  break_down_task({');
