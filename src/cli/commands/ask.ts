@@ -2,6 +2,7 @@
 
 import chalk from 'chalk';
 import ora from 'ora';
+import { readFileSync } from 'fs';
 import { CopilotAgent } from '../../agent/index.js';
 import { loadConfig } from '../../utils/config.js';
 import { log } from '../../utils/index.js';
@@ -16,6 +17,7 @@ interface AskOptions {
   tools?: boolean;
   maxIterations?: number;
   outputFile?: string;
+  file?: string;
 }
 
 async function readStdin(): Promise<string> {
@@ -56,16 +58,35 @@ export async function askCommand(
   const doLog = isPrintMode ? () => {} : log.info;
   const logError = isPrintMode ? (msg: string) => log.error(msg) : (msg: string) => log.error(msg);
 
-  // Get question from args or stdin
+  // Get question from args, file, or stdin
   let input = question || '';
 
+  // Read from file if --file option provided
+  if (options.file) {
+    try {
+      const fileContent = readFileSync(options.file, 'utf-8');
+      // If question was also provided, prepend it to file content
+      if (input) {
+        input = `${input}\n\n${fileContent}`;
+      } else {
+        input = fileContent;
+      }
+    } catch (error) {
+      logError(`Error: Failed to read file: ${options.file}`);
+      logError(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  }
+
+  // Fall back to stdin if still no input
   if (!input) {
     input = await readStdin();
   }
 
   if (!input) {
-    logError('Error: No question provided. Pass as argument or pipe to stdin.');
+    logError('Error: No question provided. Pass as argument, use --file, or pipe to stdin.');
     logError('Usage: copilot-cli ask "your question"');
+    logError('   or: copilot-cli ask --file prompt.txt');
     logError('   or: echo "your question" | copilot-cli ask');
     process.exit(1);
   }
