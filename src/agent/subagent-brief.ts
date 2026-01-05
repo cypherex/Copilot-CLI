@@ -14,6 +14,14 @@ export interface SubagentBrief {
   recentErrors: string[];
   additionalContext?: string;
   successCriteria?: string;
+  goal?: string;
+  taskHierarchy?: {
+    currentTask?: { id: string; description: string; status: string };
+    parentTask?: { id: string; description: string; status: string; completionMessage?: string };
+    siblingTasks?: Array<{ id: string; description: string; status: string; completionMessage?: string }>;
+    childTasks?: Array<{ id: string; description: string; status: string; completionMessage?: string }>;
+    allTasks?: Array<{ id: string; description: string; status: string; completionMessage?: string; depth: number }>;
+  };
 }
 
 export interface BuildSubagentBriefOptions {
@@ -25,6 +33,9 @@ export interface BuildSubagentBriefOptions {
   includeRecentErrors?: boolean;
   additionalContext?: string;
   successCriteria?: string;
+  includeGoal?: boolean; // Default: true
+  includeTaskHierarchy?: boolean; // Default: true
+  currentTaskId?: string; // The task this subagent is working on
 }
 
 /**
@@ -45,6 +56,103 @@ export function buildSubagentBrief(
     additionalContext: options.additionalContext,
     successCriteria: options.successCriteria,
   };
+
+  // Include goal by default
+  if (options.includeGoal !== false) {
+    const goal = memoryStore.getGoal();
+    if (goal) {
+      brief.goal = goal.description;
+    }
+  }
+
+  // Include task hierarchy by default
+  if (options.includeTaskHierarchy !== false) {
+    const allTasks = memoryStore.getTasks();
+    const currentTaskId = options.currentTaskId;
+
+    if (currentTaskId) {
+      const currentTask = allTasks.find(t => t.id === currentTaskId);
+
+      if (currentTask) {
+        brief.taskHierarchy = {
+          currentTask: {
+            id: currentTask.id,
+            description: currentTask.description,
+            status: currentTask.status,
+          },
+        };
+
+        // Find parent task
+        if (currentTask.parentId) {
+          const parentTask = allTasks.find(t => t.id === currentTask.parentId);
+          if (parentTask) {
+            brief.taskHierarchy.parentTask = {
+              id: parentTask.id,
+              description: parentTask.description,
+              status: parentTask.status,
+              completionMessage: parentTask.completionMessage,
+            };
+          }
+        }
+
+        // Find sibling tasks (tasks with same parent)
+        const siblings = allTasks.filter(
+          t => t.parentId === currentTask.parentId && t.id !== currentTask.id
+        );
+        if (siblings.length > 0) {
+          brief.taskHierarchy.siblingTasks = siblings.map(t => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+            completionMessage: t.completionMessage,
+          }));
+        }
+
+        // Find child tasks
+        const children = allTasks.filter(t => t.parentId === currentTask.id);
+        if (children.length > 0) {
+          brief.taskHierarchy.childTasks = children.map(t => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+            completionMessage: t.completionMessage,
+          }));
+        }
+
+        // Build full task list with depth calculation
+        const taskDepthMap = new Map<string, number>();
+
+        // Calculate depth for each task
+        const calculateDepth = (taskId: string): number => {
+          if (taskDepthMap.has(taskId)) {
+            return taskDepthMap.get(taskId)!;
+          }
+
+          const task = allTasks.find(t => t.id === taskId);
+          if (!task || !task.parentId) {
+            taskDepthMap.set(taskId, 0);
+            return 0;
+          }
+
+          const depth = calculateDepth(task.parentId) + 1;
+          taskDepthMap.set(taskId, depth);
+          return depth;
+        };
+
+        // Calculate depth for all tasks
+        allTasks.forEach(t => calculateDepth(t.id));
+
+        // Build task list sorted by creation order (preserves hierarchy)
+        brief.taskHierarchy.allTasks = allTasks.map(t => ({
+          id: t.id,
+          description: t.description,
+          status: t.status,
+          completionMessage: t.completionMessage,
+          depth: taskDepthMap.get(t.id) || 0,
+        }));
+      }
+    }
+  }
 
   // Set role if provided
   if (options.role) {
@@ -149,6 +257,79 @@ export function briefToSystemPrompt(brief: SubagentBrief): string {
   const parts: string[] = [
     `# Task\n${brief.task}`,
   ];
+
+  // Add goal context
+  if (brief.goal) {
+    parts.push(`\n## Overall Goal\n${brief.goal}`);
+  }
+
+  // Add task hierarchy context
+  if (brief.taskHierarchy) {
+    const h = brief.taskHierarchy;
+    const hierarchyParts: string[] = ['\n## Task Context'];
+
+    // Current task
+    if (h.currentTask) {
+      hierarchyParts.push(`\n**Your Task**: ${h.currentTask.description} (${h.currentTask.status})`);
+    }
+
+    // Parent task
+    if (h.parentTask) {
+      hierarchyParts.push(
+        `\n**Parent Task**: ${h.parentTask.description} (${h.parentTask.status})`
+      );
+      if (h.parentTask.completionMessage) {
+        hierarchyParts.push(`  └─ Completed: ${h.parentTask.completionMessage}`);
+      }
+    }
+
+    // Sibling tasks (other tasks at same level)
+    if (h.siblingTasks && h.siblingTasks.length > 0) {
+      hierarchyParts.push(`\n**Related Tasks** (siblings at same level):`);
+      h.siblingTasks.forEach(t => {
+        const icon = t.status === 'completed' ? '✓' : t.status === 'active' ? '→' : '○';
+        hierarchyParts.push(`  ${icon} ${t.description} (${t.status})`);
+        if (t.completionMessage) {
+          hierarchyParts.push(`    └─ ${t.completionMessage}`);
+        }
+      });
+    }
+
+    // Child tasks (subtasks of current task)
+    if (h.childTasks && h.childTasks.length > 0) {
+      hierarchyParts.push(`\n**Subtasks** (children of your task):`);
+      h.childTasks.forEach(t => {
+        const icon = t.status === 'completed' ? '✓' : t.status === 'active' ? '→' : '○';
+        hierarchyParts.push(`  ${icon} ${t.description} (${t.status})`);
+        if (t.completionMessage) {
+          hierarchyParts.push(`    └─ ${t.completionMessage}`);
+        }
+      });
+    }
+
+    // Full task list with all tasks shown hierarchically
+    if (h.allTasks && h.allTasks.length > 0) {
+      hierarchyParts.push(`\n**All Tasks Overview** (${h.allTasks.length} total):`);
+
+      // Show all tasks with their status
+      h.allTasks.forEach(t => {
+        const indent = '  '.repeat(t.depth);
+        const icon = t.status === 'completed' ? '✓' : t.status === 'active' ? '→' : t.status === 'blocked' ? '⚠' : '○';
+        hierarchyParts.push(`${indent}${icon} ${t.description} (${t.status})`);
+        if (t.completionMessage) {
+          hierarchyParts.push(`${indent}  └─ ${t.completionMessage}`);
+        }
+      });
+
+      // Show summary
+      const pending = h.allTasks.filter(t => t.status === 'waiting').length;
+      const active = h.allTasks.filter(t => t.status === 'active').length;
+      const completed = h.allTasks.filter(t => t.status === 'completed').length;
+      hierarchyParts.push(`\nTask Status Summary: ${completed} completed, ${active} active, ${pending} waiting`);
+    }
+
+    parts.push(hierarchyParts.join('\n'));
+  }
 
   // Add role-specific system prompt
   if (brief.role) {

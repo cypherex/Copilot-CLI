@@ -29,6 +29,7 @@ const SpawnAgentSchema = z.object({
   success_criteria: z.string().optional().describe('Success criteria for the subagent'),
   wait: z.boolean().optional().default(true).describe('Whether to wait for the agent to complete (default: true)'),
   background: z.boolean().optional().default(false).describe('Run in background and return agent ID immediately'),
+  task_id: z.string().optional().describe('The ID of the task this subagent is working on (provides full context of goal and task hierarchy)'),
 });
 
 // Schema for wait_agent
@@ -131,6 +132,10 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
           type: 'boolean',
           description: 'Run in background, return agent ID immediately (default: false)',
         },
+        task_id: {
+          type: 'string',
+          description: 'The ID of the task this subagent is working on (provides full context of goal and task hierarchy)',
+        },
       },
       required: ['task'],
     },
@@ -151,7 +156,7 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
   }
 
   protected async executeInternal(args: z.infer<typeof SpawnAgentSchema>): Promise<string> {
-    const { task, name, role, files, success_criteria, background } = args;
+    const { task, name, role, files, success_criteria, background, task_id } = args;
 
     const warnings: string[] = [];
 
@@ -344,10 +349,23 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
           timestamp: Date.now(),
         });
 
+        // Determine which task ID to use for context
+        let contextTaskId = task_id;
+        if (!contextTaskId && this.memoryStore) {
+          // Fall back to active task if no task_id provided
+          const activeTask = this.memoryStore.getActiveTask();
+          if (activeTask) {
+            contextTaskId = activeTask.id;
+          }
+        }
+
         const brief = buildSubagentBrief(focusedTask, this.memoryStore, {
           role: roleConfig,
           files,
           successCriteria: success_criteria,
+          currentTaskId: contextTaskId,
+          includeGoal: true,
+          includeTaskHierarchy: true,
         });
 
         systemPrompt = briefToSystemPrompt(brief);
