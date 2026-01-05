@@ -211,9 +211,44 @@ If you encounter tracking items during your work, you have access to these tools
        completion_message: "Created lexer.rs with Token enum and tokenize() function. Added tests covering all token types."
      })
 
+# Finishing Your Subagent Session
+
+When your task is complete, follow these steps to properly finish:
+
+1. **Update task status** (if you have update_task_status tool):
+   - Mark your task as "completed" with a completion_message
+   - Summarize what was accomplished
+
+2. **Provide a final summary**:
+   - Output a clear message describing what you accomplished
+   - List all files created or modified
+   - Mention any important decisions or changes made
+   - Note any remaining work (if applicable)
+
+3. **Stop naturally**:
+   - After your final summary, stop responding
+   - You don't need to continue iterating once the task is complete
+   - The system will automatically detect completion and end your session
+
+**Example final response:**
+"Task complete! I've implemented the symbol table for the type checker:
+
+Files created:
+- src/symbol.rs (250 lines): Symbol and SymbolTable types with scope management
+- src/symbol_tests.rs (120 lines): Comprehensive test coverage
+
+Key features:
+- Hierarchical scope resolution with parent chain traversal
+- Symbol shadowing support
+- Type information storage for variables and functions
+
+All tests passing (15/15). Ready for integration with type inference engine."
+
+**IMPORTANT**: You are a FOCUSED subagent. Complete your ONE assigned task and finish. Don't try to do additional work or pick up other tasks. The main orchestrator will handle what comes next.
+
 Working directory: ${this.config.workingDirectory || process.cwd()}
 
-Remember: You are responsible for delivering complete, production-ready work. No shortcuts, no placeholders.
+Remember: You are responsible for delivering complete, production-ready work. No shortcuts, no placeholders. When done, provide a clear summary and stop.
 `;
   }
 

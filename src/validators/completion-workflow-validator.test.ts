@@ -69,7 +69,7 @@ describe('CompletionWorkflowValidator', () => {
       expect(result.suggestions).toContain('Next recommended task: "Create API endpoints" (ID: task2)');
     });
 
-    it('should block when no next task identified but tasks remain', async () => {
+    it('should allow completion with suggestions when no next task identified but tasks remain', async () => {
       const completedTask = createTask('task1', 'Setup database', 'completed');
       const remainingTask = createTask('task2', 'Create API endpoints');
       const allTasks = [completedTask, remainingTask];
@@ -98,9 +98,9 @@ describe('CompletionWorkflowValidator', () => {
         completedTaskFiles: ['src/db/schema.ts'],
       });
 
-      expect(result.allowed).toBe(false);
-      expect(result.blockReason).toContain('Cannot complete workflow');
-      expect(result.blockReason).toContain('Remaining tasks: 1');
+      expect(result.allowed).toBe(true);
+      expect(result.suggestions).toContainEqual(expect.stringContaining('1 tasks remain in the system'));
+      expect(result.suggestions).toContainEqual(expect.stringContaining('Cannot determine logical next step'));
     });
 
     it('should warn when next task needs breakdown', async () => {

@@ -106,16 +106,14 @@ export class CompletionWorkflowValidator {
       t => t.status !== 'completed' && t.status !== 'abandoned'
     );
 
-    // If no next task suggested but remaining tasks exist, BLOCK
+    // If no next task suggested but remaining tasks exist, provide INFO (don't block)
     if (!analysis.nextTask && remainingTasks.length > 0) {
-      return {
-        allowed: false,
-        blockReason: this.buildNextTaskRequiredMessage(
-          completedTask,
-          remainingTasks,
-          analysis.workflowContinuity
-        ),
-      };
+      result.suggestions!.push(
+        `${remainingTasks.length} tasks remain in the system. Use list_tasks to review remaining work.`
+      );
+      if (analysis.workflowContinuity.reason) {
+        result.suggestions!.push(`Workflow note: ${analysis.workflowContinuity.reason}`);
+      }
     }
 
     // If next task suggested, validate and provide guidance
