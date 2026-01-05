@@ -5,6 +5,65 @@ import type { Task, MemoryStore } from '../memory/types.js';
 import { uiState } from '../ui/ui-state.js';
 
 // ============================================
+// Rate Limiter
+// ============================================
+
+class RateLimiter {
+  private lastCallTime = 0;
+  private minDelayMs: number;
+  private callQueue: Array<() => void> = [];
+  private processing = false;
+
+  constructor(callsPerSecond: number = 2) {
+    this.minDelayMs = 1000 / callsPerSecond;
+  }
+
+  async throttle<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.callQueue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      this.processQueue();
+    });
+  }
+
+  private async processQueue() {
+    if (this.processing || this.callQueue.length === 0) {
+      return;
+    }
+
+    this.processing = true;
+
+    while (this.callQueue.length > 0) {
+      const now = Date.now();
+      const timeSinceLastCall = now - this.lastCallTime;
+      const delay = Math.max(0, this.minDelayMs - timeSinceLastCall);
+
+      if (delay > 0) {
+        await this.sleep(delay);
+      }
+
+      const fn = this.callQueue.shift();
+      if (fn) {
+        this.lastCallTime = Date.now();
+        await fn();
+      }
+    }
+
+    this.processing = false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+// ============================================
 // Type Definitions
 // ============================================
 
@@ -95,7 +154,11 @@ export interface RecursiveBreakdownResult {
 // ============================================
 
 export class SpawnValidator {
-  constructor(private llmClient: LLMClient) {}
+  private rateLimiter: RateLimiter;
+
+  constructor(private llmClient: LLMClient, callsPerSecond: number = 2) {
+    this.rateLimiter = new RateLimiter(callsPerSecond);
+  }
 
   /**
    * Main validation entry point
@@ -346,10 +409,12 @@ Task: "${task}"
 Return JSON with complexity assessment.`;
 
     try {
-      const response = await this.llmClient.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ]);
+      const response = await this.rateLimiter.throttle(() =>
+        this.llmClient.chat([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ])
+      );
 
       const content = response.choices[0]?.message.content || '';
       const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -424,10 +489,12 @@ ${taskContext}
 Should this task be broken down before spawning a subagent? Return JSON.`;
 
     try {
-      const response = await this.llmClient.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ]);
+      const response = await this.rateLimiter.throttle(() =>
+        this.llmClient.chat([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ])
+      );
 
       const content = response.choices[0]?.message.content || '';
       const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -676,10 +743,12 @@ Return JSON array: [
 ]`;
 
     try {
-      const response = await this.llmClient.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ]);
+      const response = await this.rateLimiter.throttle(() =>
+        this.llmClient.chat([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ])
+      );
 
       const content = response.choices[0]?.message.content || '';
       const jsonMatch = content.match(/\[[\s\S]*\]/);
@@ -915,7 +984,7 @@ Return JSON array: [
 
     // Process subtasks in batches to balance speed and rate limiting
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
-    const batchSize = 3; // Process 4 tasks at a time
+    const batchSize = 3; // Process 3 tasks at a time
 
     if (verbose) {
       this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
@@ -1120,10 +1189,12 @@ QUALITY STANDARDS:
 Return JSON with COMPLETE breakdown focused on integration and production-readiness.`;
 
     try {
-      const response = await this.llmClient.chat([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ]);
+      const response = await this.rateLimiter.throttle(() =>
+        this.llmClient.chat([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ])
+      );
 
       const content = response.choices[0]?.message.content || '';
       const jsonMatch = content.match(/\{[\s\S]*\}/);
