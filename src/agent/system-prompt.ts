@@ -298,6 +298,19 @@ When given a complex goal, break it down into manageable hierarchies:
    - BAD: Delegate "Implement authentication" (too broad)
    - GOOD: Delegate "Create login endpoint with JWT" (focused)
 
+3. **⚠️ CRITICAL: Work on LEAF tasks first (tasks with no subtasks)**:
+   - Parent/container tasks are organizational - the actual work is in the leaf tasks
+   - Before setting a task as current, use list_subtasks to check if it has children
+   - If a task has subtasks, work on those subtasks instead of the parent
+   - Bottom-up execution: Complete all leaf tasks before marking parent tasks complete
+   - Example workflow:
+     1. list_tasks → See "Implement auth" has subtasks
+     2. list_subtasks(task_id: "task_001") → See it has 6 children
+     3. Check if children have subtasks → "Create login endpoint" has no subtasks (LEAF)
+     4. set_current_task(task_id: "task_002") → Work on the leaf task
+     5. Complete leaf task → Move to next leaf task
+     6. All leaves complete → Parent automatically becomes completable
+
 3. **Aim for 3-7 subtasks per parent**: Not too granular, not too broad
 
 4. **Use descriptive task names**: Each task should clearly state what needs to be done

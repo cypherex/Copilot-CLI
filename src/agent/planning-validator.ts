@@ -97,7 +97,10 @@ export class PlanningValidator {
         reason: 'No current task set. Write operations require a current task.',
         suggestions: [
           'Use list_tasks to see available tasks',
-          'Use set_current_task to focus on a specific task',
+          '⚠️ IMPORTANT: Select a LEAF task (task with no subtasks) to work on',
+          'Use list_subtasks to check if a task has children before selecting it',
+          'If a task has subtasks, work on those subtasks first',
+          'Use set_current_task to focus on a specific leaf task',
           'Use update_task_status to mark the selected task as active',
         ],
       };
@@ -245,6 +248,8 @@ export class PlanningValidator {
     }
 
     parts.push('\nReminders:');
+    parts.push('• ⚠️ CRITICAL: Work on LEAF tasks (tasks with no subtasks) first!');
+    parts.push('• Use list_subtasks to check if a task has children before selecting it');
     parts.push('• Keep your current task updated with update_task_status');
     parts.push('• Create new tasks with create_task when identifying new work');
     parts.push('• Review task list regularly with list_tasks');

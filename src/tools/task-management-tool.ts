@@ -361,6 +361,12 @@ Use this to:
 - Switch between tasks
 - Maintain context about what you're currently working on
 
+**IMPORTANT**: Prioritize LEAF tasks (tasks with no subtasks) first!
+- Work on tasks that have no child tasks before working on parent tasks
+- Parent/container tasks are organizational - work on the concrete leaf tasks
+- Use list_subtasks to check if a task has children before selecting it
+- If a task has subtasks, work on those subtasks first
+
 You should always have a current task set when actively working.`,
     parameters: {
       type: 'object',
