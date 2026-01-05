@@ -866,7 +866,7 @@ Return JSON array: [
    */
   private logVerbose(message: string): void {
     // Always log to console for demos and debugging
-    console.log(message);
+    //console.log(message);
 
     // Also try to add to uiState for ask mode logging (won't throw if uiState not initialized)
     try {
