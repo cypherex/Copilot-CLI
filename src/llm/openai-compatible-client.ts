@@ -11,8 +11,8 @@ import type {
 import { RateLimiter } from './rate-limiter.js';
 
 // Retry configuration
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRIES = 10;
+const INITIAL_RETRY_DELAY_MS = 2000;
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 const RATE_LIMIT_STATUS_CODE = 429;
 const RATE_LIMIT_DELAY_MS = 10000; // 10 seconds
