@@ -975,42 +975,49 @@ Return JSON array: [
     parentContext: any,
     memoryStore: MemoryStore
   ): Promise<any> {
-    const systemPrompt = `You are an expert task breakdown specialist with a focus on EXHAUSTIVE, PRODUCTION-READY planning.
+    const systemPrompt = `You are an expert task breakdown specialist with a focus on COMPLETENESS and PRODUCTION-READY planning.
 
-CRITICAL COMPLETENESS REQUIREMENTS:
+CORE PRINCIPLES:
 
-1. SPECIFICATION COVERAGE - If you see keywords that imply multiple items, create tasks for ALL:
-   - "types" → separate tasks for EACH type (integer, float, string, char, boolean, etc.)
-   - "operators" → separate tasks for EACH category (arithmetic, comparison, logical, bitwise, assignment)
-   - "literals" → separate tasks for integers, floats, strings, chars, booleans
-   - "comments" → separate tasks for single-line, multi-line, doc comments
-   - "error handling" → separate tasks for detection, recovery, reporting, formatting
+1. COMPLETENESS - Ensure NOTHING is forgotten:
+   - All features and variations mentioned or implied
+   - Tests (unit, integration, edge cases, error cases)
+   - Error handling (detection, recovery, reporting, messages)
+   - Data structures (types, enums, structs, traits, interfaces)
+   - Utilities and helpers
+   - Edge cases (empty input, invalid data, boundary conditions)
 
-2. FEATURE COMPLETENESS - Don't generalize when specifics are implied:
-   - "string literals" → Must include: single-line, multi-line, escape sequences, Unicode
-   - "number parsing" → Must include: integers (decimal/hex/binary), floats, scientific notation
-   - "tokenization" → Must include: keywords, identifiers, operators, delimiters, literals, whitespace
-   - "testing" → Must include: unit tests, integration tests, edge cases, error cases
+2. INTEGRATION - Define how pieces work together:
+   - Clear interfaces/contracts between components
+   - Data formats and type signatures
+   - Dependencies (what each task consumes from others)
+   - Outputs (what each task produces for others)
+   - Ensure all parts integrate into a working whole
 
-3. GRANULARITY - Create focused, single-purpose tasks:
-   - DON'T: "Implement literal parsing" (too broad)
-   - DO: Separate tasks for integer literals, float literals, string literals, character literals, boolean literals
-   - DON'T: "Handle comments" (vague)
-   - DO: Separate tasks for single-line comments, multi-line comments, doc comments
+3. PRODUCTION-READY - Not just happy path:
+   - Validation and error handling
+   - Comprehensive test coverage
+   - Edge case handling
+   - Clear error messages
+   - Performance considerations
 
-4. IMPLEMENTATION DETAILS - Don't forget the "boring" but necessary tasks:
-   - Data structure definitions (enums, structs, traits)
-   - Error types and error messages
-   - Helper functions and utilities
-   - Iterator/trait implementations
-   - Output formatting
-   - EOF and special token handling
+4. ADAPTIVE GRANULARITY - Split based on actual complexity:
+   - If a feature is complex (string parsing with escapes/Unicode/interpolation) → separate task
+   - If a feature is simple (boolean literals: true/false) → group with related simple features
+   - Balance: cohesive units vs. overwhelming complexity
+   - Ask: "Would this benefit from focused attention or is it fine grouped with related work?"
 
-5. MISSING TASKS DETECTION - In "missingTasks", flag ANY aspect not explicitly covered:
-   - Look for implementation requirements (single-pass, no backtracking, etc.)
-   - Look for output requirements (Vec<Token>, specific formats)
-   - Look for edge cases (empty input, invalid UTF-8, etc.)
-   - Look for integration requirements (API contracts, data structures)
+5. AVOID OVER-SPLITTING:
+   - Don't create artificial boundaries
+   - Don't split simple, related features just to maximize task count
+   - DO split when complexity warrants it or integration points differ
+   - Each task should be a meaningful, cohesive unit of work
+
+6. MISSING TASKS DETECTION - In "missingTasks", flag ANY aspect not explicitly covered:
+   - Implementation requirements (single-pass, no backtracking, etc.)
+   - Output requirements (specific formats, data structures)
+   - Edge cases and error scenarios
+   - Integration contracts and APIs
 
 Return ONLY valid JSON in this exact format:
 {
@@ -1051,7 +1058,7 @@ Return ONLY valid JSON in this exact format:
 }`;
 
     const taskContext = this.buildTaskContext(memoryStore);
-    const userPrompt = `EXHAUSTIVE TASK BREAKDOWN - Production-Ready Planning
+    const userPrompt = `COMPLETE TASK BREAKDOWN - Production-Ready Planning
 
 Task to Break Down: "${task}"
 
@@ -1068,35 +1075,49 @@ Project Context:
 Current Task Context:
 ${taskContext}
 
-MANDATORY COMPLETENESS CHECKLIST:
+BREAKDOWN APPROACH:
 
-Step 1: ENUMERATE ALL ASPECTS
-List EVERY component, feature, type, operation, edge case implied by the task.
-Example: If task is "Implement lexer", list: token types, keywords, operators, delimiters, literals (integers, floats, strings, chars, booleans), comments (single, multi, doc), whitespace, indentation, position tracking, error recovery, EOF, output format, iterator implementation.
+Step 1: IDENTIFY ALL ASPECTS
+List EVERY component, feature, requirement, and consideration for this task:
+- Core features and their variations
+- Data structures and types needed
+- Error handling scenarios
+- Edge cases and validation
+- Tests required
+- Integration points with other components
+- Helper utilities needed
 
-Step 2: CREATE GRANULAR SUBTASKS
-For EACH aspect from Step 1, create a focused subtask.
-- If an aspect has multiple variations (like "literals"), create separate subtasks for EACH variation.
-- If an implementation requirement exists (like "single-pass"), create a task to ensure it.
-- Don't combine unrelated aspects into one task.
+Step 2: ASSESS COMPLEXITY OF EACH ASPECT
+For each aspect, determine if it warrants a separate task:
+- Complex aspects (many sub-features, intricate logic, critical integration) → separate task
+- Simple aspects (straightforward, few lines, clear implementation) → group with related work
+- Medium aspects → use judgment: does focused attention help or create artificial split?
 
-Step 3: VERIFY COMPLETE COVERAGE
-For each aspect identified in Step 1, confirm there's a corresponding subtask.
-List any aspects WITHOUT a subtask in "missingTasks".
+Step 3: CREATE COHESIVE SUBTASKS
+Group aspects into meaningful units of work:
+- Each subtask should be a cohesive piece that makes sense to implement together
+- Split when complexity warrants or integration points differ
+- Don't over-split simple related features
+- Don't under-split complex unrelated features
 
-Step 4: DOCUMENT TECHNICAL DETAILS
-For each subtask, specify:
+Step 4: DEFINE INTEGRATION CONTRACTS
+For each subtask, clearly specify:
 - What it produces (concrete types, functions, data structures)
-- What it consumes (specific dependencies)
-- What requirement it satisfies
+- What it consumes (specific dependencies from other tasks)
+- How it integrates with other components (interfaces, data formats)
+
+Step 5: VERIFY COMPLETE COVERAGE
+Check every aspect from Step 1 has corresponding subtask coverage.
+List any aspects WITHOUT coverage in "missingTasks".
 
 QUALITY STANDARDS:
-- Aim for 15-30 subtasks for a complex system component (lexer, parser, etc.)
-- Each subtask should be simple or moderate complexity
-- Each subtask should be implementable in 1-3 files, 50-200 lines
-- No subtask should require further breakdown
+- Each subtask should be simple or moderate complexity (implementable without further breakdown)
+- Tasks should be right-sized: cohesive units, not artificial splits
+- Nothing should be forgotten: all features, tests, errors, edge cases, helpers covered
+- Integration points clearly defined with contracts/interfaces
+- Typical range: 5-20 subtasks (more if genuinely complex, fewer if naturally cohesive)
 
-Return JSON with EXHAUSTIVE breakdown.`;
+Return JSON with COMPLETE breakdown focused on integration and production-readiness.`;
 
     try {
       const response = await this.llmClient.chat([
