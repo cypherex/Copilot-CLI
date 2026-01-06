@@ -10,7 +10,7 @@ export type AgentStatus = 'idle' | 'thinking' | 'executing' | 'waiting' | 'error
 export interface TaskState {
   id: string;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+  status: 'pending' | 'in_progress' | 'verifying' | 'completed' | 'blocked';
   priority?: 'low' | 'medium' | 'high';
 }
 

@@ -79,7 +79,7 @@ export interface ProjectContext {
 }
 
 // Task tracking
-export type TaskStatus = 'active' | 'blocked' | 'waiting' | 'completed' | 'abandoned';
+export type TaskStatus = 'active' | 'blocked' | 'waiting' | 'pending_verification' | 'completed' | 'abandoned';
 export type TaskComplexity = 'simple' | 'moderate' | 'complex';
 
 // Integration point - describes how tasks/components integrate

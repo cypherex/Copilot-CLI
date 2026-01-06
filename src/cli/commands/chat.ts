@@ -7,6 +7,8 @@ import { loadConfig } from '../../utils/config.js';
 import { SessionManager } from '../../session/index.js';
 import { ManagedChatUI } from '../../ui/managed-chat-ui.js';
 import { getRenderManager } from '../../ui/render-manager.js';
+import { installTerminalLogRouter, type UninstallFn } from '../../ui/terminal-log-router.js';
+import { LogLevel, log } from '../../utils/index.js';
 import { ErrorHandler, handleError } from '../../utils/error-handler.js';
 
 const AVAILABLE_COMMANDS = [
@@ -111,12 +113,16 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
     showStatusBar: true,
     showTaskBar: true,
     updateInterval: 1000,
+    renderMode: 'scrollback',
   });
 
   let agentInstance: CopilotAgent | null = null;
+  let uninstallLogRouter: UninstallFn | null = null;
 
   // Cleanup function
   const cleanup = async () => {
+    uninstallLogRouter?.();
+    uninstallLogRouter = null;
     if (agentInstance) {
       try {
         await agentInstance.shutdown();
@@ -166,6 +172,11 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
   // Initialize UI
   ui.initialize();
+  uninstallLogRouter = installTerminalLogRouter();
+  // Reduce noisy stderr debug logs during interactive UI unless explicitly enabled
+  if (!process.env.DEBUG && process.env.NODE_ENV !== 'development') {
+    log.setLevel(LogLevel.WARN);
+  }
   ui.startSpinner('Initializing agent...');
 
   try {
@@ -177,11 +188,11 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
     await agent.initialize();
     ui.spinnerSucceed('Agent ready!');
 
-    // Show welcome
     const providerInfo = agent.getModelName()
       ? `${agent.getProviderName()} (${agent.getModelName()})`
       : agent.getProviderName();
     ui.showWelcome(providerInfo, options.directory);
+    ui.showInfo('Type /help for commands.');
 
     // Check for saved sessions
     const sessions = await sessionManager.listSessions();
@@ -199,24 +210,43 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
       const tasks = memoryStore.getTasks();
       const activeTask = memoryStore.getActiveTask();
 
+      const mapTaskStatus = (status: string): 'pending' | 'in_progress' | 'verifying' | 'completed' | 'blocked' => {
+        switch (status) {
+          case 'waiting':
+            return 'pending';
+          case 'active':
+            return 'in_progress';
+          case 'pending_verification':
+            return 'verifying';
+          case 'blocked':
+            return 'blocked';
+          case 'completed':
+          case 'abandoned':
+            return 'completed';
+          default:
+            return 'pending';
+        }
+      };
+
       ui.updateStatus({
         status: 'idle',
         tokensUsed: 0,
         tokensLimit: 0,
         modelName: agent.getModelName(),
+        providerName: agent.getProviderName(),
       });
 
       ui.updateTasks(
         activeTask ? {
           id: activeTask.id,
           description: activeTask.description,
-          status: activeTask.status,
+          status: mapTaskStatus(activeTask.status),
           priority: activeTask.priority,
         } : null,
         tasks.map((t: any) => ({
           id: t.id,
           description: t.description,
-          status: t.status,
+          status: mapTaskStatus(t.status),
           priority: t.priority,
         }))
       );
@@ -481,14 +511,24 @@ function showTasks(agent: CopilotAgent, ui: ManagedChatUI): void {
   ui.writeLine(chalk.bold('📋 Tracked Tasks:'));
   ui.writeLine('');
 
-  const pending = tasks.filter((t: any) => t.status === 'pending');
-  const inProgress = tasks.filter((t: any) => t.status === 'in_progress');
+  const pending = tasks.filter((t: any) => t.status === 'waiting');
+  const inProgress = tasks.filter((t: any) => t.status === 'active');
+  const pendingVerification = tasks.filter((t: any) => t.status === 'pending_verification');
   const completed = tasks.filter((t: any) => t.status === 'completed');
   const blocked = tasks.filter((t: any) => t.status === 'blocked');
+  const abandoned = tasks.filter((t: any) => t.status === 'abandoned');
 
   if (inProgress.length > 0) {
     ui.writeLine(chalk.yellow('● In Progress:'));
     for (const task of inProgress) {
+      ui.writeLine(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
+    }
+    ui.writeLine('');
+  }
+
+  if (pendingVerification.length > 0) {
+    ui.writeLine(chalk.cyan('⧗ Pending Verification:'));
+    for (const task of pendingVerification) {
       ui.writeLine(`  ${task.description}${task.priority === 'high' ? chalk.red(' [HIGH]') : ''}`);
     }
     ui.writeLine('');
@@ -517,6 +557,17 @@ function showTasks(agent: CopilotAgent, ui: ManagedChatUI): void {
     }
     if (completed.length > 5) {
       ui.writeLine(chalk.dim(`  ... and ${completed.length - 5} more`));
+    }
+    ui.writeLine('');
+  }
+
+  if (abandoned.length > 0) {
+    ui.writeLine(chalk.dim(`🗑️ Abandoned (${abandoned.length}):`));
+    for (const task of abandoned.slice(-5)) {
+      ui.writeLine(chalk.dim(`  ${task.description}`));
+    }
+    if (abandoned.length > 5) {
+      ui.writeLine(chalk.dim(`  ... and ${abandoned.length - 5} more`));
     }
     ui.writeLine('');
   }

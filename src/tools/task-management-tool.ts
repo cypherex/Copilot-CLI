@@ -20,7 +20,7 @@ const CreateTaskSchema = z.object({
 // Schema for update_task_status
 const UpdateTaskStatusSchema = z.object({
   task_id: z.string().describe('The ID of the task to update'),
-  status: z.enum(['active', 'blocked', 'waiting', 'completed', 'abandoned']).describe('New status'),
+  status: z.enum(['active', 'blocked', 'waiting', 'pending_verification', 'completed', 'abandoned']).describe('New status'),
   notes: z.string().optional().describe('Optional notes about the status change'),
   completion_message: z.string().optional().describe('REQUIRED when status is "completed": Summary of what was accomplished (files created/modified, functions implemented, etc.)'),
 });
@@ -32,7 +32,7 @@ const SetCurrentTaskSchema = z.object({
 
 // Schema for list_tasks
 const ListTasksSchema = z.object({
-  status: z.enum(['all', 'active', 'waiting', 'completed', 'blocked', 'abandoned']).optional().default('all').describe('Filter by status'),
+  status: z.enum(['all', 'active', 'waiting', 'pending_verification', 'completed', 'blocked', 'abandoned']).optional().default('all').describe('Filter by status'),
 });
 
 // Schema for get_next_tasks
@@ -199,6 +199,10 @@ Use this to:
 
 Always update task status as you work to track progress.
 
+Completion workflow:
+- When you're done implementing, set status to "pending_verification"
+- Run verification (build/test/lint), fix any failures, then set status to "completed"
+
 IMPORTANT: When marking a task as "completed", you MUST provide a completion_message summarizing:
 - What was accomplished
 - Files created or modified (with specific filenames)
@@ -215,7 +219,7 @@ Note: Task completion is validated to ensure proper workflow and next step plann
         },
         status: {
           type: 'string',
-          enum: ['active', 'blocked', 'waiting', 'completed', 'abandoned'],
+          enum: ['active', 'blocked', 'waiting', 'pending_verification', 'completed', 'abandoned'],
           description: 'New status',
         },
         notes: {
@@ -254,6 +258,14 @@ Note: Task completion is validated to ensure proper workflow and next step plann
     // VALIDATION: Require completion_message when marking as completed
     if (status === 'completed' && !completion_message) {
       throw new Error('completion_message is required when marking a task as completed. Provide a summary of what was accomplished (files created/modified, functions implemented, etc.)');
+    }
+
+    // VALIDATION: Enforce pending_verification -> completed workflow
+    if (status === 'completed' && task.status !== 'pending_verification') {
+      throw new Error(
+        `To mark a task completed, it must transition from "pending_verification" -> "completed". ` +
+        `Set status to "pending_verification", run verification (build/test/lint), fix any errors, then mark it "completed" with completion_message.`
+      );
     }
 
     // VALIDATION: Check if completion should be allowed
@@ -440,7 +452,7 @@ Always review the task list before starting new work.`,
       properties: {
         status: {
           type: 'string',
-          enum: ['all', 'active', 'waiting', 'completed', 'blocked', 'abandoned'],
+          enum: ['all', 'active', 'waiting', 'pending_verification', 'completed', 'blocked', 'abandoned'],
           description: 'Filter by status (default: all)',
         },
       },
@@ -480,6 +492,7 @@ Always review the task list before starting new work.`,
       const indent = '  '.repeat(depth + 1);
       const statusIcon = task.status === 'completed' ? '✓' :
                          task.status === 'active' ? '●' :
+                         task.status === 'pending_verification' ? '⧗' :
                          task.status === 'blocked' ? '⚠' : '○';
       const priority = task.priority === 'high' ? ' [HIGH]' :
                       task.priority === 'medium' ? ' [MED]' :
@@ -509,6 +522,7 @@ Always review the task list before starting new work.`,
     // Group top-level tasks by status for better readability
     const waiting = topLevelTasks.filter(t => t.status === 'waiting');
     const active = topLevelTasks.filter(t => t.status === 'active');
+    const pendingVerification = topLevelTasks.filter(t => t.status === 'pending_verification');
     const blocked = topLevelTasks.filter(t => t.status === 'blocked');
     const completed = topLevelTasks.filter(t => t.status === 'completed');
 
@@ -522,6 +536,13 @@ Always review the task list before starting new work.`,
     if (active.length > 0) {
       lines.push('  Active:');
       for (const task of active) {
+        renderTaskHierarchy(task, 1);
+      }
+    }
+
+    if (pendingVerification.length > 0) {
+      lines.push('  Pending verification:');
+      for (const task of pendingVerification) {
         renderTaskHierarchy(task, 1);
       }
     }
@@ -675,6 +696,7 @@ This helps understand the task structure and delegate focused work.`,
       const indent = '  '.repeat(depth);
       const statusIcon = task.status === 'completed' ? '✓' :
                          task.status === 'active' ? '●' :
+                         task.status === 'pending_verification' ? '⧗' :
                          task.status === 'blocked' ? '⚠' : '○';
       const priority = task.priority === 'high' ? ' [HIGH]' : task.priority === 'medium' ? ' [MED]' : '';
 

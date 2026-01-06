@@ -7,20 +7,24 @@
 
 import chalk from 'chalk';
 import { RenderManager, createRenderManager, setRenderManager } from './render-manager.js';
-import { StatusRegion, TaskRegion, InputRegion, SpinnerRegion, OutputRegion } from './regions/index.js';
+import { HeaderRegion, StatusRegion, TaskRegion, InputRegion, SpinnerRegion, OutputRegion } from './regions/index.js';
 import type { StatusInfo } from './regions/status-region.js';
 import type { TaskInfo } from './regions/task-region.js';
 
 export interface ManagedChatUIConfig {
+  showHeader: boolean;
   showStatusBar: boolean;
   showTaskBar: boolean;
   updateInterval: number;
+  renderMode: 'screen' | 'scrollback';
 }
 
 const DEFAULT_CONFIG: ManagedChatUIConfig = {
+  showHeader: true,
   showStatusBar: true,
   showTaskBar: true,
   updateInterval: 1000,
+  renderMode: 'screen',
 };
 
 /**
@@ -29,6 +33,7 @@ const DEFAULT_CONFIG: ManagedChatUIConfig = {
 export class ManagedChatUI {
   private config: ManagedChatUIConfig;
   private renderManager: RenderManager;
+  private headerRegion: HeaderRegion;
   private statusRegion: StatusRegion;
   private taskRegion: TaskRegion;
   private inputRegion: InputRegion;
@@ -67,9 +72,10 @@ export class ManagedChatUI {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
     // Create render manager
-    this.renderManager = createRenderManager();
+    this.renderManager = createRenderManager({ renderMode: this.config.renderMode });
 
     // Create regions
+    this.headerRegion = new HeaderRegion();
     this.statusRegion = new StatusRegion();
     this.taskRegion = new TaskRegion();
     this.inputRegion = new InputRegion();
@@ -90,6 +96,10 @@ export class ManagedChatUI {
     // Order matters for z-index layering
     this.outputRegion.attach(this.renderManager);
 
+    if (this.config.showHeader) {
+      this.headerRegion.attach(this.renderManager);
+    }
+
     if (this.config.showStatusBar) {
       this.statusRegion.attach(this.renderManager);
     }
@@ -106,6 +116,10 @@ export class ManagedChatUI {
 
     // Start listening to UI state changes
     this.outputRegion.startListening();
+
+    if (this.config.showHeader) {
+      this.headerRegion.startListening();
+    }
 
     if (this.config.showStatusBar) {
       this.statusRegion.startListening();
@@ -139,6 +153,7 @@ export class ManagedChatUI {
 
     // Stop listening to state changes
     this.outputRegion.stopListening();
+    this.headerRegion.stopListening();
     this.statusRegion.stopListening();
     this.taskRegion.stopListening();
 
@@ -148,6 +163,7 @@ export class ManagedChatUI {
     this.inputRegion.detach();
     this.spinnerRegion.detach();
     this.outputRegion.detach();
+    this.headerRegion.detach();
 
     // Shutdown render manager
     this.renderManager.shutdown();
@@ -227,18 +243,9 @@ export class ManagedChatUI {
    * Show welcome header
    */
   showWelcome(providerInfo: string, directory: string): void {
-    const width = this.renderManager.getTerminalWidth();
-
-    this.outputRegion.writeLine('');
-    this.outputRegion.writeLine(chalk.blue.bold('┌' + '─'.repeat(width - 2) + '┐'));
-    this.outputRegion.writeLine(chalk.blue.bold('│ ') + chalk.cyan.bold('🤖 Copilot CLI Agent') + chalk.gray(' v0.1.0'));
-    this.outputRegion.writeLine(chalk.blue.bold('├' + '─'.repeat(width - 2) + '┤'));
-    this.outputRegion.writeLine(chalk.blue.bold('│ ') + chalk.gray('Provider: ') + chalk.white(providerInfo));
-    this.outputRegion.writeLine(chalk.blue.bold('│ ') + chalk.gray('Directory: ') + chalk.white(directory));
-    this.outputRegion.writeLine(chalk.blue.bold('└' + '─'.repeat(width - 2) + '┘'));
-    this.outputRegion.writeLine('');
-    this.outputRegion.writeLine(chalk.dim('💡 Type /help for commands, Ctrl+C to interrupt, /exit to quit'));
-    this.outputRegion.writeLine('');
+    // Kept for API compatibility; prefer the pinned HeaderRegion for UI chrome.
+    this.outputRegion.writeInfo(`Provider: ${providerInfo}`);
+    this.outputRegion.writeLine(chalk.dim(`  Directory: ${directory}`));
   }
 
   /**

@@ -170,7 +170,7 @@ export class PlanningValidator {
     return {
       hasGoal: !!goal,
       hasActiveTask: !!activeTask,
-      hasPendingTasks: tasks.some((t: any) => t.status === 'waiting' || t.status === 'active'),
+      hasPendingTasks: tasks.some((t: any) => t.status === 'waiting' || t.status === 'active' || t.status === 'pending_verification'),
       hasPlan: this.hasPlan(),
       taskCount: tasks.length,
       currentTask: activeTask || undefined,

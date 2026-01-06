@@ -13,6 +13,7 @@ export interface ScreenRegion {
   height: number;        // Number of rows this region occupies
   zIndex: number;        // Higher z-index renders on top
   visible: boolean;
+  stack?: boolean;       // If true, region is stacked with same-anchor regions
   content: string[];     // Lines of content for this region
   dirty: boolean;        // Needs re-render
 }
@@ -21,12 +22,14 @@ export interface RenderManagerConfig {
   maxFps: number;              // Maximum frames per second (default: 30)
   enableDoubleBuffering: boolean;
   debugMode: boolean;
+  renderMode: 'screen' | 'scrollback';
 }
 
 const DEFAULT_CONFIG: RenderManagerConfig = {
   maxFps: 30,
   enableDoubleBuffering: true,
   debugMode: false,
+  renderMode: 'screen',
 };
 
 /**
@@ -45,6 +48,7 @@ export class RenderManager {
   private cursorVisible = true;
   private currentBuffer: string[] = [];
   private previousBuffer: string[] = [];
+  private previousWrittenRows: boolean[] = [];
 
   // Input cursor tracking
   private inputRegionId: string | null = null;
@@ -54,6 +58,12 @@ export class RenderManager {
   private outputBuffer: string[] = [];
   private outputScrollOffset = 0;
   private maxOutputLines = 10000;
+  private outputDirty = false;
+
+  // Scroll region state (for scrollback-friendly mode)
+  private scrollRegionTop = 1; // 1-based
+  private scrollRegionBottom = 0; // 1-based, 0 means unset
+  private scrollbackInsertRow0: number | null = null;
 
   constructor(config: Partial<RenderManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -69,7 +79,9 @@ export class RenderManager {
    */
   initialize(): void {
     this.updateTerminalSize();
-    this.clearScreen();
+    if (this.config.renderMode === 'screen') {
+      this.clearScreen();
+    }
     this.startRenderLoop();
     // Show cursor - we want input to be visible
     this.showCursor();
@@ -81,8 +93,25 @@ export class RenderManager {
   shutdown(): void {
     this.stopRenderLoop();
     this.showCursor();
-    this.clearScreen();
-    this.moveCursor(0, 0);
+    if (this.config.renderMode === 'screen') {
+      this.clearScreen();
+      this.moveCursor(0, 0);
+    } else {
+      // Clear only the pinned UI rows (outside the scroll region) so we don't
+      // wipe the user's scrollback/transcript.
+      const top0 = Math.max(0, this.scrollRegionTop - 1);
+      const bottom0 = this.scrollRegionBottom > 0 ? this.scrollRegionBottom - 1 : -1;
+
+      for (let row = 0; row < this.previousWrittenRows.length; row++) {
+        if (!this.previousWrittenRows[row]) continue;
+        const inScrollRegion = bottom0 >= 0 && row >= top0 && row <= bottom0;
+        if (!inScrollRegion) {
+          this.writeLineAt(row, '');
+        }
+      }
+
+      this.resetScrollRegion();
+    }
   }
 
   /**
@@ -164,6 +193,12 @@ export class RenderManager {
 
     // Auto-scroll to bottom
     this.scrollToBottom();
+
+    if (this.config.renderMode === 'scrollback') {
+      this.writeToTerminalScrollback(wrappedLines);
+      return;
+    }
+
     this.scheduleRender();
   }
 
@@ -175,6 +210,11 @@ export class RenderManager {
       this.outputBuffer.push('');
     }
     this.outputBuffer[this.outputBuffer.length - 1] += content;
+    if (this.config.renderMode === 'scrollback') {
+      // Inline updates are hard to keep perfectly in sync with terminal wrapping;
+      // repaint the visible output window instead.
+      this.outputDirty = true;
+    }
     this.scheduleRender();
   }
 
@@ -185,6 +225,7 @@ export class RenderManager {
   replaceOutputLines(startLine: number, lineCount: number, newContent: string[]): number {
     // Remove old lines
     this.outputBuffer.splice(startLine, lineCount, ...newContent);
+    this.outputDirty = true;
     this.scheduleRender();
     return startLine;
   }
@@ -195,6 +236,7 @@ export class RenderManager {
   clearOutput(): void {
     this.outputBuffer = [];
     this.outputScrollOffset = 0;
+    this.outputDirty = true;
     this.scheduleRender();
   }
 
@@ -204,15 +246,24 @@ export class RenderManager {
   scrollOutput(lines: number): void {
     const maxScroll = Math.max(0, this.outputBuffer.length - this.getOutputHeight());
     this.outputScrollOffset = Math.max(0, Math.min(maxScroll, this.outputScrollOffset + lines));
+    if (this.config.renderMode === 'screen') {
+      this.outputDirty = true;
+    }
     this.scheduleRender();
   }
 
   scrollToBottom(): void {
     this.outputScrollOffset = Math.max(0, this.outputBuffer.length - this.getOutputHeight());
+    if (this.config.renderMode === 'screen') {
+      this.outputDirty = true;
+    }
   }
 
   scrollToTop(): void {
     this.outputScrollOffset = 0;
+    if (this.config.renderMode === 'screen') {
+      this.outputDirty = true;
+    }
   }
 
   // ============================================
@@ -262,22 +313,44 @@ export class RenderManager {
     this.isRendering = true;
 
     try {
+      const layout = this.computeLayout();
+      if (this.config.renderMode === 'scrollback') {
+        this.ensureScrollRegion(layout);
+      }
+
       // Build new frame buffer
       this.currentBuffer = new Array(this.terminalHeight).fill('');
+      if (this.previousBuffer.length !== this.currentBuffer.length) {
+        this.previousBuffer = new Array(this.terminalHeight).fill('');
+        this.previousWrittenRows = new Array(this.terminalHeight).fill(false);
+      }
 
       // Calculate region positions and render each
       const sortedRegions = this.getSortedRegions();
 
+      const regionRowsMask = new Array(this.terminalHeight).fill(false);
       for (const region of sortedRegions) {
         if (!region.visible) continue;
-        this.renderRegionToBuffer(region);
+        const startRow = layout.regionStartRows.get(region.id);
+        if (startRow === undefined) continue;
+        this.renderRegionToBuffer(region, startRow);
+        for (let i = 0; i < region.height; i++) {
+          const row = startRow + i;
+          if (row >= 0 && row < this.terminalHeight) {
+            regionRowsMask[row] = true;
+          }
+        }
       }
 
       // Render output buffer to remaining space
-      this.renderOutputToBuffer();
+      if (this.config.renderMode === 'screen') {
+        this.renderOutputToBuffer(layout);
+      } else if (this.outputDirty) {
+        this.renderOutputToBuffer(layout);
+      }
 
       // Write differences to terminal (or full buffer if not double-buffering)
-      this.flushBuffer();
+      this.flushBuffer(layout, regionRowsMask);
 
       // Update previous buffer
       this.previousBuffer = [...this.currentBuffer];
@@ -288,7 +361,8 @@ export class RenderManager {
       }
 
       // Position cursor back to input region
-      this.positionCursorToInput();
+      this.positionCursorToInput(layout);
+      this.outputDirty = false;
     } finally {
       this.isRendering = false;
       this.lastRenderTime = Date.now();
@@ -298,9 +372,7 @@ export class RenderManager {
   /**
    * Render a region into the buffer
    */
-  private renderRegionToBuffer(region: ScreenRegion): void {
-    const startRow = this.resolveRow(region.startRow, region.height);
-
+  private renderRegionToBuffer(region: ScreenRegion, startRow: number): void {
     for (let i = 0; i < region.height && i < region.content.length; i++) {
       const row = startRow + i;
       if (row >= 0 && row < this.terminalHeight) {
@@ -312,9 +384,9 @@ export class RenderManager {
   /**
    * Render scrollable output to the buffer (fills remaining space)
    */
-  private renderOutputToBuffer(): void {
+  private renderOutputToBuffer(layout: LayoutResult): void {
     const outputHeight = this.getOutputHeight();
-    const outputStartRow = this.getOutputStartRow();
+    const outputStartRow = layout.outputStartRow;
 
     const startLine = this.outputScrollOffset;
     const endLine = Math.min(this.outputBuffer.length, startLine + outputHeight);
@@ -336,19 +408,39 @@ export class RenderManager {
   /**
    * Write buffer to stdout, using differential update if double-buffering
    */
-  private flushBuffer(): void {
-    if (this.config.enableDoubleBuffering && this.previousBuffer.length === this.currentBuffer.length) {
-      // Differential update - only write changed lines
-      for (let row = 0; row < this.currentBuffer.length; row++) {
-        if (this.currentBuffer[row] !== this.previousBuffer[row]) {
-          this.writeLineAt(row, this.currentBuffer[row]);
+  private flushBuffer(layout: LayoutResult, regionRowsMask: boolean[]): void {
+    const isScrollback = this.config.renderMode === 'scrollback';
+    const outputStickyMask = isScrollback ? this.getOutputRowsMask(layout) : null;
+
+    const shouldWriteRow = (row: number): boolean => {
+      if (!isScrollback) return true;
+      if (regionRowsMask[row]) return true;
+      if (this.outputDirty && outputStickyMask?.[row]) return true;
+      return false;
+    };
+
+    const shouldClearRow = (row: number): boolean => {
+      if (!isScrollback) return true;
+      if (outputStickyMask?.[row]) return false;
+      return true;
+    };
+
+    for (let row = 0; row < this.currentBuffer.length; row++) {
+      const wantWrite = shouldWriteRow(row);
+      const wroteBefore = this.previousWrittenRows[row];
+
+      if (!wantWrite) {
+        if (wroteBefore && shouldClearRow(row)) {
+          this.writeLineAt(row, '');
+          this.previousWrittenRows[row] = false;
+          this.previousBuffer[row] = '';
         }
+        continue;
       }
-    } else {
-      // Full redraw
-      this.moveCursor(0, 0);
-      for (let row = 0; row < this.currentBuffer.length; row++) {
+
+      if (!this.config.enableDoubleBuffering || this.currentBuffer[row] !== this.previousBuffer[row] || !wroteBefore) {
         this.writeLineAt(row, this.currentBuffer[row]);
+        this.previousWrittenRows[row] = true;
       }
     }
   }
@@ -392,7 +484,155 @@ export class RenderManager {
   private handleResize(): void {
     this.updateTerminalSize();
     this.previousBuffer = []; // Force full redraw
+    this.previousWrittenRows = [];
+    this.outputDirty = true;
     this.scheduleRender();
+  }
+
+  // ============================================
+  // Layout
+  // ============================================
+
+  private computeLayout(): LayoutResult {
+    const visibleRegions = Array.from(this.regions.values()).filter(r => r.visible);
+
+    const stackedTop = visibleRegions.filter(r => r.stack && r.startRow >= 0);
+    const stackedBottom = visibleRegions.filter(r => r.stack && r.startRow < 0);
+    const fixedTop = visibleRegions.filter(r => !r.stack && r.startRow >= 0);
+    const fixedBottom = visibleRegions.filter(r => !r.stack && r.startRow < 0);
+
+    const regionStartRows = new Map<string, number>();
+
+    // Fixed regions keep their specified startRow semantics
+    for (const region of fixedTop) {
+      regionStartRows.set(region.id, region.startRow);
+    }
+    for (const region of fixedBottom) {
+      regionStartRows.set(region.id, this.resolveRow(region.startRow, region.height));
+    }
+
+    // Top stacking begins after the lowest fixed-top region end
+    let topCursor = 0;
+    for (const region of fixedTop) {
+      topCursor = Math.max(topCursor, region.startRow + region.height);
+    }
+
+    // Stack by z-index (higher z-index closer to the edge)
+    for (const region of stackedTop.sort((a, b) => b.zIndex - a.zIndex)) {
+      regionStartRows.set(region.id, topCursor);
+      topCursor += region.height;
+    }
+
+    // Bottom stacking ends before the top-most fixed-bottom region (if any)
+    let bottomLimit = this.terminalHeight;
+    for (const region of fixedBottom) {
+      const absStart = regionStartRows.get(region.id);
+      if (absStart !== undefined) {
+        bottomLimit = Math.min(bottomLimit, absStart);
+      }
+    }
+
+    let bottomCursor = bottomLimit;
+    for (const region of stackedBottom.sort((a, b) => b.zIndex - a.zIndex)) {
+      bottomCursor -= region.height;
+      regionStartRows.set(region.id, bottomCursor);
+    }
+
+    // Output starts after all top-anchored regions (fixed + stacked)
+    let outputStartRow = 0;
+    for (const region of fixedTop) {
+      outputStartRow = Math.max(outputStartRow, region.startRow + region.height);
+    }
+    outputStartRow = Math.max(outputStartRow, topCursor);
+
+    const outputEndRowExclusive = this.getBottomReservedStartRow(regionStartRows, fixedBottom, stackedBottom);
+
+    return { regionStartRows, outputStartRow, outputEndRowExclusive };
+  }
+
+  private getBottomReservedStartRow(
+    regionStartRows: Map<string, number>,
+    fixedBottom: ScreenRegion[],
+    stackedBottom: ScreenRegion[]
+  ): number {
+    let minStart = this.terminalHeight;
+    for (const region of [...fixedBottom, ...stackedBottom]) {
+      const start = regionStartRows.get(region.id);
+      if (start !== undefined) {
+        minStart = Math.min(minStart, start);
+      }
+    }
+    return Math.max(0, Math.min(this.terminalHeight, minStart));
+  }
+
+  private getOutputRowsMask(layout: LayoutResult): boolean[] {
+    const mask = new Array(this.terminalHeight).fill(false);
+    const start = Math.max(0, Math.min(this.terminalHeight, layout.outputStartRow));
+    const end = Math.max(start, Math.min(this.terminalHeight, layout.outputEndRowExclusive));
+    for (let row = start; row < end; row++) {
+      mask[row] = true;
+    }
+    return mask;
+  }
+
+  private ensureScrollRegion(layout: LayoutResult): void {
+    const top = layout.outputStartRow + 1; // 1-based
+    const bottom = layout.outputEndRowExclusive; // 1-based exclusive -> inclusive is same value
+
+    if (bottom <= 0 || top >= bottom) {
+      this.resetScrollRegion();
+      return;
+    }
+
+    if (this.scrollRegionTop === top && this.scrollRegionBottom === bottom) {
+      return;
+    }
+
+    this.scrollRegionTop = top;
+    this.scrollRegionBottom = bottom;
+    process.stdout.write(`\x1b[${top};${bottom}r`);
+
+    // When the layout changes, reset insertion to the top of the scroll region.
+    this.scrollbackInsertRow0 = layout.outputStartRow;
+  }
+
+  private resetScrollRegion(): void {
+    if (this.scrollRegionBottom !== 0) {
+      process.stdout.write('\x1b[r');
+      this.scrollRegionTop = 1;
+      this.scrollRegionBottom = 0;
+      this.scrollbackInsertRow0 = null;
+    }
+  }
+
+  private writeToTerminalScrollback(lines: string[]): void {
+    if (!process.stdout.isTTY) return;
+
+    const layout = this.computeLayout();
+    this.ensureScrollRegion(layout);
+
+    const topRow = Math.max(0, Math.min(this.terminalHeight - 1, layout.outputStartRow));
+    const bottomRow = Math.max(0, Math.min(this.terminalHeight - 1, layout.outputEndRowExclusive - 1));
+    if (topRow > bottomRow) return;
+
+    let insertRow = this.scrollbackInsertRow0 ?? topRow;
+    insertRow = Math.max(topRow, Math.min(bottomRow, insertRow));
+
+    // Write at the tracked insertion point so first output appears near the top,
+    // then naturally scrolls within the protected scroll region.
+    this.moveCursor(insertRow, 0);
+
+    for (const line of lines) {
+      process.stdout.write('\x1b[2K');
+      process.stdout.write(line);
+      process.stdout.write('\n');
+      insertRow = Math.min(bottomRow, insertRow + 1);
+    }
+
+    this.scrollbackInsertRow0 = insertRow;
+
+    // Reposition cursor to input region
+    this.positionCursorToInput(layout);
   }
 
   // ============================================
@@ -435,7 +675,8 @@ export class RenderManager {
    * Get the starting row for output content
    */
   private getOutputStartRow(): number {
-    // Find the bottom of top-aligned regions
+    // Layout-aware output start is computed in computeLayout()
+    // Keep this method for backward compatibility; it assumes no stacked regions.
     let topRegionEnd = 0;
     for (const region of this.regions.values()) {
       if (region.visible && region.startRow >= 0) {
@@ -530,20 +771,21 @@ export class RenderManager {
    */
   setInputCursorColumn(column: number): void {
     this.inputCursorColumn = column;
-    this.positionCursorToInput();
+    this.positionCursorToInput(this.computeLayout());
   }
 
   /**
    * Position cursor to the input region
    */
-  private positionCursorToInput(): void {
+  private positionCursorToInput(layout?: LayoutResult): void {
     if (!this.inputRegionId) return;
 
     const inputRegion = this.regions.get(this.inputRegionId);
     if (!inputRegion || !inputRegion.visible) return;
 
     // Calculate the row of the input region
-    const row = this.resolveRow(inputRegion.startRow, inputRegion.height);
+    const row = layout?.regionStartRows.get(inputRegion.id) ??
+      this.resolveRow(inputRegion.startRow, inputRegion.height);
     const col = this.inputCursorColumn;
 
     // Move cursor and show it
@@ -588,4 +830,10 @@ export function createRenderManager(config?: Partial<RenderManagerConfig>): Rend
   const manager = new RenderManager(config);
   setRenderManager(manager);
   return manager;
+}
+
+interface LayoutResult {
+  regionStartRows: Map<string, number>;
+  outputStartRow: number;
+  outputEndRowExclusive: number;
 }

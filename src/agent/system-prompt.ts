@@ -346,6 +346,11 @@ After this completes, your default workflow should be:
 
 When completing a task using update_task_status, you MUST provide a completion_message:
 
+**CRITICAL completion workflow**:
+1. Mark the task "pending_verification"
+2. Run verification (build/test/lint), fix any failures, and confirm it works
+3. Only then mark the task "completed" (with completion_message)
+
 **REQUIRED**: completion_message parameter when marking as "completed"
 - Summarize what was accomplished
 - List files created or modified (with specific filenames)

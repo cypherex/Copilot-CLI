@@ -42,6 +42,8 @@ function getStatusIcon(status: string): string {
       return '🔷';
     case 'waiting':
       return '⏳';
+    case 'pending_verification':
+      return '🧪';
     case 'completed':
       return '✅';
     case 'blocked':
@@ -59,6 +61,8 @@ function getStatusColor(status: string): (text: string) => string {
       return chalk.blue;
     case 'waiting':
       return chalk.gray;
+    case 'pending_verification':
+      return chalk.cyan;
     case 'completed':
       return chalk.green;
     case 'blocked':
@@ -116,19 +120,21 @@ export function renderTaskBar(
   const completed = allTasks.filter(t => t.status === 'completed').length;
   const active = allTasks.filter(t => t.status === 'active').length;
   const waiting = allTasks.filter(t => t.status === 'waiting').length;
+  const pendingVerification = allTasks.filter(t => t.status === 'pending_verification').length;
   const blocked = allTasks.filter(t => t.status === 'blocked').length;
 
   const summary = chalk.gray(
     `Progress: ${chalk.green(completed)} done | ` +
     `${chalk.blue(active)} active | ` +
     `${chalk.yellow(waiting)} waiting` +
+    (pendingVerification > 0 ? ` | ${chalk.cyan(pendingVerification)} verifying` : '') +
     (config.showBlocked ? ` | ${chalk.red(blocked)} blocked` : '')
   );
   lines.push(summary);
 
   // Show pending tasks
   const pendingTasks = allTasks
-    .filter(t => t.status === 'waiting' || t.status === 'active')
+    .filter(t => t.status === 'waiting' || t.status === 'active' || t.status === 'pending_verification')
     .slice(0, config.maxTasks);
 
   if (pendingTasks.length > 0) {

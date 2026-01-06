@@ -33,7 +33,7 @@ export class WorkContinuityManager {
 
     const goal = this.memoryStore.getGoal();
     const tasks = this.memoryStore.getTasks();
-    const activeTask = tasks.find(t => t.status === 'active');
+    const activeTask = tasks.find(t => t.status === 'active' || t.status === 'pending_verification');
     const workingState = this.memoryStore.getWorkingState();
     const decisions = this.memoryStore.getDecisions();
 

@@ -5,6 +5,7 @@
 import chalk from 'chalk';
 import { BaseRegion } from './base-region.js';
 import { uiState, type UIStateData, type TaskState } from '../ui-state.js';
+import { getRenderManager } from '../render-manager.js';
 
 /**
  * Task bar that displays above the input line
@@ -12,7 +13,6 @@ import { uiState, type UIStateData, type TaskState } from '../ui-state.js';
  */
 export class TaskRegion extends BaseRegion {
   private unsubscribe?: () => void;
-  private terminalWidth = 80;
 
   constructor() {
     super({
@@ -46,18 +46,11 @@ export class TaskRegion extends BaseRegion {
   }
 
   /**
-   * Set terminal width for truncation
-   */
-  setWidth(width: number): void {
-    this.terminalWidth = width;
-    this.render();
-  }
-
-  /**
    * Render the task bar from current state
    */
   render(): void {
     const state = uiState.getState();
+    const terminalWidth = getRenderManager()?.getTerminalWidth() ?? process.stdout.columns ?? 80;
     const parts: string[] = [];
 
     // Task progress
@@ -65,33 +58,50 @@ export class TaskRegion extends BaseRegion {
       const completed = state.allTasks.filter(t => t.status === 'completed').length;
       const total = state.allTasks.length;
       parts.push(chalk.gray(`[${completed}/${total}]`));
+      parts.push(this.renderProgressBar(completed, total, terminalWidth));
     }
 
     // Current task
     if (state.currentTask) {
       const icon = this.getTaskIcon(state.currentTask.status);
-      const maxDescLen = this.terminalWidth - 30;
+      const maxDescLen = Math.max(10, terminalWidth - 36);
       let desc = state.currentTask.description;
       if (desc.length > maxDescLen) {
         desc = desc.slice(0, maxDescLen - 3) + '...';
       }
-      parts.push(chalk.blue(`${icon} ${desc}`));
+      const prio =
+        state.currentTask.priority === 'high' ? chalk.red('!') :
+        state.currentTask.priority === 'medium' ? chalk.yellow('!') :
+        '';
+      parts.push(chalk.blue(`${icon} ${desc}`) + (prio ? chalk.dim(' ') + prio : ''));
     } else {
-      parts.push(chalk.dim('○ No active task'));
+      parts.push(chalk.dim('No active task'));
     }
 
-    const taskLine = parts.join(' ');
+    const taskLine = parts.join(chalk.dim(' · '));
     this.update([taskLine]);
   }
 
   private getTaskIcon(status: TaskState['status']): string {
     switch (status) {
       case 'pending': return '○';
-      case 'in_progress': return '◐';
-      case 'completed': return '●';
+      case 'in_progress': return '▶';
+      case 'verifying': return '⧗';
+      case 'completed': return '✓';
       case 'blocked': return '✗';
       default: return '○';
     }
+  }
+
+  private renderProgressBar(completed: number, total: number, terminalWidth: number): string {
+    if (total <= 0) return '';
+    const maxBar = Math.min(18, Math.max(10, Math.floor(terminalWidth / 8)));
+    const ratio = Math.max(0, Math.min(1, completed / total));
+    const filled = Math.round(ratio * maxBar);
+    const bar = '█'.repeat(filled) + '░'.repeat(Math.max(0, maxBar - filled));
+    const pct = Math.round(ratio * 100);
+    const color = pct >= 80 ? chalk.green : pct >= 40 ? chalk.cyan : chalk.gray;
+    return color(bar) + chalk.dim(` ${pct}%`);
   }
 
   /**

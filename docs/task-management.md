@@ -44,15 +44,21 @@ Update the status of an existing task.
 - `active` - Currently working on this task
 - `blocked` - Cannot proceed due to issues
 - `waiting` - Waiting for user input or external dependency
+- `pending_verification` - Implementation done; must verify (build/test/lint) before completing
 - `completed` - Task is finished
 - `abandoned` - Task is no longer needed
 
 ```json
 {
   "task_id": "task_123",
-  "status": "completed",
+  "status": "pending_verification",
   "notes": "Optional notes about the status change"
 }
+
+Completion workflow:
+1. `active` → implement changes
+2. `pending_verification` → run verification (build/test/lint) and fix failures
+3. `completed` → only after verification passes
 ```
 
 ### set_current_task

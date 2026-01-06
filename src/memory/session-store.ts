@@ -176,9 +176,19 @@ export class SessionMemoryStore {
   }
 
   getActiveTask(): Task | undefined {
-    const active = this.getTasks('active');
-    if (active.length === 0) return undefined;
-    return active.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+    const activeLike = Array.from(this.tasks.values()).filter(
+      (t) => t.status === 'active' || t.status === 'pending_verification'
+    );
+
+    if (activeLike.length === 0) return undefined;
+
+    // Prefer newest, but break ties by preferring 'active' over 'pending_verification'
+    return activeLike.sort((a, b) => {
+      const timeDelta = b.updatedAt.getTime() - a.updatedAt.getTime();
+      if (timeDelta !== 0) return timeDelta;
+      if (a.status === b.status) return 0;
+      return a.status === 'active' ? -1 : 1;
+    })[0];
   }
 
   getTaskById(id: string): Task | undefined {

@@ -162,6 +162,121 @@ export class SpawnValidator {
     this.rateLimiter = new RateLimiter(callsPerSecond);
   }
 
+  private extractFirstJsonObject(text: string): string | null {
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+          continue;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '{') {
+        depth += 1;
+        continue;
+      }
+
+      if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, i + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private sanitizeJsonForParsing(jsonText: string): string {
+    // Fix common model issues:
+    // - Unescaped newlines/tabs/control chars inside JSON strings
+    // - Trailing commas
+    let inString = false;
+    let escaped = false;
+    let out = '';
+
+    for (let i = 0; i < jsonText.length; i++) {
+      const ch = jsonText[i];
+
+      if (!inString) {
+        if (ch === '"') {
+          inString = true;
+          out += ch;
+          continue;
+        }
+        out += ch;
+        continue;
+      }
+
+      // In string
+      if (escaped) {
+        escaped = false;
+        out += ch;
+        continue;
+      }
+
+      if (ch === '\\') {
+        escaped = true;
+        out += ch;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = false;
+        out += ch;
+        continue;
+      }
+
+      if (ch === '\n') {
+        out += '\\n';
+        continue;
+      }
+      if (ch === '\r') {
+        out += '\\r';
+        continue;
+      }
+      if (ch === '\t') {
+        out += '\\t';
+        continue;
+      }
+
+      const code = ch.charCodeAt(0);
+      if (code >= 0x00 && code <= 0x1f) {
+        out += `\\u${code.toString(16).padStart(4, '0')}`;
+        continue;
+      }
+
+      out += ch;
+    }
+
+    // Remove trailing commas before } or ]
+    out = out.replace(/,\s*([}\]])/g, '$1');
+    return out;
+  }
+
   /**
    * Main validation entry point
    */
@@ -1230,7 +1345,7 @@ Return JSON array: [
 
     // Process subtasks in batches to balance speed and rate limiting
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
-    const batchSize = 3; // Process 3 tasks at a time
+    const batchSize = 4; // Process 3 tasks at a time
 
     if (verbose) {
       this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
@@ -1443,13 +1558,24 @@ Return JSON with COMPLETE breakdown focused on integration and production-readin
       );
 
       const content = response.choices[0]?.message.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed;
+      const jsonCandidate = this.extractFirstJsonObject(content);
+      if (!jsonCandidate) {
+        throw new Error('No JSON object found in LLM response');
       }
+
+      const sanitized = this.sanitizeJsonForParsing(jsonCandidate);
+      return JSON.parse(sanitized);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      try {
+        uiState.addMessage({
+          role: 'system',
+          content: `[SpawnValidator] Context-aware breakdown failed: ${errorMessage}`,
+          timestamp: Date.now(),
+        });
+      } catch {
+        // ignore
+      }
       console.error('[SpawnValidator] Context-aware breakdown failed:', error);
     }
 

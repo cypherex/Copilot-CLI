@@ -103,6 +103,7 @@ This helps prevent context overflow and keeps reasoning focused.`,
     const completed = tasks.filter((t: any) => t.status === 'completed').length;
     const active = tasks.filter((t: any) => t.status === 'active').length;
     const waiting = tasks.filter((t: any) => t.status === 'waiting').length;
+    const pendingVerification = tasks.filter((t: any) => t.status === 'pending_verification').length;
     const blocked = tasks.filter((t: any) => t.status === 'blocked').length;
 
     if (tasks.length > 0) {
@@ -111,6 +112,7 @@ This helps prevent context overflow and keeps reasoning focused.`,
       lines.push(`   ✅ Completed: ${completed}`);
       lines.push(`   🔄 Active: ${active}`);
       lines.push(`   ⏳ Waiting: ${waiting}`);
+      lines.push(`   🧪 Verifying: ${pendingVerification}`);
       lines.push(`   🚫 Blocked: ${blocked}`);
       lines.push('');
     }

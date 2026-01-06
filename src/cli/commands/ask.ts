@@ -11,6 +11,7 @@ import { LogManager } from '../../ui/log-manager.js';
 import { ErrorHandler, handleError } from '../../utils/error-handler.js';
 import { uiState } from '../../ui/ui-state.js';
 import { join } from 'path';
+import type { Task } from '../../memory/types.js';
 
 interface AskOptions {
   directory: string;
@@ -196,8 +197,17 @@ export async function askCommand(
         timestamp: Date.now(),
       });
 
+      const isTaskComplexity = (value: any): value is 'simple' | 'moderate' | 'complex' =>
+        value === 'simple' || value === 'moderate' || value === 'complex';
+
       // Recursive function to reconstruct task hierarchy
       function reconstructTasks(node: any, parentId?: string): string {
+        const estimatedComplexity = isTaskComplexity(node.complexity) ? node.complexity : undefined;
+        const breakdownDepth = typeof node.depth === 'number' ? node.depth : undefined;
+        const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+        const breakdownComplete =
+          typeof node.ready_to_spawn === 'boolean' ? node.ready_to_spawn : hasChildren;
+
         // Create task in memory store
         const task = memoryStore.addTask({
           description: node.description,
@@ -206,8 +216,14 @@ export async function askCommand(
           completionMessage: node.completionMessage,
           relatedFiles: [],
           priority: 'medium' as any,
-          estimatedComplexity: node.complexity as any,
+          estimatedComplexity,
+          breakdownDepth,
+          breakdownComplete,
         });
+
+        if (typeof node.id === 'string' && node.id.length > 0) {
+          // Intentionally not restoring IDs; the MemoryStore generates new ones.
+        }
 
         // Recursively create children
         if (node.children && Array.isArray(node.children)) {
@@ -236,33 +252,103 @@ export async function askCommand(
         timestamp: Date.now(),
       });
 
-      // Continue breakdown on each root task
-      for (const rootId of rootTaskIds) {
-        const rootTask = memoryStore.getTasks().find((t: any) => t.id === rootId);
-        if (rootTask) {
-          doLog(`Processing: ${rootTask.description}`);
+      // Continue breakdown for complex leaf tasks only (prevents duplicating already-expanded parents).
+      const allTasksBefore: Task[] = memoryStore.getTasks();
+      const childCountByParent = new Map<string, number>();
+      for (const t of allTasksBefore) {
+        if (t.parentId) {
+          childCountByParent.set(t.parentId, (childCountByParent.get(t.parentId) || 0) + 1);
+        }
+      }
+
+      const complexLeafTasks = allTasksBefore.filter((t: Task) => {
+        const hasChildren = childCountByParent.has(t.id);
+        if (hasChildren) return false;
+        if (t.status === 'completed' || t.status === 'abandoned') return false;
+        // Continue breakdown if the leaf is complex OR complexity is unknown (common when loading older trees).
+        return t.estimatedComplexity === 'complex' || t.estimatedComplexity === undefined;
+      });
+
+      if (complexLeafTasks.length === 0) {
+        uiState.addMessage({
+          role: 'system',
+          content:
+            'No complex leaf tasks found to continue breaking down. Proceeding to execute the prompt.',
+          timestamp: Date.now(),
+        });
+      } else {
+        uiState.addMessage({
+          role: 'system',
+          content: `Continuing breakdown for ${complexLeafTasks.length} complex/unknown leaf task(s) (will attach subtasks under existing tasks)...`,
+          timestamp: Date.now(),
+        });
+
+        const offsetDepths = (node: any, offset: number): any => {
+          const adjustedDepth =
+            typeof node.breakdownDepth === 'number' ? node.breakdownDepth + offset : node.breakdownDepth;
+          return {
+            ...node,
+            breakdownDepth: adjustedDepth,
+            subtasks: Array.isArray(node.subtasks) ? node.subtasks.map((st: any) => offsetDepths(st, offset)) : node.subtasks,
+          };
+        };
+
+        for (const parentTask of complexLeafTasks) {
+          // Re-check children in case previous iterations added some
+          const allTasksNow: Task[] = memoryStore.getTasks();
+          const stillLeaf = !allTasksNow.some((t: Task) => t.parentId === parentTask.id);
+          if (!stillLeaf) continue;
+
           uiState.addMessage({
             role: 'system',
-            content: `Processing: ${rootTask.description}`,
+            content: `Processing complex leaf: ${parentTask.description}`,
             timestamp: Date.now(),
           });
 
-          // Trigger recursive breakdown
-          await spawnValidator.validateSpawn({
-            task: rootTask.description,
-            parent_task_id: undefined,
+          const breakdownResult = await spawnValidator.recursiveBreakdownWithContext(
+            parentTask.description,
             memoryStore,
-            useRecursiveBreakdown: true,
-            maxBreakdownDepth: 4,
-            verbose: true,
-          });
+            { maxDepth: 4, verbose: true }
+          );
 
-          doLog(`✓ Completed breakdown for: ${rootTask.description}\n`);
+          const subtasks = breakdownResult.taskTree.subtasks || [];
+          if (subtasks.length === 0) {
+            uiState.addMessage({
+              role: 'system',
+              content: `No subtasks generated for: ${parentTask.description}`,
+              timestamp: Date.now(),
+            });
+            continue;
+          }
+
+          const depthOffset = parentTask.breakdownDepth ?? 0;
+          const createdTaskIds: string[] = [];
+          for (const subtaskNode of subtasks) {
+            const adjustedNode = offsetDepths(subtaskNode, depthOffset);
+            const created = spawnValidator.createTaskHierarchy(adjustedNode, memoryStore, parentTask.id);
+            createdTaskIds.push(...created.allTaskIds);
+          }
+
+          // Mark parent as a container now that it has subtasks.
+          memoryStore.updateTask(parentTask.id, { breakdownComplete: breakdownResult.breakdownComplete });
+
           uiState.addMessage({
             role: 'system',
-            content: `✓ Completed breakdown for: ${rootTask.description}`,
+            content: `✓ Added ${createdTaskIds.length} task(s) under: ${parentTask.description}`,
             timestamp: Date.now(),
           });
+        }
+      }
+
+      // Ensure get_next_tasks has a sane default for loaded tasks (no dependency graph in file).
+      const allTasksAfter: Task[] = memoryStore.getTasks();
+      for (const task of allTasksAfter) {
+        const hasUnmetDependencies = (task.dependsOn || []).some((depId: string) => {
+          const depTask = allTasksAfter.find((t: Task) => t.id === depId);
+          return depTask && depTask.status !== 'completed';
+        });
+        if (task.status === 'waiting') {
+          memoryStore.updateTask(task.id, { isDependencyLeaf: !hasUnmetDependencies });
         }
       }
 

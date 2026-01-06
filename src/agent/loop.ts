@@ -1224,18 +1224,36 @@ Start with list_tracking_items to see what needs review.`;
       const currentTask = memoryStore.getActiveTask();
       const allTasks = memoryStore.getTasks();
 
+      const mapTaskStatus = (status: string): 'pending' | 'in_progress' | 'verifying' | 'completed' | 'blocked' => {
+        switch (status) {
+          case 'waiting':
+            return 'pending';
+          case 'active':
+            return 'in_progress';
+          case 'pending_verification':
+            return 'verifying';
+          case 'blocked':
+            return 'blocked';
+          case 'completed':
+          case 'abandoned':
+            return 'completed';
+          default:
+            return 'pending';
+        }
+      };
+
       // Convert to TaskState format
       const uiTasks = allTasks.map(t => ({
         id: t.id,
         description: t.description,
-        status: t.status as 'pending' | 'in_progress' | 'completed' | 'blocked',
+        status: mapTaskStatus(t.status),
         priority: t.priority as 'low' | 'medium' | 'high' | undefined,
       }));
 
       const uiCurrentTask = currentTask ? {
         id: currentTask.id,
         description: currentTask.description,
-        status: currentTask.status as 'pending' | 'in_progress' | 'completed' | 'blocked',
+        status: mapTaskStatus(currentTask.status),
         priority: currentTask.priority as 'low' | 'medium' | 'high' | undefined,
       } : null;
 

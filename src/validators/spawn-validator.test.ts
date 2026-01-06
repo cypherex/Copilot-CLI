@@ -567,6 +567,82 @@ describe('SpawnValidator', () => {
       expect(result.totalTasks).toBe(1);
       expect(result.breakdownComplete).toBe(true);
     });
+
+    it('should tolerate unescaped newlines in JSON strings from LLM', async () => {
+      // Mock task complexity: root is complex, subtasks are simple
+      (mockLLMClient.chat as any)
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                rating: 'complex',
+                evidence: { filesCount: 5, hasMultipleSteps: true, requiresCoordination: true },
+                reasoning: 'Complex',
+              }),
+            },
+          }],
+        })
+        // Context-aware breakdown with invalid JSON (raw newline inside a JSON string)
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content:
+                '{\n' +
+                '  "requiresBreakdown": true,\n' +
+                '  "reasoning": "needs subtasks",\n' +
+                '  "coverageAnalysis": "Line1\nLine2",\n' +
+                '  "subtasks": [\n' +
+                '    { "description": "Define AST nodes", "produces": ["AST types"], "consumes": [], "covers": "AST" },\n' +
+                '    { "description": "Define type system", "produces": ["Type definitions"], "consumes": [], "covers": "Types" }\n' +
+                '  ],\n' +
+                '  "integrationPoints": [],\n' +
+                '  "designDecisions": [],\n' +
+                '  "missingTasks": []\n' +
+                '}',
+            },
+          }],
+        })
+        // Complexity for subtask 1
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                rating: 'simple',
+                evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
+                reasoning: 'Simple',
+              }),
+            },
+          }],
+        })
+        // Complexity for subtask 2
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                rating: 'simple',
+                evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
+                reasoning: 'Simple',
+              }),
+            },
+          }],
+        });
+
+      const memoryStore = {
+        getTasks: jest.fn(() => []),
+        getGoal: jest.fn(() => undefined),
+        getDesignDecisions: jest.fn(() => []),
+        getIntegrationPoints: jest.fn(() => []),
+      } as any;
+
+      const result = await validator.recursiveBreakdownWithContext('Some complex task', memoryStore, {
+        maxDepth: 2,
+        verbose: false,
+      });
+
+      expect(result.taskTree.subtasks?.map(st => st.description)).toEqual(
+        expect.arrayContaining(['Define AST nodes', 'Define type system'])
+      );
+    });
   });
 
   describe('batchAssessComplexity', () => {

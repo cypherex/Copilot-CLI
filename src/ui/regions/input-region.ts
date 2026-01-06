@@ -13,7 +13,6 @@ export class InputRegion extends BaseRegion {
   private prompt: string;
   private currentInput = '';
   private cursorPosition = 0;
-  private terminalWidth = 80;
 
   constructor(prompt: string = 'You: ') {
     super({
@@ -52,20 +51,14 @@ export class InputRegion extends BaseRegion {
   }
 
   /**
-   * Set terminal width
-   */
-  setWidth(width: number): void {
-    this.terminalWidth = width;
-    this.render();
-  }
-
-  /**
    * Render the input line
    */
   render(): void {
+    const terminalWidth = getRenderManager()?.getTerminalWidth() ?? process.stdout.columns ?? 80;
+
     // Build the input line with cursor indicator
     const promptLen = this.stripAnsi(this.prompt).length;
-    const maxInputLen = this.terminalWidth - promptLen - 1;
+    const maxInputLen = terminalWidth - promptLen - 1;
 
     let displayInput = this.currentInput;
     let displayCursor = this.cursorPosition;

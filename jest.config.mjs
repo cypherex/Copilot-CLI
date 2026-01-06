@@ -23,6 +23,7 @@ export default {
     '!src/index.ts',
   ],
   moduleNameMapper: {
+    '^chalk$': '<rootDir>/src/test/chalk-mock.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   extensionsToTreatAsEsm: ['.ts'],

@@ -8,6 +8,7 @@ import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
 import type { CompletionTracker } from '../audit/index.js';
 import { uiState } from '../ui/ui-state.js';
+import { getRenderManager } from '../ui/render-manager.js';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -158,8 +159,9 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
       parallelExecutionId: executionId,
     });
 
-    // Create spinner
-    const spinner = ora(`Running ${toolCalls.length} tool(s) in parallel...`).start();
+    // Avoid ora spinners when RenderManager UI is active (they corrupt the screen)
+    const useSpinner = Boolean(process.stdout.isTTY && !getRenderManager());
+    const spinner = useSpinner ? ora(`Running ${toolCalls.length} tool(s) in parallel...`).start() : null;
 
     // Execute all tools in parallel
     const toolPromises = toolCalls.map(async (toolCall, index): Promise<ParallelToolResult> => {
@@ -344,9 +346,9 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
     const failed = results.filter(r => !r.success).length;
 
     if (failed === 0) {
-      spinner.succeed(`All ${toolCalls.length} tool(s) completed successfully in ${totalTime}ms`);
+      spinner?.succeed(`All ${toolCalls.length} tool(s) completed successfully in ${totalTime}ms`);
     } else {
-      spinner.warn(`${successful}/${toolCalls.length} tools completed (${failed} failed) in ${totalTime}ms`);
+      spinner?.warn(`${successful}/${toolCalls.length} tools completed (${failed} failed) in ${totalTime}ms`);
     }
 
     // Mark parallel execution as completed in UIState

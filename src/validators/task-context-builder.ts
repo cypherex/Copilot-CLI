@@ -24,6 +24,7 @@ export function buildTaskContext(tasks: Task[]): string {
   const active = tasks.filter(t => t.status === 'active');
   const waiting = tasks.filter(t => t.status === 'waiting');
   const blocked = tasks.filter(t => t.status === 'blocked');
+  const pendingVerification = tasks.filter(t => t.status === 'pending_verification');
 
   // Helper to render a task with indentation
   const renderTask = (task: Task, depth: number = 0): string[] => {
@@ -33,6 +34,7 @@ export function buildTaskContext(tasks: Task[]): string {
     // Status icon
     const statusIcon = task.status === 'completed' ? '✓' :
                       task.status === 'active' ? '●' :
+                      task.status === 'pending_verification' ? '⧗' :
                       task.status === 'blocked' ? '⚠' : '○';
 
     // Priority label
@@ -58,8 +60,15 @@ export function buildTaskContext(tasks: Task[]): string {
     // Find and render children
     const children = tasks.filter(t => t.parentId === task.id);
     if (children.length > 0) {
-      // Sort children: active first, then waiting, then blocked, then completed, then abandoned
-      const statusOrder: Record<string, number> = { active: 0, waiting: 1, blocked: 2, completed: 3, abandoned: 4 };
+      // Sort children: active first, then pending_verification, then waiting, then blocked, then completed, then abandoned
+      const statusOrder: Record<string, number> = {
+        active: 0,
+        pending_verification: 1,
+        waiting: 2,
+        blocked: 3,
+        completed: 4,
+        abandoned: 5,
+      };
       const sortedChildren = children.sort((a, b) => {
         return (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5);
       });
@@ -94,6 +103,15 @@ export function buildTaskContext(tasks: Task[]): string {
     lines.push('');
   }
 
+  if (pendingVerification.length > 0) {
+    lines.push('PENDING VERIFICATION TASKS:');
+    const topLevelPendingVerification = pendingVerification.filter(t => !t.parentId);
+    for (const task of topLevelPendingVerification) {
+      lines.push(...renderTaskHierarchy(task, 1));
+    }
+    lines.push('');
+  }
+
   if (blocked.length > 0) {
     lines.push('BLOCKED TASKS:');
     const topLevelBlocked = blocked.filter(t => !t.parentId);
@@ -119,7 +137,7 @@ export function buildTaskContext(tasks: Task[]): string {
 
   lines.push('SUMMARY:');
   lines.push(`  Total: ${totalTasks} tasks (${topLevel} top-level, ${subtasks} subtasks)`);
-  lines.push(`  Active: ${active.length} | Pending: ${waiting.length} | Blocked: ${blocked.length} | Completed: ${completed.length}`);
+  lines.push(`  Active: ${active.length} | Pending: ${waiting.length} | Pending Verification: ${pendingVerification.length} | Blocked: ${blocked.length} | Completed: ${completed.length}`);
 
   return lines.join('\n');
 }
@@ -131,7 +149,7 @@ export function buildTaskContext(tasks: Task[]): string {
  * @param status - Status to filter by
  * @returns Formatted string showing only tasks with the given status
  */
-export function buildTaskContextByStatus(tasks: Task[], status: 'active' | 'waiting' | 'blocked' | 'completed'): string {
+export function buildTaskContextByStatus(tasks: Task[], status: 'active' | 'waiting' | 'pending_verification' | 'blocked' | 'completed'): string {
   const filtered = tasks.filter(t => t.status === status);
 
   if (filtered.length === 0) {

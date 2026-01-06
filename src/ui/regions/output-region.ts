@@ -6,8 +6,8 @@
 import chalk from 'chalk';
 import type { RenderManager } from '../render-manager.js';
 import { uiState, type MessageState } from '../ui-state.js';
-import { ParallelExecutionRenderer } from './parallel-execution-region.js';
-import { SubagentRenderer } from './subagent-region.js';
+import { ParallelExecutionRenderer } from './parallel-execution-renderer.js';
+import { SubagentStatusRenderer } from './subagent-status-renderer.js';
 
 /**
  * Output region handles the scrollable main content area
@@ -64,8 +64,19 @@ export class OutputRegion {
           }
         }
 
-        // Update all active live messages
-        for (const [id, msg] of state.liveMessages) {
+        // Update all active live messages in output order so line-count deltas can
+        // correctly shift subsequent live message positions.
+        const entries = Array.from(state.liveMessages.entries());
+        entries.sort(([aId], [bId]) => {
+          const aPos = this.liveMessagePositions.get(aId);
+          const bPos = this.liveMessagePositions.get(bId);
+          if (aPos && bPos) return aPos.startLine - bPos.startLine;
+          if (aPos) return -1;
+          if (bPos) return 1;
+          return 0;
+        });
+
+        for (const [id, msg] of entries) {
           this.updateLiveMessage(id, msg);
         }
       }
@@ -113,12 +124,27 @@ export class OutputRegion {
     const existingPosition = this.liveMessagePositions.get(id);
 
     if (existingPosition) {
+      const delta = lines.length - existingPosition.lineCount;
+
       // Replace existing lines in buffer
       this.renderManager.replaceOutputLines(
         existingPosition.startLine,
         existingPosition.lineCount,
         lines
       );
+
+      if (delta !== 0) {
+        // Shift positions of subsequent tracked live messages
+        for (const [otherId, otherPos] of Array.from(this.liveMessagePositions.entries())) {
+          if (otherId === id) continue;
+          if (otherPos.startLine > existingPosition.startLine) {
+            this.liveMessagePositions.set(otherId, {
+              startLine: otherPos.startLine + delta,
+              lineCount: otherPos.lineCount,
+            });
+          }
+        }
+      }
 
       // Update position with new line count (start stays the same)
       this.liveMessagePositions.set(id, {
@@ -149,6 +175,10 @@ export class OutputRegion {
 
     switch (msg.role) {
       case 'parallel-status':
+        if (msg.content) {
+          lines.push(...msg.content.split('\n'));
+          break;
+        }
         if (msg.parallelExecutionId) {
           const state = uiState.getState();
           const rendered = ParallelExecutionRenderer.render(
@@ -159,16 +189,21 @@ export class OutputRegion {
         }
         break;
       case 'subagent-status':
+        if (msg.content) {
+          lines.push(...msg.content.split('\n'));
+          break;
+        }
         if (msg.subagentId) {
           const state = uiState.getState();
-          const rendered = SubagentRenderer.render(state.subagents, msg.subagentId);
+          const rendered = SubagentStatusRenderer.render(state.subagents, msg.subagentId);
           lines.push(...rendered);
         }
         break;
       default:
-        // For other message types, just return the content as single line
+        // For other message types, split content into lines so live updates can
+        // accurately track and replace the occupied output area.
         if (msg.content) {
-          lines.push(msg.content);
+          lines.push(...msg.content.split('\n'));
         }
     }
 
@@ -222,7 +257,7 @@ export class OutputRegion {
         // Render live subagent status
         if (msg.subagentId) {
           const state = uiState.getState();
-          const lines = SubagentRenderer.render(
+          const lines = SubagentStatusRenderer.render(
             state.subagents,
             msg.subagentId
           );

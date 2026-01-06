@@ -24,8 +24,8 @@ export class ParallelExecutionRenderer {
     if (execution.isActive) {
       // Active execution - show live status
       const header = execution.description
-        ? `🔄 Parallel: ${execution.description}`
-        : `🔄 Parallel: ${execution.tools.length} operations`;
+        ? `⎇ Parallel: ${execution.description}`
+        : `⎇ Parallel: ${execution.tools.length} operations`;
       lines.push(chalk.cyan(header));
 
       // Tool status list
@@ -79,7 +79,7 @@ export class ParallelExecutionRenderer {
       case 'pending':
         return '○';
       case 'running':
-        return '◐';
+        return '▶';
       case 'success':
         return '✓';
       case 'error':

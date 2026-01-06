@@ -5,6 +5,7 @@
 import chalk from 'chalk';
 import { BaseRegion } from './base-region.js';
 import { uiState, type UIStateData } from '../ui-state.js';
+import { getRenderManager } from '../render-manager.js';
 
 /**
  * Status info for manual updates
@@ -15,6 +16,7 @@ export interface StatusInfo {
   tokensUsed?: number;
   tokensLimit?: number;
   modelName?: string;
+  providerName?: string;
 }
 
 /**
@@ -65,6 +67,7 @@ export class StatusRegion extends BaseRegion {
    */
   render(): void {
     const state = uiState.getState();
+    const terminalWidth = getRenderManager()?.getTerminalWidth() ?? process.stdout.columns ?? 80;
     const parts: string[] = [];
 
     // Status indicator
@@ -77,9 +80,9 @@ export class StatusRegion extends BaseRegion {
     };
     const statusIcons: Record<string, string> = {
       idle: '○',
-      thinking: '◐',
-      executing: '●',
-      waiting: '◑',
+      thinking: '…',
+      executing: '▶',
+      waiting: '⏳',
       error: '✗',
     };
     const colorFn = statusColors[state.agentStatus] || chalk.white;
@@ -99,7 +102,7 @@ export class StatusRegion extends BaseRegion {
     }
 
     // Active tasks count
-    const activeTasks = state.allTasks.filter(t => t.status === 'in_progress').length;
+    const activeTasks = state.allTasks.filter(t => t.status === 'in_progress' || t.status === 'verifying').length;
     if (activeTasks > 0) {
       parts.push(chalk.yellow(`${activeTasks} tasks`));
     }
@@ -108,7 +111,7 @@ export class StatusRegion extends BaseRegion {
     if (state.currentToolExecution) {
       const tool = state.currentToolExecution;
       if (tool.status === 'running') {
-        parts.push(chalk.blue(`⚙ ${tool.name}`));
+        parts.push(chalk.blue(`↪ ${tool.name}`));
       }
     }
 
@@ -116,13 +119,13 @@ export class StatusRegion extends BaseRegion {
     if (state.parallelExecution?.isActive) {
       const completed = state.parallelExecution.tools.filter(t => t.status === 'success' || t.status === 'error').length;
       const total = state.parallelExecution.tools.length;
-      parts.push(chalk.cyan(`⚡ ${completed}/${total} parallel`));
+      parts.push(chalk.cyan(`⎇ ${completed}/${total}`));
     }
 
     // Active subagents
     if (state.subagents?.active && state.subagents.active.length > 0) {
       const count = state.subagents.active.length;
-      parts.push(chalk.magenta(`🤖 ${count} agent${count > 1 ? 's' : ''}`));
+      parts.push(chalk.magenta(`⧉ ${count}`));
     }
 
     // Model name
@@ -130,8 +133,17 @@ export class StatusRegion extends BaseRegion {
       parts.push(chalk.dim(state.modelName));
     }
 
-    const statusLine = parts.join(chalk.dim(' │ '));
+    let statusLine = parts.join(chalk.dim(' · '));
+    statusLine = this.truncateAnsi(statusLine, terminalWidth);
     this.update([statusLine]);
+  }
+
+  private truncateAnsi(text: string, width: number): string {
+    const plain = text.replace(/\x1b\[[0-9;]*m/g, '');
+    if (plain.length <= width) return text;
+    // crude truncate: cut the raw string by overflow amount
+    const overflow = plain.length - width;
+    return text.slice(0, Math.max(0, text.length - overflow - 1)) + '…';
   }
 
   /**
@@ -152,6 +164,9 @@ export class StatusRegion extends BaseRegion {
     }
     if (info.modelName !== undefined) {
       updates.modelName = info.modelName;
+    }
+    if (info.providerName !== undefined) {
+      updates.providerName = info.providerName;
     }
 
     uiState.update(updates);

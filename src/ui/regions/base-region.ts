@@ -42,6 +42,7 @@ export abstract class BaseRegion {
       height: this.height,
       zIndex: this.zIndex,
       visible: this.visible,
+      stack: true,
     });
   }
 

@@ -8,8 +8,8 @@
 import chalk from 'chalk';
 import type { WriteStream } from 'fs';
 import { uiState, type MessageState } from './ui-state.js';
-import { ParallelExecutionRenderer } from './regions/parallel-execution-region.js';
-import { SubagentRenderer } from './regions/subagent-region.js';
+import { ParallelExecutionRenderer } from './regions/parallel-execution-renderer.js';
+import { SubagentStatusRenderer } from './regions/subagent-status-renderer.js';
 import type { LogManager } from './log-manager.js';
 import type { SubAgentManager } from '../agent/subagent.js';
 
@@ -289,6 +289,10 @@ export class AskRenderer {
 
     switch (msg.role) {
       case 'parallel-status':
+        if (msg.content) {
+          lines.push(...msg.content.split('\n').map(line => this.stripAnsiIfNeeded(line)));
+          break;
+        }
         if (msg.parallelExecutionId) {
           const state = uiState.getState();
           const rendered = ParallelExecutionRenderer.render(
@@ -300,9 +304,13 @@ export class AskRenderer {
         }
         break;
       case 'subagent-status':
+        if (msg.content) {
+          lines.push(...msg.content.split('\n').map(line => this.stripAnsiIfNeeded(line)));
+          break;
+        }
         if (msg.subagentId) {
           const state = uiState.getState();
-          const rendered = SubagentRenderer.render(state.subagents, msg.subagentId);
+          const rendered = SubagentStatusRenderer.render(state.subagents, msg.subagentId);
           lines.push(...rendered.map(line => this.stripAnsiIfNeeded(line)));
         }
         break;
@@ -474,7 +482,7 @@ export class AskRenderer {
 
     // Always write full details to subagent log if using LogManager
     if (this.options.logManager) {
-      const lines = SubagentRenderer.render(state.subagents, subagentId);
+      const lines = SubagentStatusRenderer.render(state.subagents, subagentId);
       const content = lines.map(line => this.stripAnsi(line)).join('\n') + '\n\n';
       this.options.logManager.writeToSubagent(subagentId, content, subagentState.role).catch(err => {
         console.error('Failed to write to subagent log:', err);
@@ -527,7 +535,7 @@ export class AskRenderer {
       // Skip rendering for intermediate statuses like "running" to reduce noise
     } else {
       // No log manager - render full details to main output (backward compatibility)
-      const lines = SubagentRenderer.render(state.subagents, subagentId);
+      const lines = SubagentStatusRenderer.render(state.subagents, subagentId);
       for (const line of lines) {
         this.writeLine(this.stripAnsiIfNeeded(line));
       }
