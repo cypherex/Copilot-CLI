@@ -1,5 +1,5 @@
 {
-  "total_tasks": 1742,
+  "total_tasks": 2165,
   "root_tasks": 1,
   "roots": [
     {
@@ -13925,7 +13925,3834 @@
                   "depth": 3,
                   "complexity": null,
                   "ready_to_spawn": null,
+                  "children": [
+                    {
+                      "id": "task_1742",
+                      "description": "Define Process Control Data Structures and Abstraction Interface",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1743",
+                      "description": "Implement Command Configuration and Validation Logic",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1744",
+                      "description": "Implement POSIX Process Spawning Primitives",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1745",
+                      "description": "Define core data structures, configuration, and error types",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1746",
+                      "description": "Implement Buffer Pool Lifecycle (Init, Reset, Cleanup)",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1747",
+                      "description": "Implement Thread-Safe Allocation and Deallocation Engine",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1748",
+                      "description": "Define fundamental network data types and structures",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1749",
+                      "description": "Define comprehensive error types for network operations",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1750",
+                      "description": "Define the Physical Layer abstraction trait",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1751",
+                      "description": "Define all ARP data structures, enums, and error types as the foundation for the module",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1752",
+                      "description": "Implement ARP packet parsing from raw bytes and serialization back to bytes with validation",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1753",
+                      "description": "Implement ARP cache storage with CRUD operations, lookup, and eviction policy",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1754",
+                      "description": "IO Test Infrastructure and Mocking Framework",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1755",
+                      "description": "File Operations Unit Tests (Read, Write, Seek)",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1756",
+                      "description": "Standard Stream Handling Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1757",
+                      "description": "Implement Windows Process Spawning Primitives",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1758",
+                      "description": "Implement Standard I/O Redirection and Pipe Handling",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1759",
+                      "description": "Implement Process Lifecycle Management (Wait, Terminate, Reap)",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1760",
+                      "description": "Implement Packet Manipulation Operations (Resize, Trim, Refcount)",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1761",
+                      "description": "Implement Statistics and Diagnostics",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1762",
+                      "description": "Write Unit and Functional Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "simple",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1763",
+                      "description": "Define the Datalink Layer abstraction trait",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1764",
+                      "description": "Implement Interface Management logic",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1765",
+                      "description": "Implement Mock/Null hardware drivers for testing",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1766",
+                      "description": "Implement pending request tracking with retry logic, exponential backoff, and timeout management",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1767",
+                      "description": "Process incoming ARP requests, validate target IP, generate and send appropriate replies",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1768",
+                      "description": "Process incoming ARP replies, validate against pending requests, update cache, and notify waiting code",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1769",
+                      "description": "Error Handling and Edge Case Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1770",
+                      "description": "Buffer Management and Concurrency Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1771",
+                      "description": "IO Module Documentation Generation",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1772",
+                      "description": "Implement Error Mapping and System Call Wrappers",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1773",
+                      "description": "Develop Comprehensive Integration and Unit Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1774",
+                      "description": "Write Concurrency and Stress Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1775",
+                      "description": "Write Failure Injection and Edge Case Tests",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1776",
+                      "description": "Implement integration and dispatch utilities",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1777",
+                      "description": "Generate and transmit outgoing ARP requests via network driver with error handling",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1778",
+                      "description": "Implement periodic cache maintenance for expiring old entries and background cleanup",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1779",
+                      "description": "Implement public API for IP stack integration including sync/async resolution and local IP management",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "simple",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1780",
+                      "description": "Integration and Coverage Validation",
+                      "parent_id": "task_1741",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1781",
+                  "description": "Implement Environment Variable retrieval and parsing",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
                   "children": []
+                },
+                {
+                  "id": "task_1782",
+                  "description": "Implement high-level module API facade and integration",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1783",
+                  "description": "Implement comprehensive tests and mocks",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_1784",
+                      "description": "Implement comprehensive test suite covering unit tests, integration tests, edge cases, and error scenarios",
+                      "parent_id": "task_1783",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1785",
+                  "description": "Implement Math Module Unit Tests and Documentation",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1786",
+                  "description": "Implement Collections (List, Map, Set) Unit Tests and Documentation",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1787",
+                  "description": "Implement Concurrency Primitives Unit Tests and Documentation",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_1788",
+                  "description": "Implement IPv4 Core Logic (Routing and Forwarding)",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1789",
+                  "description": "Implement UDP Protocol Handler",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1790",
+                  "description": "Define Core TCP Data Structures and Socket API Mapping",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_1791",
+                      "description": "Define Facade Interface, Public Contracts, and Data Types",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1792",
+                      "description": "Implement Facade Structure, Constructor, and Dependency Injection",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1793",
+                      "description": "Implement Delegation Logic for Existing Subsystem Operations",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1794",
+                      "description": "Establish Testing Framework Infrastructure and Utilities",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1795",
+                      "description": "Implement Mock External Services and I/O Interfaces",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1796",
+                      "description": "Develop Lexer and Tokenizer Unit Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1797",
+                      "description": "Implement Common Test Infrastructure and Fixtures",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1798",
+                      "description": "Implement List Unit Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1799",
+                      "description": "Implement Map Unit Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1800",
+                      "description": "Set up Concurrency Test Harness and Utilities",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1801",
+                      "description": "Implement Unit Tests for Mutex Primitives",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1802",
+                      "description": "Implement Unit Tests for Semaphore Primitives",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1803",
+                      "description": "Implement Error Translation and Abstraction Layer",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1804",
+                      "description": "Implement External API Integration and Bridging Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1805",
+                      "description": "Implement Input Validation and Sanitization Utilities",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1806",
+                      "description": "Develop Parser and AST Structure Unit Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1807",
+                      "description": "Develop Semantic Analysis and Type Checking Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1808",
+                      "description": "Develop Intermediate Representation (IR) Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1809",
+                      "description": "Define IPv4 Core Data Structures and Types",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1810",
+                      "description": "Implement Packet Parsing and Validation",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1811",
+                      "description": "Implement Routing Table Logic and Longest Prefix Match (LPM)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1812",
+                      "description": "Define Core Data Structures & Error Types",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1813",
+                      "description": "Implement OS-Level Socket Abstraction",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1814",
+                      "description": "Implement Address Parsing & Validation",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1815",
+                      "description": "Define Core TCP Data Structures and State Machine Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1816",
+                      "description": "Implement Socket Buffer Management (Ring Buffers)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1817",
+                      "description": "Implement Socket Lifecycle APIs (socket, close, shutdown)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1818",
+                      "description": "Implement Set Unit Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1819",
+                      "description": "Author Collections Documentation",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1820",
+                      "description": "Implement Unit Tests for Channel Primitives (Unbuffered)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1821",
+                      "description": "Implement Unit Tests for Channel Primitives (Buffered)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1822",
+                      "description": "Implement Race Condition and Stress Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1823",
+                      "description": "Write Unit Tests for Delegation and Transformation Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1824",
+                      "description": "Write Integration Tests for Subsystem and External API Interaction",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1825",
+                      "description": "Write Edge Case, Boundary, and Fault Injection Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1826",
+                      "description": "Develop Code Generation and Optimization Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1827",
+                      "description": "Develop Compiler Driver and CLI Integration Tests",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1828",
+                      "description": "Develop Diagnostics and Error Reporting Validation",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1829",
+                      "description": "Implement Forwarding Engine Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1830",
+                      "description": "Implement Fragmentation and Reassembly",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1831",
+                      "description": "Define Memory and Network Interface Integration Layer",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1832",
+                      "description": "Implement Packet Transmission Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1833",
+                      "description": "Implement Packet Reception Logic",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1834",
+                      "description": "Integrate with Async Runtime",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1835",
+                      "description": "Implement Server Configuration APIs (bind, listen)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1836",
+                      "description": "Implement Connection Establishment APIs (connect, accept)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1837",
+                      "description": "Implement Data Transfer APIs (send, recv, sendto, recvfrom)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1838",
+                      "description": "Generate API Documentation for Mutex and Semaphore",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1839",
+                      "description": "Generate API Documentation for Channels",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1840",
+                      "description": "Verify Integration with Race Detectors and CI",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1841",
+                      "description": "Create API Documentation and Usage Examples",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1842",
+                      "description": "Implement Language Feature Regression Suite",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1843",
+                      "description": "Implement Fuzzing and Robustness Testing",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1844",
+                      "description": "Implement Error Handling and ICMP Signaling",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1845",
+                      "description": "Comprehensive Testing Suite (Unit and Integration)",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1846",
+                      "description": "Implement Handler Lifecycle Management",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1847",
+                      "description": "Implement Error Handling & Recovery Strategy",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1848",
+                      "description": "Comprehensive Testing Suite",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1849",
+                      "description": "Comprehensive Testing for Structures and API Mappings",
+                      "parent_id": "task_1790",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1850",
+                  "description": "Configure Build System Integration for Tests",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1851",
+                  "description": "Configure Build System Integration for Documentation",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1852",
+                  "description": "Implement CI/CD Pipeline for Quality Gates",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_1853",
+                  "description": "Implement TCP Finite State Machine (Connection Establishment/Termination)",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1854",
+                  "description": "Implement TCP Input Processing and Segmentation",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1855",
+                  "description": "Implement TCP Retransmission and Timer Management",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_1856",
+                      "description": "Configure Source Control Integration",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1857",
+                      "description": "Configure Secure Credentials Management",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1858",
+                      "description": "Implement Build Stage Automation",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1859",
+                      "description": "Define TCP State Enumeration and Connection Control Block (TCB) Data Structures",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1860",
+                      "description": "Implement Segment Sending and Validation Utilities",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1861",
+                      "description": "Implement Connection Establishment Logic (Handshake States)",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1862",
+                      "description": "Design and implement buffer management data structures (CircularBuffer or RingBuffer) to handle efficient append and read operations without constant reallocation.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1863",
+                      "description": "Implement a robust OS socket reading wrapper that abstracts platform-specific non-blocking I/O and handles the details of the system call.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1864",
+                      "description": "Implement connection state management to track the lifecycle of a TCP connection (Active, Draining, Closed) within the processor.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1865",
+                      "description": "Implement RTT Estimation (Jacobson/Karels Algorithm)",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1866",
+                      "description": "Implement Retransmission Queue Management",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1867",
+                      "description": "Implement ACK Processing Logic",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1868",
+                      "description": "Implement Automated Unit Testing & Reporting",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1869",
+                      "description": "Integrate Static Code Analysis (SonarQube)",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1870",
+                      "description": "Implement Security Scanning Gate",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1871",
+                      "description": "Implement Active Connection Termination (FIN_WAIT & TIME_WAIT)",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1872",
+                      "description": "Implement Passive Connection Termination (CLOSE_WAIT & LAST_ACK)",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1873",
+                      "description": "Handle Simultaneous Close, ESTABLISHED Transitions, and CLOSING State",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1874",
+                      "description": "Develop the core segmentation and reassembly logic to extract complete messages from the stream buffer based on delimiters or length-prefixing.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1875",
+                      "description": "Implement backpressure handling logic to stop reading from the socket when the application layer is not consuming fast enough (buffer high-water mark).",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1876",
+                      "description": "Implement comprehensive error handling, detection, and recovery mechanisms for network anomalies (ECONNRESET, ETIMEDOUT).",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1877",
+                      "description": "Implement Timeout and Backoff Logic",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1878",
+                      "description": "Implement Timer Infrastructure and Persistence",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1879",
+                      "description": "Implement Comprehensive Testing Suite",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1880",
+                      "description": "Implement Artifact Packaging & Versioning",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1881",
+                      "description": "Implement Deployment Stage",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1882",
+                      "description": "Implement Pipeline Notifications",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1883",
+                      "description": "Implement Core FSM Dispatcher and Transition Orchestrator",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1884",
+                      "description": "Develop Comprehensive Test Suite for TCP FSM",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1885",
+                      "description": "Create the primary Input Processing Event Loop integration that orchestrates reading, parsing, and dispatching.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1886",
+                      "description": "Write unit tests for buffer management, covering wrap-around scenarios, partial writes, and peeking data.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1887",
+                      "description": "Write unit tests for the segmentation logic, simulating fragmented packets and incomplete headers.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1888",
+                      "description": "Implement Pipeline Validation Tests",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1889",
+                      "description": "Write integration tests using mock sockets or localhost connections to verify the full data flow and backpressure behavior.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1890",
+                      "description": "Implement cleanup and resource deallocation logic to ensure no file descriptor leaks or memory leaks occur on connection drop or error.",
+                      "parent_id": "task_1855",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1891",
+                  "description": "Implement TCP Flow Control and Congestion Control",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1892",
+                  "description": "Implement TCP Output Processing and Queuing",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1893",
+                  "description": "Implement Synchronization Primitives (Locking/Spinlocks)",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": null,
+                  "children": [
+                    {
+                      "id": "task_1894",
+                      "description": "Define TCB State Variables and Enums for Flow/Congestion Control",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1895",
+                      "description": "Implement Receiver-Side Flow Control (Window Advertisement)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1896",
+                      "description": "Implement RTT Estimation and RTO Calculation (Jacobson/Karels Algorithm)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1897",
+                      "description": "Define Core TCP Output Data Structures",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1898",
+                      "description": "Implement Send Buffer and Queue Management Logic",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1899",
+                      "description": "Implement Segmentation and MSS Logic",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1900",
+                      "description": "Define Core Lock Types and Error Handling Enums",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1901",
+                      "description": "Implement Atomic Operations Wrapper",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1902",
+                      "description": "Implement Memory Barriers and Fences",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1903",
+                      "description": "Implement Congestion Control State Machine (Slow Start & Congestion Avoidance)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1904",
+                      "description": "Implement Fast Retransmit and Fast Recovery Logic",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1905",
+                      "description": "Implement Timeout Handling and Recovery",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1906",
+                      "description": "Implement TCP Checksum Calculation",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1907",
+                      "description": "Implement Retransmission Queue and RTO Management",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1908",
+                      "description": "Implement Flow Control and Window Management",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1909",
+                      "description": "Implement Spinlock Primitive",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1910",
+                      "description": "Implement Blocking Mutex Primitive",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1911",
+                      "description": "Implement Reentrant Mutex (Recursive Lock)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1912",
+                      "description": "Implement ACK Processing and Event Dispatcher",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1913",
+                      "description": "Implement Sender Throttling (Effective Window Calculation)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1914",
+                      "description": "Testing and Validation (Unit & Integration)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1915",
+                      "description": "Implement Network Interface Driver Integration (TX)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1916",
+                      "description": "Implement Timer and Interrupt Coordination",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1917",
+                      "description": "Implement Error Handling and Diagnostics",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1918",
+                      "description": "Implement Read-Write Lock (Shared/Exclusive)",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1919",
+                      "description": "Create Scheduler Integration Abstraction",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1920",
+                      "description": "Develop Comprehensive Test Suite for Atomics",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1921",
+                      "description": "Write Comprehensive Unit and Integration Tests",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1922",
+                      "description": "Develop Concurrency Stress Tests",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1923",
+                      "description": "Develop Edge Case and Poisoning Tests",
+                      "parent_id": "task_1893",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1924",
+                  "description": "Write Comprehensive Unit and Integration Tests",
+                  "parent_id": "task_1710",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": null,
+                  "children": [
+                    {
+                      "id": "task_1925",
+                      "description": "Design and Implement Testing Infrastructure and Framework",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1926",
+                      "description": "Develop Test Utilities, Assertions, and Fixture Loaders",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1927",
+                      "description": "Write Comprehensive Lexer Unit Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1928",
+                      "description": "Write Comprehensive Parser Unit Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1929",
+                      "description": "Write Semantic Analysis and Type Checking Test Suite",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1930",
+                      "description": "Write Intermediate Representation (IR) and Optimization Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1931",
+                      "description": "Write Code Generation and Backend Validation Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1932",
+                      "description": "Write Standard Library and Built-in API Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1933",
+                      "description": "Implement End-to-End Integration Test Suite",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1934",
+                      "description": "Implement Golden Master / Snapshot Testing System",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1935",
+                      "description": "Write Diagnostics and Error Message Quality Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1936",
+                      "description": "Implement Fuzzing and Property-Based Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1937",
+                      "description": "Write Runtime and Garbage Collection Tests",
+                      "parent_id": "task_1924",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "task_1938",
+          "description": "Implement Language Server (LSP), Formatter, and Static Analysis Tools",
+          "parent_id": "task_0000",
+          "depth": 1,
+          "complexity": "complex",
+          "ready_to_spawn": null,
+          "children": [
+            {
+              "id": "task_1939",
+              "description": "Implement LSP Server Infrastructure (JSON-RPC & Lifecycle)",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_1940",
+              "description": "Implement LSP Text Synchronization and Document Management",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_1941",
+              "description": "Implement Core LSP Features (Completion, Hover, Definition)",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": "complex",
+              "ready_to_spawn": true,
+              "children": [
+                {
+                  "id": "task_1942",
+                  "description": "Design and implement core LSP/JSON-RPC data structures",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1943",
+                  "description": "Implement the STDIO Transport Layer (Reader & Writer)",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1944",
+                  "description": "Implement JSON-RPC Serialization and Deserialization",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1945",
+                  "description": "Implement LSP Server Infrastructure (Connection & Lifecycle)",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1946",
+                  "description": "Implement Text Document Synchronization Manager",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1947",
+                  "description": "Define AST & Symbol Query Interface",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_1948",
+                  "description": "Implement the Request Router and Handler Registry",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1949",
+                  "description": "Implement LSP Lifecycle State Machine",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1950",
+                  "description": "Implement Built-in LSP Lifecycle Handlers (initialize, shutdown, exit)",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_1951",
+                      "description": "Define core data structures for Document Synchronization (Document state, Operations, Edit, Session metadata).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1952",
+                      "description": "Implement the Operational Transformation (OT) engine core logic (transform function).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1953",
+                      "description": "Implement Document State Management (applying operations, versioning).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1954",
+                      "description": "Define LSP Lifecycle enumeration, state context, and error types",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1955",
+                      "description": "Implement state transition validation matrix",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1956",
+                      "description": "Implement the core thread-safe State Machine engine",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1957",
+                      "description": "Implement the Persistence Layer Interface (Database interactions).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1958",
+                      "description": "Implement the WebSocket Connection Handler (Message parsing, lifecycle).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1959",
+                      "description": "Implement the Synchronization Orchestrator (Coordinating OT, State, and Network).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1960",
+                      "description": "Implement the event emission system (Observer pattern)",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1961",
+                      "description": "Implement the 'initialize' and 'initialized' handshake flow",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1962",
+                      "description": "Implement the 'shutdown' and 'exit' sequence logic",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1963",
+                      "description": "Implement Broadcast Mechanism (Distributing updates to other clients).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1964",
+                      "description": "Write Unit Tests for OT Logic (Insert/Insert, Insert/Delete, Delete/Delete, edge cases).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1965",
+                      "description": "Write Integration Tests for End-to-End Synchronization (Client A edits -> Server processes -> Client B receives).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1966",
+                      "description": "Implement the Request Guard/Interceptor middleware",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1967",
+                      "description": "Write unit tests for state transition matrix",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1968",
+                      "description": "Write integration tests for full lifecycle and request interception",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1969",
+                      "description": "Implement Error Handling and Recovery (Connection drops, DB failures, malformed ops).",
+                      "parent_id": "task_1950",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_1970",
+                  "description": "Implement the Main Server Loop (Concurrency & Orchestration)",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1971",
+                  "description": "Implement Error Handling and Exception Recovery",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1972",
+                  "description": "Write Unit Tests for Transport and Serialization",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1973",
+                  "description": "Implement Go-to-Definition Provider",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1974",
+                  "description": "Implement Hover Information Provider",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_1975",
+                  "description": "Implement Code Completion Provider",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_1976",
+                      "description": "Implement Server Bootstrapping and Initialization",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1977",
+                      "description": "Implement Network Listener (Socket Management)",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1978",
+                      "description": "Implement Worker Pool / Concurrency Abstraction",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1979",
+                      "description": "Define Core Error Type Hierarchy",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1980",
+                      "description": "Implement Retry Logic with Backoff Strategy",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1981",
+                      "description": "Implement Circuit Breaker Pattern",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1982",
+                      "description": "Define Core Completion Data Structures and Types",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1983",
+                      "description": "Implement LSP Completion Request Handler",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1984",
+                      "description": "Implement Context Analysis Service",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1985",
+                      "description": "Implement Connection Dispatching Logic",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1986",
+                      "description": "Implement Graceful Shutdown Mechanism",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1987",
+                      "description": "Implement Main Event Loop Orchestration",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1988",
+                      "description": "Implement Fallback and Recovery Handlers",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1989",
+                      "description": "Design Error Logging and Reporting Pipeline",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1990",
+                      "description": "Wrap External API Client with Error Handling",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1991",
+                      "description": "Implement Symbol Lookup Adapter",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1992",
+                      "description": "Implement Static Content Provider (Keywords & Snippets)",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1993",
+                      "description": "Implement Candidate Aggregation, Filtering, and Scoring",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1994",
+                      "description": "Implement Logging Integration for Server Events",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1995",
+                      "description": "Implement Configuration Validation and Integration",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1996",
+                      "description": "Wrap Database Access Layer with Error Handling",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1997",
+                      "description": "Implement Central Error Handler/Router",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1998",
+                      "description": "Add Context Extraction Utilities",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_1999",
+                      "description": "Implement Completion Item Resolution (Lazy Loading)",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2000",
+                      "description": "Implement Edge Case and Error Recovery Handling",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2001",
+                      "description": "Implement Unit and Integration Tests",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2002",
+                      "description": "Write Unit Tests for Error Types and Utilities",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2003",
+                      "description": "Write Unit Tests for Resilience Patterns",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2004",
+                      "description": "Write Integration Tests for End-to-End Error Flows",
+                      "parent_id": "task_1975",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2005",
+                  "description": "Implement Diagnostics Publishing & Error Handling",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2006",
+                  "description": "Testing and Validation Suite",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_2007",
+                  "description": "Write Unit and Integration Tests for Router and Lifecycle",
+                  "parent_id": "task_1941",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2008",
+                      "description": "Configure Testing Infrastructure and CI/CD Pipeline",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2009",
+                      "description": "Develop Test Utilities and Mocks",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2010",
+                      "description": "Construct Language Test Corpus",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2011",
+                      "description": "Implement Test Infrastructure, Mocks, and Shared Fixtures",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2012",
+                      "description": "Write Unit Tests for Route Matching and Resolution Logic",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2013",
+                      "description": "Write Unit Tests for Navigation Flow, Guards, and Redirections",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2014",
+                      "description": "Implement Lexer Unit Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2015",
+                      "description": "Implement Parser Unit Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2016",
+                      "description": "Implement Semantic Analysis Unit Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2017",
+                      "description": "Write Unit Tests for Lifecycle State Transitions",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2018",
+                      "description": "Write Unit Tests for Lifecycle Hooks and Side Effects",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2019",
+                      "description": "Write Integration Tests for Router, State, and Lifecycle Orchestration",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2020",
+                      "description": "Implement Intermediate Representation (IR) Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2021",
+                      "description": "Implement Code Generation Unit Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2022",
+                      "description": "Implement Runtime and Standard Library Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2023",
+                      "description": "Write Integration Tests for External Services and Error Recovery",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2024",
+                      "description": "Implement End-to-End Integration and Regression Tests",
+                      "parent_id": "task_2007",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "task_2025",
+              "description": "Implement LSP Diagnostics/Publishing Integration",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_2026",
+              "description": "Implement Configuration Management System",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_2027",
+              "description": "Implement AST Visitor for Code Traversal (Shared)",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": "complex",
+              "ready_to_spawn": null,
+              "children": [
+                {
+                  "id": "task_2028",
+                  "description": "Define LSP Diagnostic Data Structures and Enums",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2029",
+                  "description": "Implement LSP Client Notification Interface",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2030",
+                  "description": "Implement Diagnostic Conversion Adapter (Internal Format \u2192 LSP)",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2031",
+                  "description": "Define Core Data Types, Enums, and Error Domain",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2032",
+                  "description": "Implement File System Loader and Path Resolution",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2033",
+                  "description": "Implement Environment Variable Loader and Mapper",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2034",
+                  "description": "Define Visitor Trait, Result Types, and Core Contracts",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2035",
+                  "description": "Implement Recursive Traversal for Expression Nodes",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2036",
+                  "description": "Implement Recursive Traversal for Statement Nodes",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_2037",
+                  "description": "Develop Configuration Merging Logic",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2038",
+                  "description": "Implement Schema Validation System",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2039",
+                  "description": "Build Configuration Manager Orchestrator",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_2040",
+                  "description": "Implement Recursive Traversal for Declarations and Types",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2041",
+                  "description": "Implement Error Handling, Context Propagation, and Flow Control",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2042",
+                  "description": "Create Testing Utilities and Mock Visitors",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": [
+                    {
+                      "id": "task_2043",
+                      "description": "Define the core `Notification` trait/interface specifying the method string and parameters.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2044",
+                      "description": "Implement data models for General Notifications (window/logMessage, window/showMessage, telemetry/event).",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2045",
+                      "description": "Implement data models for Text Document Notifications (textDocument/publishDiagnostics, textDocument/didOpen).",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2046",
+                      "description": "Implement JSON-RPC Serialization logic for Notifications (formatting jsonrpc version, method, params).",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2047",
+                      "description": "Implement the ClientNotifier component responsible for transport interaction.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2048",
+                      "description": "Implement Validation Logic and Error Types for Notifications.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2049",
+                      "description": "Define core data structures and types for schema definitions (AST/DSL)",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2050",
+                      "description": "Implement primitive type validators (string, number, boolean, null)",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2051",
+                      "description": "Implement complex structure validators (objects, arrays, nested schemas)",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2052",
+                      "description": "Define Core Abstractions, Data Models, and Error Types",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2053",
+                      "description": "Implement Orchestrator Core (Merging, Prioritization, State)",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2054",
+                      "description": "Implement File System Loader and Parsing Logic",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2055",
+                      "description": "Define Visitor Interface and Core Traversal Infrastructure",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2056",
+                      "description": "Implement Declaration Node Visitor Handlers",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2057",
+                      "description": "Implement Type Node Visitor Handlers",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2058",
+                      "description": "Define Core Error Hierarchy and Types",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2059",
+                      "description": "Implement Error Wrapping and Formatting Utilities",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2060",
+                      "description": "Define Context Data Structure and Storage",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2061",
+                      "description": "Implement Convenience Utility Functions for common notifications.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2062",
+                      "description": "Write Unit Tests for Data Models and Serialization.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2063",
+                      "description": "Write Integration Tests for Notification Flow using Mock Transport.",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2064",
+                      "description": "Implement the main validation engine orchestrator",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2065",
+                      "description": "Design and implement the validation error handling and reporting system",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2066",
+                      "description": "Implement API middleware for automatic request validation",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2067",
+                      "description": "Implement Environment Variable Loader",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2068",
+                      "description": "Implement Schema Validation and Type Safety Checks",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2069",
+                      "description": "Implement Hot Reload and File Watcher Service",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2070",
+                      "description": "Implement Safety Mechanisms and Error Handling",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2071",
+                      "description": "Write Comprehensive Test Suite",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2072",
+                      "description": "Implement Request Pipeline Framework (Middleware Chain)",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2073",
+                      "description": "Implement Context Propagation Middleware",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2074",
+                      "description": "Implement Global Error Handling Middleware",
+                      "parent_id": "task_2042",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2075",
+                  "description": "Implement Diagnostic Publishing Service",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2076",
+                  "description": "Integrate with File System Event Loop",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2077",
+                  "description": "Implement Debouncing and Cancellation Logic",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2078",
+                      "description": "Write comprehensive unit tests for validators and error handling",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2079",
+                      "description": "Write integration tests for middleware and end-to-end flows",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2080",
+                      "description": "Identify performance bottlenecks and optimize for large payloads",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2081",
+                      "description": "Develop Comprehensive Test Suite (Unit & Integration)",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2082",
+                      "description": "Implement Resilience Logic (Retry and Backoff)",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2083",
+                      "description": "Implement Circuit Breaker State Machine",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2084",
+                      "description": "Wrap External Clients with Resilience Policies",
+                      "parent_id": "task_2077",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2085",
+                  "description": "Implement Diagnostics Caching and Versioning",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2086",
+                  "description": "Implement Error Handling for Analysis Failures",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2087",
+                  "description": "Write Unit Tests for Data Structures and Enums",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": "complex",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2088",
+                      "description": "Create documentation and usage examples for developers",
+                      "parent_id": "task_2087",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2089",
+                  "description": "Implement Utilities, Helpers, and Test Fixtures",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": [
+                    {
+                      "id": "task_2090",
+                      "description": "Define Caching Data Models and Serialization Logic",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2091",
+                      "description": "Implement Cache Key Generation Strategy",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2092",
+                      "description": "Define Cache Provider Abstraction Interface",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "simple",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2093",
+                      "description": "Implement In-Memory Cache Provider",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2094",
+                      "description": "Implement Redis Cache Provider with Resilience",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2095",
+                      "description": "Implement Diagnostic Caching Service (Orchestrator)",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2096",
+                      "description": "Implement Source Location Primitives (Positions, Spans)",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2097",
+                      "description": "Implement Diagnostic and Error Reporting Infrastructure",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2098",
+                      "description": "Implement File I/O and Path Utilities",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2099",
+                      "description": "Implement Version Validation and Invalidation Logic",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2100",
+                      "description": "Setup Dependency Injection and Configuration",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2101",
+                      "description": "Write Unit Tests for Core Logic",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2102",
+                      "description": "Implement Text Manipulation and String Helpers",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2103",
+                      "description": "Implement AST Visitor Base Traits",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2104",
+                      "description": "Create Test Fixture Data Repository",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2105",
+                      "description": "Write Integration and Error Handling Tests",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2106",
+                      "description": "Implement Custom Testing Assertions and Macros",
+                      "parent_id": "task_2089",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2107",
+                  "description": "Write Unit Tests for Conversion Adapters",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2108",
+                  "description": "Write Integration Tests for Publish Flow",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2109",
+                  "description": "Write Tests for Lifecycle and Debouncing",
+                  "parent_id": "task_2027",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2110",
+                      "description": "Implement Test Infrastructure and Orchestration Harness",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2111",
+                      "description": "Create Test Fixture Factory for Artifacts and Manifests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2112",
+                      "description": "Develop End-to-End Happy Path Integration Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2113",
+                      "description": "Implement Validation and Authentication Failure Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2114",
+                      "description": "Develop Conflict Resolution and Idempotency Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2115",
+                      "description": "Implement Infrastructure Failure and Rollback Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2116",
+                      "description": "Create Data Consistency and Integrity Verification Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2117",
+                      "description": "Implement Concurrency and Race Condition Tests",
+                      "parent_id": "task_2109",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "task_2118",
+              "description": "Implement Pretty-Printer / AST Formatter",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_2119",
+              "description": "Implement Static Analysis Rules Engine",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": null,
+              "ready_to_spawn": null,
+              "children": []
+            },
+            {
+              "id": "task_2120",
+              "description": "Implement Common Static Analysis Rules",
+              "parent_id": "task_1938",
+              "depth": 2,
+              "complexity": "moderate",
+              "ready_to_spawn": true,
+              "children": [
+                {
+                  "id": "task_2121",
+                  "description": "Implement Formatter State & Buffer Management",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2122",
+                  "description": "Implement Visitor Pattern Skeleton & Entry Point",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2123",
+                  "description": "Implement Atomic & Leaf Node Formatting",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2124",
+                  "description": "Define Core Data Structures and Types",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2125",
+                  "description": "Implement Rule Registry and Plugin Architecture",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2126",
+                  "description": "Build AST Traversal Framework",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": []
+                },
+                {
+                  "id": "task_2127",
+                  "description": "Implement Expression Formatting & Precedence Logic",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2128",
+                  "description": "Implement Statement & Control Flow Formatting",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2129",
+                  "description": "Implement Declaration & Definition Formatting",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2130",
+                      "description": "Define core plugin interfaces, data structures, and error types that serve as the foundation for the entire plugin system",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2131",
+                      "description": "Implement the rule registry core logic for registering, storing, retrieving, and validating rules",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2132",
+                      "description": "Implement plugin discovery mechanism to scan filesystem directories and identify plugin files",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2133",
+                      "description": "Define Core Visitor Interface and Error Handling Contract",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2134",
+                      "description": "Define AST Node Abstraction and Traversal Contracts",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2135",
+                      "description": "Implement Recursive Traversal Engine",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2136",
+                      "description": "Define Precedence and Associativity Constants",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2137",
+                      "description": "Implement Base Expression Formatter Visitor",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2138",
+                      "description": "Implement Parentheses Injection Logic",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2139",
+                      "description": "Implement Basic Statement Printing (Block, Empty, Expression, Labeled)",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2140",
+                      "description": "Implement Conditional Statement Printing (If/Else)",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2141",
+                      "description": "Implement Iteration Loop Printing (For, While, Do-While)",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2142",
+                      "description": "Implement dynamic plugin loading system to load discovered plugins, instantiate them, and validate interface compliance",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2143",
+                      "description": "Implement rule execution engine with matching logic, context management, and error handling",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2144",
+                      "description": "Implement configuration integration for plugin settings, discovery paths, and rule preferences",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2145",
+                      "description": "Implement Visitor Context and State Management",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2146",
+                      "description": "Implement Utility and Debug Visitors",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2147",
+                      "description": "Comprehensive Test Suite and Mock Infrastructure",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2148",
+                      "description": "Implement Binary Expression Formatter",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2149",
+                      "description": "Implement Unary Expression Formatter",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2150",
+                      "description": "Implement Literal, Identifier, and Primitive Formatters",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "simple",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2151",
+                      "description": "Implement Switch Statement Printing",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2152",
+                      "description": "Implement Exception Control Flow Printing (Try/Catch/Finally)",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2153",
+                      "description": "Implement Jump/Return Statement Printing",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2154",
+                      "description": "Integrate plugin system with core application lifecycle including initialization, API exposure, and graceful shutdown",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2155",
+                      "description": "Implement comprehensive test suite covering all components including unit tests, integration tests, and edge case scenarios",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2156",
+                      "description": "Implement Grouping and Call Expression Formatter",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2157",
+                      "description": "Implement Complex/Conditional Expressions (Ternary, Assignments)",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2158",
+                      "description": "Implement Pretty-Printing and Formatting Utilities",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "moderate",
+                      "ready_to_spawn": true,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2159",
+                      "description": "Comprehensive Testing of Control Flow Formatting",
+                      "parent_id": "task_2129",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "task_2160",
+                  "description": "Develop Rules Execution Engine",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2161",
+                  "description": "Implement File System Adapter",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": null,
+                  "ready_to_spawn": null,
+                  "children": []
+                },
+                {
+                  "id": "task_2162",
+                  "description": "Create Reporting and Output System",
+                  "parent_id": "task_2120",
+                  "depth": 3,
+                  "complexity": "moderate",
+                  "ready_to_spawn": true,
+                  "children": [
+                    {
+                      "id": "task_2163",
+                      "description": "Write Comprehensive Unit Tests for Precedence",
+                      "parent_id": "task_2162",
+                      "depth": 4,
+                      "complexity": null,
+                      "ready_to_spawn": null,
+                      "children": []
+                    },
+                    {
+                      "id": "task_2164",
+                      "description": "Write Unit Tests for Parentheses and Edge Cases",
+                      "parent_id": "task_2162",
+                      "depth": 4,
+                      "complexity": "complex",
+                      "ready_to_spawn": true,
+                      "children": []
+                    }
+                  ]
                 }
               ]
             }

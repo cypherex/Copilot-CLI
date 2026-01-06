@@ -1,15 +1,15 @@
 ======================================================================
 TASK HIERARCHY STATISTICS
 ======================================================================
-Total Tasks: 1742
+Total Tasks: 2165
 Root Tasks: 1
-Ready to Spawn: 441
+Ready to Spawn: 556
 Max Depth: 4
 
 Complexity Distribution:
-  Simple: 27 (1.5%)
-  Moderate: 289 (16.6%)
-  Complex: 163 (9.4%)
+  Simple: 31 (1.4%)
+  Moderate: 359 (16.6%)
+  Complex: 216 (10.0%)
 ======================================================================
 
 TASK HIERARCHY TREE
@@ -1231,7 +1231,7 @@ Legend: [OK] = Ready to spawn, [!!] = Needs work, [ ?] = Unknown
         `- [OK] Configure CI/CD Integration for Heavy Tests [M]
   +- [ ?] Implement Standard Library and Core Packages
   +- [ ?] Implement Build System, Package Manager, and Dependency Resolver
-  `- [ ?] Implement Debugger Interface and Debug Adapter Protocol (DAP) [C]
+  +- [ ?] Implement Debugger Interface and Debug Adapter Protocol (DAP) [C]
     +- [ ?] Implement Core Primitives and Types Module
     +- [ ?] Implement Mathematical Utilities Module
     +- [ ?] Implement String Manipulation and Text Processing Module
@@ -1553,5 +1553,428 @@ Legend: [OK] = Ready to spawn, [!!] = Needs work, [ ?] = Unknown
         +- [OK] Test Utilities (Time, Date, Logging) [S]
         `- [OK] Document Test Usage and Maintenance Guidelines [M]
       +- [ ?] Implement Property-Based and Fuzzing Tests
-      `- [ ?] Configure CI/CD Pipeline Integration for Automated Testing
+      +- [ ?] Configure CI/CD Pipeline Integration for Automated Testing
+        +- [ ?] Define Process Control Data Structures and Abstraction Interface
+        +- [ ?] Implement Command Configuration and Validation Logic
+        +- [ ?] Implement POSIX Process Spawning Primitives
+        +- [ ?] Define core data structures, configuration, and error types
+        +- [ ?] Implement Buffer Pool Lifecycle (Init, Reset, Cleanup)
+        +- [ ?] Implement Thread-Safe Allocation and Deallocation Engine
+        +- [ ?] Define fundamental network data types and structures
+        +- [ ?] Define comprehensive error types for network operations
+        +- [ ?] Define the Physical Layer abstraction trait
+        +- [ ?] Define all ARP data structures, enums, and error types as the foundation for the module
+        +- [ ?] Implement ARP packet parsing from raw bytes and serialization back to bytes with validation
+        +- [ ?] Implement ARP cache storage with CRUD operations, lookup, and eviction policy
+        +- [ ?] IO Test Infrastructure and Mocking Framework
+        +- [ ?] File Operations Unit Tests (Read, Write, Seek)
+        +- [OK] Standard Stream Handling Tests [M]
+        +- [ ?] Implement Windows Process Spawning Primitives
+        +- [ ?] Implement Standard I/O Redirection and Pipe Handling
+        +- [OK] Implement Process Lifecycle Management (Wait, Terminate, Reap) [C]
+        +- [ ?] Implement Packet Manipulation Operations (Resize, Trim, Refcount)
+        +- [ ?] Implement Statistics and Diagnostics
+        +- [OK] Write Unit and Functional Tests [S]
+        +- [ ?] Define the Datalink Layer abstraction trait
+        +- [ ?] Implement Interface Management logic
+        +- [OK] Implement Mock/Null hardware drivers for testing [C]
+        +- [ ?] Implement pending request tracking with retry logic, exponential backoff, and timeout management
+        +- [ ?] Process incoming ARP requests, validate target IP, generate and send appropriate replies
+        +- [OK] Process incoming ARP replies, validate against pending requests, update cache, and notify waiting code [M]
+        +- [ ?] Error Handling and Edge Case Tests
+        +- [ ?] Buffer Management and Concurrency Tests
+        +- [OK] IO Module Documentation Generation [M]
+        +- [ ?] Implement Error Mapping and System Call Wrappers
+        +- [OK] Develop Comprehensive Integration and Unit Tests [C]
+        +- [ ?] Write Concurrency and Stress Tests
+        +- [OK] Write Failure Injection and Edge Case Tests [M]
+        +- [OK] Implement integration and dispatch utilities [M]
+        +- [ ?] Generate and transmit outgoing ARP requests via network driver with error handling
+        +- [ ?] Implement periodic cache maintenance for expiring old entries and background cleanup
+        +- [OK] Implement public API for IP stack integration including sync/async resolution and local IP management [S]
+        `- [OK] Integration and Coverage Validation [C]
+      +- [ ?] Implement Environment Variable retrieval and parsing
+      +- [ ?] Implement high-level module API facade and integration
+      +- [OK] Implement comprehensive tests and mocks [C]
+        `- [ ?] Implement comprehensive test suite covering unit tests, integration tests, edge cases, and error scenarios [C]
+      +- [ ?] Implement Math Module Unit Tests and Documentation
+      +- [ ?] Implement Collections (List, Map, Set) Unit Tests and Documentation
+      +- [OK] Implement Concurrency Primitives Unit Tests and Documentation [C]
+      +- [ ?] Implement IPv4 Core Logic (Routing and Forwarding)
+      +- [ ?] Implement UDP Protocol Handler
+      +- [OK] Define Core TCP Data Structures and Socket API Mapping [C]
+        +- [ ?] Define Facade Interface, Public Contracts, and Data Types
+        +- [ ?] Implement Facade Structure, Constructor, and Dependency Injection
+        +- [ ?] Implement Delegation Logic for Existing Subsystem Operations
+        +- [ ?] Establish Testing Framework Infrastructure and Utilities
+        +- [ ?] Implement Mock External Services and I/O Interfaces
+        +- [ ?] Develop Lexer and Tokenizer Unit Tests [C]
+        +- [ ?] Implement Common Test Infrastructure and Fixtures
+        +- [ ?] Implement List Unit Tests
+        +- [ ?] Implement Map Unit Tests
+        +- [ ?] Set up Concurrency Test Harness and Utilities
+        +- [ ?] Implement Unit Tests for Mutex Primitives
+        +- [OK] Implement Unit Tests for Semaphore Primitives [M]
+        +- [ ?] Implement Error Translation and Abstraction Layer
+        +- [ ?] Implement External API Integration and Bridging Logic
+        +- [OK] Implement Input Validation and Sanitization Utilities [M]
+        +- [ ?] Develop Parser and AST Structure Unit Tests
+        +- [ ?] Develop Semantic Analysis and Type Checking Tests
+        +- [ ?] Develop Intermediate Representation (IR) Tests
+        +- [ ?] Define IPv4 Core Data Structures and Types
+        +- [ ?] Implement Packet Parsing and Validation
+        +- [ ?] Implement Routing Table Logic and Longest Prefix Match (LPM)
+        +- [ ?] Define Core Data Structures & Error Types
+        +- [ ?] Implement OS-Level Socket Abstraction
+        +- [ ?] Implement Address Parsing & Validation
+        +- [ ?] Define Core TCP Data Structures and State Machine Logic
+        +- [ ?] Implement Socket Buffer Management (Ring Buffers)
+        +- [OK] Implement Socket Lifecycle APIs (socket, close, shutdown) [M]
+        +- [ ?] Implement Set Unit Tests
+        +- [OK] Author Collections Documentation [M]
+        +- [ ?] Implement Unit Tests for Channel Primitives (Unbuffered)
+        +- [ ?] Implement Unit Tests for Channel Primitives (Buffered)
+        +- [OK] Implement Race Condition and Stress Tests [M]
+        +- [ ?] Write Unit Tests for Delegation and Transformation Logic
+        +- [ ?] Write Integration Tests for Subsystem and External API Interaction
+        +- [OK] Write Edge Case, Boundary, and Fault Injection Tests [C]
+        +- [ ?] Develop Code Generation and Optimization Tests
+        +- [ ?] Develop Compiler Driver and CLI Integration Tests
+        +- [OK] Develop Diagnostics and Error Reporting Validation [C]
+        +- [ ?] Implement Forwarding Engine Logic
+        +- [ ?] Implement Fragmentation and Reassembly
+        +- [OK] Define Memory and Network Interface Integration Layer [M]
+        +- [ ?] Implement Packet Transmission Logic
+        +- [ ?] Implement Packet Reception Logic
+        +- [OK] Integrate with Async Runtime [M]
+        +- [ ?] Implement Server Configuration APIs (bind, listen)
+        +- [ ?] Implement Connection Establishment APIs (connect, accept)
+        +- [OK] Implement Data Transfer APIs (send, recv, sendto, recvfrom) [M]
+        +- [ ?] Generate API Documentation for Mutex and Semaphore
+        +- [ ?] Generate API Documentation for Channels
+        +- [OK] Verify Integration with Race Detectors and CI [M]
+        +- [ ?] Create API Documentation and Usage Examples [C]
+        +- [ ?] Implement Language Feature Regression Suite
+        +- [OK] Implement Fuzzing and Robustness Testing [M]
+        +- [ ?] Implement Error Handling and ICMP Signaling
+        +- [OK] Comprehensive Testing Suite (Unit and Integration) [C]
+        +- [ ?] Implement Handler Lifecycle Management
+        +- [ ?] Implement Error Handling & Recovery Strategy
+        +- [OK] Comprehensive Testing Suite [M]
+        `- [OK] Comprehensive Testing for Structures and API Mappings [M]
+      +- [ ?] Configure Build System Integration for Tests
+      +- [ ?] Configure Build System Integration for Documentation
+      +- [OK] Implement CI/CD Pipeline for Quality Gates [C]
+      +- [ ?] Implement TCP Finite State Machine (Connection Establishment/Termination)
+      +- [ ?] Implement TCP Input Processing and Segmentation
+      +- [OK] Implement TCP Retransmission and Timer Management [C]
+        +- [ ?] Configure Source Control Integration
+        +- [ ?] Configure Secure Credentials Management
+        +- [ ?] Implement Build Stage Automation
+        +- [ ?] Define TCP State Enumeration and Connection Control Block (TCB) Data Structures
+        +- [ ?] Implement Segment Sending and Validation Utilities
+        +- [ ?] Implement Connection Establishment Logic (Handshake States)
+        +- [ ?] Design and implement buffer management data structures (CircularBuffer or RingBuffer) to handle efficient append and read operations without constant reallocation.
+        +- [ ?] Implement a robust OS socket reading wrapper that abstracts platform-specific non-blocking I/O and handles the details of the system call.
+        +- [ ?] Implement connection state management to track the lifecycle of a TCP connection (Active, Draining, Closed) within the processor.
+        +- [ ?] Implement RTT Estimation (Jacobson/Karels Algorithm)
+        +- [ ?] Implement Retransmission Queue Management
+        +- [OK] Implement ACK Processing Logic [M]
+        +- [ ?] Implement Automated Unit Testing & Reporting
+        +- [ ?] Integrate Static Code Analysis (SonarQube)
+        +- [OK] Implement Security Scanning Gate [C]
+        +- [ ?] Implement Active Connection Termination (FIN_WAIT & TIME_WAIT)
+        +- [ ?] Implement Passive Connection Termination (CLOSE_WAIT & LAST_ACK)
+        +- [OK] Handle Simultaneous Close, ESTABLISHED Transitions, and CLOSING State [M]
+        +- [ ?] Develop the core segmentation and reassembly logic to extract complete messages from the stream buffer based on delimiters or length-prefixing.
+        +- [ ?] Implement backpressure handling logic to stop reading from the socket when the application layer is not consuming fast enough (buffer high-water mark).
+        +- [OK] Implement comprehensive error handling, detection, and recovery mechanisms for network anomalies (ECONNRESET, ETIMEDOUT). [M]
+        +- [ ?] Implement Timeout and Backoff Logic
+        +- [ ?] Implement Timer Infrastructure and Persistence
+        +- [OK] Implement Comprehensive Testing Suite [C]
+        +- [ ?] Implement Artifact Packaging & Versioning
+        +- [ ?] Implement Deployment Stage
+        +- [OK] Implement Pipeline Notifications [M]
+        +- [ ?] Implement Core FSM Dispatcher and Transition Orchestrator
+        +- [OK] Develop Comprehensive Test Suite for TCP FSM [M]
+        +- [ ?] Create the primary Input Processing Event Loop integration that orchestrates reading, parsing, and dispatching.
+        +- [ ?] Write unit tests for buffer management, covering wrap-around scenarios, partial writes, and peeking data.
+        +- [OK] Write unit tests for the segmentation logic, simulating fragmented packets and incomplete headers. [M]
+        +- [OK] Implement Pipeline Validation Tests [M]
+        +- [ ?] Write integration tests using mock sockets or localhost connections to verify the full data flow and backpressure behavior.
+        `- [OK] Implement cleanup and resource deallocation logic to ensure no file descriptor leaks or memory leaks occur on connection drop or error. [M]
+      +- [ ?] Implement TCP Flow Control and Congestion Control
+      +- [ ?] Implement TCP Output Processing and Queuing
+      +- [ ?] Implement Synchronization Primitives (Locking/Spinlocks) [C]
+        +- [ ?] Define TCB State Variables and Enums for Flow/Congestion Control
+        +- [ ?] Implement Receiver-Side Flow Control (Window Advertisement)
+        +- [ ?] Implement RTT Estimation and RTO Calculation (Jacobson/Karels Algorithm)
+        +- [ ?] Define Core TCP Output Data Structures
+        +- [ ?] Implement Send Buffer and Queue Management Logic
+        +- [ ?] Implement Segmentation and MSS Logic
+        +- [ ?] Define Core Lock Types and Error Handling Enums
+        +- [ ?] Implement Atomic Operations Wrapper
+        +- [OK] Implement Memory Barriers and Fences [M]
+        +- [ ?] Implement Congestion Control State Machine (Slow Start & Congestion Avoidance)
+        +- [ ?] Implement Fast Retransmit and Fast Recovery Logic
+        +- [OK] Implement Timeout Handling and Recovery [M]
+        +- [ ?] Implement TCP Checksum Calculation
+        +- [ ?] Implement Retransmission Queue and RTO Management
+        +- [OK] Implement Flow Control and Window Management [C]
+        +- [ ?] Implement Spinlock Primitive
+        +- [ ?] Implement Blocking Mutex Primitive
+        +- [OK] Implement Reentrant Mutex (Recursive Lock) [M]
+        +- [ ?] Implement ACK Processing and Event Dispatcher
+        +- [ ?] Implement Sender Throttling (Effective Window Calculation)
+        +- [OK] Testing and Validation (Unit & Integration) [C]
+        +- [ ?] Implement Network Interface Driver Integration (TX)
+        +- [ ?] Implement Timer and Interrupt Coordination
+        +- [OK] Implement Error Handling and Diagnostics [M]
+        +- [ ?] Implement Read-Write Lock (Shared/Exclusive)
+        +- [ ?] Create Scheduler Integration Abstraction
+        +- [OK] Develop Comprehensive Test Suite for Atomics [C]
+        +- [OK] Write Comprehensive Unit and Integration Tests [C]
+        +- [ ?] Develop Concurrency Stress Tests
+        `- [OK] Develop Edge Case and Poisoning Tests [M]
+      `- [ ?] Write Comprehensive Unit and Integration Tests [C]
+        +- [ ?] Design and Implement Testing Infrastructure and Framework
+        +- [ ?] Develop Test Utilities, Assertions, and Fixture Loaders
+        +- [OK] Write Comprehensive Lexer Unit Tests [C]
+        +- [ ?] Write Comprehensive Parser Unit Tests
+        +- [ ?] Write Semantic Analysis and Type Checking Test Suite
+        +- [OK] Write Intermediate Representation (IR) and Optimization Tests [M]
+        +- [ ?] Write Code Generation and Backend Validation Tests
+        +- [ ?] Write Standard Library and Built-in API Tests
+        +- [OK] Implement End-to-End Integration Test Suite [C]
+        +- [ ?] Implement Golden Master / Snapshot Testing System
+        +- [ ?] Write Diagnostics and Error Message Quality Tests
+        +- [OK] Implement Fuzzing and Property-Based Tests [C]
+        `- [ ?] Write Runtime and Garbage Collection Tests [C]
+  `- [ ?] Implement Language Server (LSP), Formatter, and Static Analysis Tools [C]
+    +- [ ?] Implement LSP Server Infrastructure (JSON-RPC & Lifecycle)
+    +- [ ?] Implement LSP Text Synchronization and Document Management
+    +- [OK] Implement Core LSP Features (Completion, Hover, Definition) [C]
+      +- [ ?] Design and implement core LSP/JSON-RPC data structures
+      +- [ ?] Implement the STDIO Transport Layer (Reader & Writer)
+      +- [ ?] Implement JSON-RPC Serialization and Deserialization
+      +- [ ?] Implement LSP Server Infrastructure (Connection & Lifecycle)
+      +- [ ?] Implement Text Document Synchronization Manager
+      +- [OK] Define AST & Symbol Query Interface [M]
+      +- [ ?] Implement the Request Router and Handler Registry
+      +- [ ?] Implement LSP Lifecycle State Machine
+      +- [OK] Implement Built-in LSP Lifecycle Handlers (initialize, shutdown, exit) [M]
+        +- [ ?] Define core data structures for Document Synchronization (Document state, Operations, Edit, Session metadata).
+        +- [ ?] Implement the Operational Transformation (OT) engine core logic (transform function).
+        +- [ ?] Implement Document State Management (applying operations, versioning).
+        +- [ ?] Define LSP Lifecycle enumeration, state context, and error types
+        +- [ ?] Implement state transition validation matrix
+        +- [OK] Implement the core thread-safe State Machine engine [C]
+        +- [ ?] Implement the Persistence Layer Interface (Database interactions).
+        +- [ ?] Implement the WebSocket Connection Handler (Message parsing, lifecycle).
+        +- [OK] Implement the Synchronization Orchestrator (Coordinating OT, State, and Network). [C]
+        +- [ ?] Implement the event emission system (Observer pattern)
+        +- [ ?] Implement the 'initialize' and 'initialized' handshake flow
+        +- [OK] Implement the 'shutdown' and 'exit' sequence logic [C]
+        +- [ ?] Implement Broadcast Mechanism (Distributing updates to other clients).
+        +- [ ?] Write Unit Tests for OT Logic (Insert/Insert, Insert/Delete, Delete/Delete, edge cases).
+        +- [OK] Write Integration Tests for End-to-End Synchronization (Client A edits -> Server processes -> Client B receives). [M]
+        +- [ ?] Implement the Request Guard/Interceptor middleware
+        +- [ ?] Write unit tests for state transition matrix
+        +- [OK] Write integration tests for full lifecycle and request interception [C]
+        `- [OK] Implement Error Handling and Recovery (Connection drops, DB failures, malformed ops). [C]
+      +- [ ?] Implement the Main Server Loop (Concurrency & Orchestration)
+      +- [ ?] Implement Error Handling and Exception Recovery
+      +- [ ?] Write Unit Tests for Transport and Serialization [C]
+      +- [ ?] Implement Go-to-Definition Provider
+      +- [ ?] Implement Hover Information Provider
+      +- [OK] Implement Code Completion Provider [C]
+        +- [ ?] Implement Server Bootstrapping and Initialization
+        +- [ ?] Implement Network Listener (Socket Management)
+        +- [ ?] Implement Worker Pool / Concurrency Abstraction
+        +- [ ?] Define Core Error Type Hierarchy
+        +- [ ?] Implement Retry Logic with Backoff Strategy
+        +- [ ?] Implement Circuit Breaker Pattern
+        +- [ ?] Define Core Completion Data Structures and Types
+        +- [ ?] Implement LSP Completion Request Handler
+        +- [OK] Implement Context Analysis Service [M]
+        +- [ ?] Implement Connection Dispatching Logic
+        +- [ ?] Implement Graceful Shutdown Mechanism
+        +- [OK] Implement Main Event Loop Orchestration [M]
+        +- [ ?] Implement Fallback and Recovery Handlers
+        +- [ ?] Design Error Logging and Reporting Pipeline
+        +- [OK] Wrap External API Client with Error Handling [M]
+        +- [ ?] Implement Symbol Lookup Adapter
+        +- [ ?] Implement Static Content Provider (Keywords & Snippets)
+        +- [OK] Implement Candidate Aggregation, Filtering, and Scoring [C]
+        +- [ ?] Implement Logging Integration for Server Events
+        +- [OK] Implement Configuration Validation and Integration [M]
+        +- [ ?] Wrap Database Access Layer with Error Handling
+        +- [ ?] Implement Central Error Handler/Router
+        +- [OK] Add Context Extraction Utilities [M]
+        +- [ ?] Implement Completion Item Resolution (Lazy Loading)
+        +- [ ?] Implement Edge Case and Error Recovery Handling
+        +- [OK] Implement Unit and Integration Tests [M]
+        +- [ ?] Write Unit Tests for Error Types and Utilities
+        +- [ ?] Write Unit Tests for Resilience Patterns
+        `- [OK] Write Integration Tests for End-to-End Error Flows [C]
+      +- [ ?] Implement Diagnostics Publishing & Error Handling
+      +- [OK] Testing and Validation Suite [C]
+      `- [OK] Write Unit and Integration Tests for Router and Lifecycle [C]
+        +- [ ?] Configure Testing Infrastructure and CI/CD Pipeline
+        +- [ ?] Develop Test Utilities and Mocks
+        +- [ ?] Construct Language Test Corpus
+        +- [ ?] Implement Test Infrastructure, Mocks, and Shared Fixtures
+        +- [ ?] Write Unit Tests for Route Matching and Resolution Logic
+        +- [OK] Write Unit Tests for Navigation Flow, Guards, and Redirections [M]
+        +- [ ?] Implement Lexer Unit Tests
+        +- [ ?] Implement Parser Unit Tests
+        +- [OK] Implement Semantic Analysis Unit Tests [M]
+        +- [ ?] Write Unit Tests for Lifecycle State Transitions
+        +- [ ?] Write Unit Tests for Lifecycle Hooks and Side Effects
+        +- [OK] Write Integration Tests for Router, State, and Lifecycle Orchestration [M]
+        +- [ ?] Implement Intermediate Representation (IR) Tests
+        +- [ ?] Implement Code Generation Unit Tests
+        +- [OK] Implement Runtime and Standard Library Tests [C]
+        +- [OK] Write Integration Tests for External Services and Error Recovery [C]
+        `- [ ?] Implement End-to-End Integration and Regression Tests [C]
+    +- [ ?] Implement LSP Diagnostics/Publishing Integration
+    +- [ ?] Implement Configuration Management System
+    +- [ ?] Implement AST Visitor for Code Traversal (Shared) [C]
+      +- [ ?] Define LSP Diagnostic Data Structures and Enums
+      +- [ ?] Implement LSP Client Notification Interface
+      +- [ ?] Implement Diagnostic Conversion Adapter (Internal Format → LSP)
+      +- [ ?] Define Core Data Types, Enums, and Error Domain
+      +- [ ?] Implement File System Loader and Path Resolution
+      +- [ ?] Implement Environment Variable Loader and Mapper
+      +- [ ?] Define Visitor Trait, Result Types, and Core Contracts
+      +- [ ?] Implement Recursive Traversal for Expression Nodes
+      +- [OK] Implement Recursive Traversal for Statement Nodes [M]
+      +- [ ?] Develop Configuration Merging Logic
+      +- [ ?] Implement Schema Validation System
+      +- [OK] Build Configuration Manager Orchestrator [M]
+      +- [ ?] Implement Recursive Traversal for Declarations and Types
+      +- [ ?] Implement Error Handling, Context Propagation, and Flow Control
+      +- [ ?] Create Testing Utilities and Mock Visitors
+        +- [ ?] Define the core `Notification` trait/interface specifying the method string and parameters.
+        +- [ ?] Implement data models for General Notifications (window/logMessage, window/showMessage, telemetry/event).
+        +- [OK] Implement data models for Text Document Notifications (textDocument/publishDiagnostics, textDocument/didOpen). [M]
+        +- [ ?] Implement JSON-RPC Serialization logic for Notifications (formatting jsonrpc version, method, params).
+        +- [ ?] Implement the ClientNotifier component responsible for transport interaction.
+        +- [ ?] Implement Validation Logic and Error Types for Notifications.
+        +- [ ?] Define core data structures and types for schema definitions (AST/DSL)
+        +- [ ?] Implement primitive type validators (string, number, boolean, null)
+        +- [ ?] Implement complex structure validators (objects, arrays, nested schemas)
+        +- [ ?] Define Core Abstractions, Data Models, and Error Types
+        +- [ ?] Implement Orchestrator Core (Merging, Prioritization, State)
+        +- [ ?] Implement File System Loader and Parsing Logic
+        +- [ ?] Define Visitor Interface and Core Traversal Infrastructure
+        +- [ ?] Implement Declaration Node Visitor Handlers
+        +- [ ?] Implement Type Node Visitor Handlers
+        +- [ ?] Define Core Error Hierarchy and Types
+        +- [ ?] Implement Error Wrapping and Formatting Utilities
+        +- [OK] Define Context Data Structure and Storage [M]
+        +- [ ?] Implement Convenience Utility Functions for common notifications.
+        +- [ ?] Write Unit Tests for Data Models and Serialization.
+        +- [OK] Write Integration Tests for Notification Flow using Mock Transport. [M]
+        +- [ ?] Implement the main validation engine orchestrator
+        +- [ ?] Design and implement the validation error handling and reporting system
+        +- [OK] Implement API middleware for automatic request validation [M]
+        +- [ ?] Implement Environment Variable Loader
+        +- [ ?] Implement Schema Validation and Type Safety Checks
+        +- [OK] Implement Hot Reload and File Watcher Service [M]
+        +- [ ?] Implement Safety Mechanisms and Error Handling
+        +- [OK] Write Comprehensive Test Suite [M]
+        +- [ ?] Implement Request Pipeline Framework (Middleware Chain)
+        +- [ ?] Implement Context Propagation Middleware
+        `- [OK] Implement Global Error Handling Middleware [M]
+      +- [ ?] Implement Diagnostic Publishing Service
+      +- [ ?] Integrate with File System Event Loop
+      +- [OK] Implement Debouncing and Cancellation Logic [M]
+        +- [ ?] Write comprehensive unit tests for validators and error handling
+        +- [ ?] Write integration tests for middleware and end-to-end flows
+        +- [OK] Identify performance bottlenecks and optimize for large payloads [C]
+        +- [OK] Develop Comprehensive Test Suite (Unit & Integration) [M]
+        +- [ ?] Implement Resilience Logic (Retry and Backoff)
+        +- [ ?] Implement Circuit Breaker State Machine
+        `- [OK] Wrap External Clients with Resilience Policies [M]
+      +- [ ?] Implement Diagnostics Caching and Versioning
+      +- [ ?] Implement Error Handling for Analysis Failures
+      +- [OK] Write Unit Tests for Data Structures and Enums [C]
+        `- [OK] Create documentation and usage examples for developers [M]
+      +- [ ?] Implement Utilities, Helpers, and Test Fixtures
+        +- [ ?] Define Caching Data Models and Serialization Logic
+        +- [ ?] Implement Cache Key Generation Strategy
+        +- [OK] Define Cache Provider Abstraction Interface [S]
+        +- [ ?] Implement In-Memory Cache Provider
+        +- [ ?] Implement Redis Cache Provider with Resilience
+        +- [ ?] Implement Diagnostic Caching Service (Orchestrator)
+        +- [ ?] Implement Source Location Primitives (Positions, Spans)
+        +- [ ?] Implement Diagnostic and Error Reporting Infrastructure
+        +- [OK] Implement File I/O and Path Utilities [M]
+        +- [ ?] Implement Version Validation and Invalidation Logic
+        +- [ ?] Setup Dependency Injection and Configuration
+        +- [OK] Write Unit Tests for Core Logic [M]
+        +- [ ?] Implement Text Manipulation and String Helpers
+        +- [ ?] Implement AST Visitor Base Traits
+        +- [OK] Create Test Fixture Data Repository [M]
+        +- [OK] Write Integration and Error Handling Tests [M]
+        `- [ ?] Implement Custom Testing Assertions and Macros [C]
+      +- [ ?] Write Unit Tests for Conversion Adapters
+      +- [ ?] Write Integration Tests for Publish Flow
+      `- [OK] Write Tests for Lifecycle and Debouncing [M]
+        +- [ ?] Implement Test Infrastructure and Orchestration Harness
+        +- [ ?] Create Test Fixture Factory for Artifacts and Manifests
+        +- [OK] Develop End-to-End Happy Path Integration Tests [C]
+        +- [ ?] Implement Validation and Authentication Failure Tests
+        +- [ ?] Develop Conflict Resolution and Idempotency Tests
+        +- [OK] Implement Infrastructure Failure and Rollback Tests [C]
+        +- [ ?] Create Data Consistency and Integrity Verification Tests
+        `- [OK] Implement Concurrency and Race Condition Tests [C]
+    +- [ ?] Implement Pretty-Printer / AST Formatter
+    +- [ ?] Implement Static Analysis Rules Engine
+    `- [OK] Implement Common Static Analysis Rules [M]
+      +- [ ?] Implement Formatter State & Buffer Management
+      +- [ ?] Implement Visitor Pattern Skeleton & Entry Point
+      +- [ ?] Implement Atomic & Leaf Node Formatting
+      +- [ ?] Define Core Data Structures and Types
+      +- [ ?] Implement Rule Registry and Plugin Architecture
+      +- [OK] Build AST Traversal Framework [M]
+      +- [ ?] Implement Expression Formatting & Precedence Logic
+      +- [ ?] Implement Statement & Control Flow Formatting
+      +- [OK] Implement Declaration & Definition Formatting [M]
+        +- [ ?] Define core plugin interfaces, data structures, and error types that serve as the foundation for the entire plugin system
+        +- [ ?] Implement the rule registry core logic for registering, storing, retrieving, and validating rules
+        +- [ ?] Implement plugin discovery mechanism to scan filesystem directories and identify plugin files
+        +- [ ?] Define Core Visitor Interface and Error Handling Contract
+        +- [ ?] Define AST Node Abstraction and Traversal Contracts
+        +- [ ?] Implement Recursive Traversal Engine
+        +- [ ?] Define Precedence and Associativity Constants
+        +- [ ?] Implement Base Expression Formatter Visitor
+        +- [ ?] Implement Parentheses Injection Logic
+        +- [ ?] Implement Basic Statement Printing (Block, Empty, Expression, Labeled)
+        +- [ ?] Implement Conditional Statement Printing (If/Else)
+        +- [OK] Implement Iteration Loop Printing (For, While, Do-While) [M]
+        +- [ ?] Implement dynamic plugin loading system to load discovered plugins, instantiate them, and validate interface compliance
+        +- [ ?] Implement rule execution engine with matching logic, context management, and error handling
+        +- [OK] Implement configuration integration for plugin settings, discovery paths, and rule preferences [M]
+        +- [ ?] Implement Visitor Context and State Management
+        +- [ ?] Implement Utility and Debug Visitors
+        +- [OK] Comprehensive Test Suite and Mock Infrastructure [M]
+        +- [ ?] Implement Binary Expression Formatter
+        +- [ ?] Implement Unary Expression Formatter
+        +- [OK] Implement Literal, Identifier, and Primitive Formatters [S]
+        +- [ ?] Implement Switch Statement Printing
+        +- [ ?] Implement Exception Control Flow Printing (Try/Catch/Finally)
+        +- [OK] Implement Jump/Return Statement Printing [C]
+        +- [ ?] Integrate plugin system with core application lifecycle including initialization, API exposure, and graceful shutdown
+        +- [OK] Implement comprehensive test suite covering all components including unit tests, integration tests, and edge case scenarios [M]
+        +- [ ?] Implement Grouping and Call Expression Formatter
+        +- [ ?] Implement Complex/Conditional Expressions (Ternary, Assignments)
+        +- [OK] Implement Pretty-Printing and Formatting Utilities [M]
+        `- [ ?] Comprehensive Testing of Control Flow Formatting [C]
+      +- [ ?] Develop Rules Execution Engine
+      +- [ ?] Implement File System Adapter
+      `- [OK] Create Reporting and Output System [M]
+        +- [ ?] Write Comprehensive Unit Tests for Precedence
+        `- [OK] Write Unit Tests for Parentheses and Edge Cases [C]
 
