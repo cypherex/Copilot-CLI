@@ -9,6 +9,8 @@ import { log } from '../../utils/index.js';
 import { AskRenderer } from '../../ui/ask-renderer.js';
 import { LogManager } from '../../ui/log-manager.js';
 import { ErrorHandler, handleError } from '../../utils/error-handler.js';
+import { uiState } from '../../ui/ui-state.js';
+import { join } from 'path';
 
 interface AskOptions {
   directory: string;
@@ -161,10 +163,38 @@ export async function askCommand(
     await agent.initialize();
     spinner?.stop();
 
+    // Create renderer to show agent status, tool execution, and outputs
+    const renderer = new AskRenderer({
+      captureMode: options.json,              // Capture output in JSON mode
+      verbose: true,
+      logManager,                             // Use log manager for structured logging
+      subAgentManager: agent.getSubAgentManager(), // For detailed subagent event capture
+    });
+    renderer.start();
+
+    if (!isPrintMode) {
+      log.info(chalk.green('You:') + ' ' + input);
+      log.newline();
+    }
+
     // If task tree was loaded, reconstruct tasks and continue breakdown
     if (taskTreeToLoad) {
       const memoryStore = agent.getMemoryStore();
       const spawnValidator = agent.getSpawnValidator();
+
+      if (options.file) {
+        uiState.addMessage({
+          role: 'system',
+          content: `Loaded prompt from file: ${options.file}`,
+          timestamp: Date.now(),
+        });
+      }
+
+      uiState.addMessage({
+        role: 'system',
+        content: `Loaded task tree from ${options.taskTree}\nContinuing breakdown before executing the prompt...`,
+        timestamp: Date.now(),
+      });
 
       // Recursive function to reconstruct task hierarchy
       function reconstructTasks(node: any, parentId?: string): string {
@@ -200,12 +230,22 @@ export async function askCommand(
 
       doLog(`Reconstructed ${taskTreeToLoad.total_tasks} tasks in memory`);
       doLog('Starting recursive breakdown continuation...\n');
+      uiState.addMessage({
+        role: 'system',
+        content: `Reconstructed ${taskTreeToLoad.total_tasks} tasks in memory\nStarting recursive breakdown continuation...`,
+        timestamp: Date.now(),
+      });
 
       // Continue breakdown on each root task
       for (const rootId of rootTaskIds) {
         const rootTask = memoryStore.getTasks().find((t: any) => t.id === rootId);
         if (rootTask) {
           doLog(`Processing: ${rootTask.description}`);
+          uiState.addMessage({
+            role: 'system',
+            content: `Processing: ${rootTask.description}`,
+            timestamp: Date.now(),
+          });
 
           // Trigger recursive breakdown
           await spawnValidator.validateSpawn({
@@ -218,6 +258,11 @@ export async function askCommand(
           });
 
           doLog(`✓ Completed breakdown for: ${rootTask.description}\n`);
+          uiState.addMessage({
+            role: 'system',
+            content: `✓ Completed breakdown for: ${rootTask.description}`,
+            timestamp: Date.now(),
+          });
         }
       }
 
@@ -247,30 +292,16 @@ export async function askCommand(
         roots: roots.map((r: any) => buildTaskNode(r)),
       };
 
-      fs.writeFileSync('task_hierarchy.json', JSON.stringify(updatedTree, null, 2));
-      doLog(`\n✓ Updated task tree exported to task_hierarchy.json`);
+      const exportPath = join(options.directory, 'task_hierarchy.json');
+      fs.writeFileSync(exportPath, JSON.stringify(updatedTree, null, 2));
+      doLog(`\n✓ Updated task tree exported to ${exportPath}`);
       doLog(`Total tasks: ${allTasks.length}`);
 
-      // Don't continue with normal chat - we're done
-      await agent.shutdown();
-      if (logManager) {
-        await logManager.closeAll();
-      }
-      return;
-    }
-
-    // Create renderer to show agent status, tool execution, and outputs
-    const renderer = new AskRenderer({
-      captureMode: options.json,              // Capture output in JSON mode
-      verbose: true,
-      logManager,                             // Use log manager for structured logging
-      subAgentManager: agent.getSubAgentManager(), // For detailed subagent event capture
-    });
-    renderer.start();
-
-    if (!isPrintMode) {
-      log.info(chalk.green('You:') + ' ' + input);
-      log.newline();
+      uiState.addMessage({
+        role: 'system',
+        content: `✓ Updated task tree exported to ${exportPath}\nTotal tasks: ${allTasks.length}\nNow executing the prompt...`,
+        timestamp: Date.now(),
+      });
     }
 
     await agent.chat(input);
