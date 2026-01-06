@@ -283,8 +283,11 @@ export class SpawnValidator {
 
     // Analyze dependencies across all created tasks
     if (context.verbose) {
-      console.log('\n=== STARTING DEPENDENCY ANALYSIS ===');
-      console.log(`Analyzing dependencies for ${allTaskIds.length} tasks...\n`);
+      uiState.addMessage({
+        role: 'system',
+        content: `\n=== STARTING DEPENDENCY ANALYSIS ===\nAnalyzing dependencies for ${allTaskIds.length} tasks...\n`,
+        timestamp: Date.now(),
+      });
     }
 
     await this.analyzeDependencies(allTaskIds, context.memoryStore, context.verbose ?? false);
@@ -293,8 +296,11 @@ export class SpawnValidator {
       const dependencyLeafCount = context.memoryStore
         .getTasks()
         .filter((t: any) => allTaskIds.includes(t.id) && t.isDependencyLeaf).length;
-      console.log(`\n=== DEPENDENCY ANALYSIS COMPLETE ===`);
-      console.log(`${dependencyLeafCount} tasks ready to execute (dependency leaf nodes)\n`);
+      uiState.addMessage({
+        role: 'system',
+        content: `\n=== DEPENDENCY ANALYSIS COMPLETE ===\n${dependencyLeafCount} tasks ready to execute (dependency leaf nodes)\n`,
+        timestamp: Date.now(),
+      });
     }
 
     // Build comprehensive message
@@ -364,6 +370,23 @@ export class SpawnValidator {
     const maxBatchSize = 10;
     const minBatchSize = 5;
 
+    const logVerbose = (content: string) => {
+      if (!verbose) return;
+      uiState.addMessage({
+        role: 'system',
+        content,
+        timestamp: Date.now(),
+      });
+    };
+
+    const logError = (content: string) => {
+      uiState.addMessage({
+        role: 'system',
+        content,
+        timestamp: Date.now(),
+      });
+    };
+
     const parentGroups = Array.from(byParent.entries()).sort(([a], [b]) => a.localeCompare(b));
 
     let batchIndex = 0;
@@ -378,9 +401,7 @@ export class SpawnValidator {
       if (group.length <= 1) {
         for (const task of group) {
           memoryStore.updateTask(task.id, { dependsOn: [] });
-          if (verbose) {
-            console.log(`バ" Task '${task.description}' depends on: []`);
-          }
+          logVerbose(`バ" Task '${task.description}' depends on: []`);
         }
         continue;
       }
@@ -398,7 +419,9 @@ export class SpawnValidator {
         if (verbose) {
           const firstId = chunk[0]?.id ?? '?';
           const lastId = chunk[chunk.length - 1]?.id ?? '?';
-          console.log(`Batch ${batchIndex}/${Math.max(1, totalBatches)}: Analyzing tasks ${firstId} to ${lastId}...`);
+          logVerbose(
+            `Batch ${batchIndex}/${Math.max(1, totalBatches)}: Analyzing tasks ${firstId} to ${lastId}...`
+          );
         }
 
         const parentTask =
@@ -496,16 +519,15 @@ Output format (JSON):
 
             memoryStore.updateTask(task.id, { dependsOn: normalized });
 
-            if (verbose) {
-              const depDescriptions = normalized.map(depId => {
-                const dep = tasksById.get(depId);
-                return dep ? `${depId} (${dep.description})` : depId;
-              });
-              console.log(`バ" Task '${task.description}' depends on: [${depDescriptions.join(', ')}]`);
-            }
+            const depDescriptions = normalized.map(depId => {
+              const dep = tasksById.get(depId);
+              return dep ? `${depId} (${dep.description})` : depId;
+            });
+            logVerbose(`バ" Task '${task.description}' depends on: [${depDescriptions.join(', ')}]`);
           }
         } catch (error) {
-          console.error('[SpawnValidator] Dependency analysis batch failed:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logError(`[SpawnValidator] Dependency analysis batch failed: ${errorMessage}`);
           // Be conservative: if batch fails, clear dependencies for chunk tasks so they aren't stuck blocked.
           for (const task of chunk) {
             memoryStore.updateTask(task.id, { dependsOn: [] });
