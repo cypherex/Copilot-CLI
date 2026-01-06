@@ -48,6 +48,10 @@ export class ManagedChatUI {
   private inputHistory: string[] = [];
   private historyIndex = -1;
   private inputResolve?: (value: string) => void;
+  private queuedInputs: string[] = [];
+  private rawInputInstalled = false;
+  private rawInputHandler?: (chunk: string) => void;
+  private escapeBuffer: '' | '\x1b' | '\x1b[' = '';
 
   // Available commands for autocomplete
   private static readonly AVAILABLE_COMMANDS = [
@@ -129,6 +133,9 @@ export class ManagedChatUI {
       this.taskRegion.startListening();
     }
 
+    // Enable input capture immediately so users can type at any time.
+    this.installRawInput();
+
     // Start update timer
     if (this.config.updateInterval > 0) {
       this.updateTimer = setInterval(() => {
@@ -144,6 +151,8 @@ export class ManagedChatUI {
    */
   shutdown(): void {
     if (!this.isInitialized) return;
+
+    this.uninstallRawInput();
 
     // Stop timer
     if (this.updateTimer) {
@@ -367,58 +376,142 @@ export class ManagedChatUI {
    * Read input from user
    */
   async readInput(): Promise<string> {
+    if (!process.stdin.isTTY) {
+      // Non-TTY mode - just read line
+      return new Promise((resolve) => {
+        this.inputResolve = resolve;
+        this.readLineInput();
+      });
+    }
+
+    const queued = this.queuedInputs.shift();
+    if (queued !== undefined) {
+      return queued;
+    }
+
     return new Promise((resolve) => {
       this.inputResolve = resolve;
-      this.inputBuffer = '';
-      this.inputCursor = 0;
       this.historyIndex = -1;
-      this.inputRegion.updateInput('', 0);
-
-      // Set up raw mode input
-      this.startRawInput();
+      this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+      this.installRawInput();
     });
   }
 
-  private startRawInput(): void {
-    if (!process.stdin.isTTY) {
-      // Non-TTY mode - just read line
-      this.readLineInput();
-      return;
-    }
+  private installRawInput(): void {
+    if (this.rawInputInstalled) return;
+    if (!process.stdin.isTTY) return;
 
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
 
-    const onData = (chunk: string) => {
+    this.rawInputHandler = (chunk: string) => {
       for (const char of chunk) {
-        this.handleInputChar(char, onData);
+        this.handleInputChar(char);
       }
     };
-
-    process.stdin.on('data', onData);
+    process.stdin.on('data', this.rawInputHandler);
+    this.rawInputInstalled = true;
+    this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
   }
 
-  private handleInputChar(char: string, cleanupFn: (chunk: string) => void): void {
-    // Ctrl+C - cancel/interrupt
+  private uninstallRawInput(): void {
+    if (!this.rawInputInstalled) return;
+    if (this.rawInputHandler) {
+      process.stdin.removeListener('data', this.rawInputHandler);
+    }
+    this.rawInputHandler = undefined;
+    this.rawInputInstalled = false;
+    this.escapeBuffer = '';
+
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    }
+  }
+
+  private handleInputChar(char: string): void {
+    // Handle ANSI escape sequences (arrow keys, etc) safely so normal letters
+    // don't get interpreted as navigation.
+    if (this.escapeBuffer) {
+      if (this.escapeBuffer === '\x1b') {
+        this.escapeBuffer = char === '[' ? '\x1b[' : '';
+        return;
+      }
+
+      if (this.escapeBuffer === '\x1b[') {
+        this.escapeBuffer = '';
+
+        // Up arrow
+        if (char === 'A') {
+          if (this.historyIndex < this.inputHistory.length - 1) {
+            this.historyIndex++;
+            this.inputBuffer = this.inputHistory[this.inputHistory.length - 1 - this.historyIndex];
+            this.inputCursor = this.inputBuffer.length;
+            this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+          }
+          return;
+        }
+
+        // Down arrow
+        if (char === 'B') {
+          if (this.historyIndex >= 0) {
+            this.historyIndex--;
+            if (this.historyIndex < 0) {
+              this.inputBuffer = '';
+            } else {
+              this.inputBuffer = this.inputHistory[this.inputHistory.length - 1 - this.historyIndex];
+            }
+            this.inputCursor = this.inputBuffer.length;
+            this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+          }
+          return;
+        }
+
+        // Right arrow
+        if (char === 'C') {
+          if (this.inputCursor < this.inputBuffer.length) {
+            this.inputCursor++;
+            this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+          }
+          return;
+        }
+
+        // Left arrow
+        if (char === 'D') {
+          if (this.inputCursor > 0) {
+            this.inputCursor--;
+            this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+          }
+          return;
+        }
+
+        return;
+      }
+    }
+
+    if (char === '\x1b') {
+      this.escapeBuffer = '\x1b';
+      return;
+    }
+
+    // Ctrl+C - pause/interrupt (always immediate)
     if (char === '\x03') {
-      this.finishInput('', cleanupFn);
+      // In raw mode, Ctrl+C won't reliably generate SIGINT, so emit it.
+      // (SIGINT handler lives in the chat command and handles pause/exit.)
+      process.emit('SIGINT');
       return;
     }
 
     // Ctrl+D - submit
     if (char === '\x04') {
-      this.finishInput(this.inputBuffer, cleanupFn);
+      this.submitCurrentInput();
       return;
     }
 
     // Enter - submit
     if (char === '\r' || char === '\n') {
-      const input = this.inputBuffer.trim();
-      if (input) {
-        this.inputHistory.push(input);
-      }
-      this.finishInput(input, cleanupFn);
+      this.submitCurrentInput();
       return;
     }
 
@@ -429,58 +522,6 @@ export class ManagedChatUI {
           this.inputBuffer.slice(0, this.inputCursor - 1) +
           this.inputBuffer.slice(this.inputCursor);
         this.inputCursor--;
-        this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
-      }
-      return;
-    }
-
-    // Escape sequences (arrows, etc.)
-    if (char === '\x1b') {
-      return; // Start of escape sequence - handled with next chars
-    }
-
-    // Arrow keys (after escape)
-    if (char === '[') {
-      return; // Part of escape sequence
-    }
-
-    // Up arrow - history
-    if (char === 'A' && this.inputBuffer === '') {
-      if (this.historyIndex < this.inputHistory.length - 1) {
-        this.historyIndex++;
-        this.inputBuffer = this.inputHistory[this.inputHistory.length - 1 - this.historyIndex];
-        this.inputCursor = this.inputBuffer.length;
-        this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
-      }
-      return;
-    }
-
-    // Down arrow - history
-    if (char === 'B' && this.historyIndex >= 0) {
-      this.historyIndex--;
-      if (this.historyIndex < 0) {
-        this.inputBuffer = '';
-      } else {
-        this.inputBuffer = this.inputHistory[this.inputHistory.length - 1 - this.historyIndex];
-      }
-      this.inputCursor = this.inputBuffer.length;
-      this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
-      return;
-    }
-
-    // Left arrow
-    if (char === 'D') {
-      if (this.inputCursor > 0) {
-        this.inputCursor--;
-        this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
-      }
-      return;
-    }
-
-    // Right arrow
-    if (char === 'C') {
-      if (this.inputCursor < this.inputBuffer.length) {
-        this.inputCursor++;
         this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
       }
       return;
@@ -523,6 +564,29 @@ export class ManagedChatUI {
       this.inputCursor++;
       this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
     }
+  }
+
+  private submitCurrentInput(): void {
+    const input = this.inputBuffer.trim();
+    if (input) {
+      this.inputHistory.push(input);
+    }
+
+    this.inputBuffer = '';
+    this.inputCursor = 0;
+    this.historyIndex = -1;
+    this.inputRegion.updateInput(this.inputBuffer, this.inputCursor);
+
+    if (!input) return;
+
+    if (this.inputResolve) {
+      const resolve = this.inputResolve;
+      this.inputResolve = undefined;
+      resolve(input);
+      return;
+    }
+
+    this.queuedInputs.push(input);
   }
 
   private handleAutocomplete(): void {
@@ -571,22 +635,6 @@ export class ManagedChatUI {
     }
 
     return first.slice(0, commonLength);
-  }
-
-  private finishInput(value: string, cleanupFn: (chunk: string) => void): void {
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(false);
-    }
-    process.stdin.removeListener('data', cleanupFn);
-    process.stdin.pause();
-
-    // Clear input region
-    this.inputRegion.clearInput();
-
-    if (this.inputResolve) {
-      this.inputResolve(value);
-      this.inputResolve = undefined;
-    }
   }
 
   private readLineInput(): void {

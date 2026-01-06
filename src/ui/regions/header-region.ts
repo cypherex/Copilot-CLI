@@ -25,7 +25,13 @@ export class HeaderRegion extends BaseRegion {
 
   startListening(): void {
     this.unsubscribe = uiState.subscribe((_state, changedKeys) => {
-      const relevant: (keyof UIStateData)[] = ['modelName', 'providerName'];
+      const relevant: (keyof UIStateData)[] = [
+        'modelName',
+        'providerName',
+        'agentStatus',
+        'statusMessage',
+        'currentToolExecution',
+      ];
       if (changedKeys.some(k => relevant.includes(k))) {
         this.render();
       }
@@ -49,6 +55,8 @@ export class HeaderRegion extends BaseRegion {
     if (state.modelName) subtitleParts.push(state.modelName);
     const subtitle = subtitleParts.length > 0 ? chalk.dim(subtitleParts.join(' · ')) : '';
 
+    const status = this.renderStatus(state);
+
     const shortcuts = chalk.dim('Commands: ') +
       chalk.cyan('/help') + chalk.dim(' · ') +
       chalk.cyan('/tasks') + chalk.dim(' · ') +
@@ -59,10 +67,7 @@ export class HeaderRegion extends BaseRegion {
       chalk.dim('Ctrl+C pause');
 
     const top = chalk.dim('┌' + '─'.repeat(innerWidth) + '┐');
-    const mid = this.boxLine(
-      width,
-      title + (subtitle ? chalk.dim('  ') + subtitle : '') + chalk.dim('  ') + chalk.dim('ready')
-    );
+    const mid = this.boxLineLR(width, title + (subtitle ? chalk.dim('  ') + subtitle : ''), status);
     const bot = this.boxLine(width, shortcuts);
 
     this.update([top, mid, bot]);
@@ -79,6 +84,57 @@ export class HeaderRegion extends BaseRegion {
 
     const padLen = Math.max(0, innerWidth - this.stripAnsi(trimmed).length);
     return chalk.dim('│') + trimmed + ' '.repeat(padLen) + chalk.dim('│');
+  }
+
+  private boxLineLR(width: number, left: string, right: string): string {
+    const innerWidth = Math.max(10, width - 2);
+    const leftPlain = this.stripAnsi(left);
+    const rightPlain = this.stripAnsi(right);
+
+    const spacer = '  ';
+    const available = innerWidth - rightPlain.length - spacer.length;
+    const leftTrimmedPlain =
+      leftPlain.length > available
+        ? leftPlain.slice(0, Math.max(0, available - 1)) + '…'
+        : leftPlain;
+
+    // crude ANSI-trim to match plain trim
+    const overflow = leftPlain.length - leftTrimmedPlain.length;
+    const leftTrimmed = overflow > 0 ? left.slice(0, Math.max(0, left.length - overflow)) + '…' : left;
+
+    const padLen = Math.max(
+      0,
+      innerWidth - this.stripAnsi(leftTrimmed).length - spacer.length - rightPlain.length
+    );
+
+    return chalk.dim('│') + leftTrimmed + ' '.repeat(padLen) + spacer + right + chalk.dim('│');
+  }
+
+  private renderStatus(state: Readonly<UIStateData>): string {
+    const statusColors: Record<string, (s: string) => string> = {
+      idle: chalk.gray,
+      thinking: chalk.yellow,
+      executing: chalk.blue,
+      waiting: chalk.cyan,
+      error: chalk.red,
+    };
+    const statusIcons: Record<string, string> = {
+      idle: '○',
+      thinking: '…',
+      executing: '▶',
+      waiting: '⏳',
+      error: '✗',
+    };
+
+    const icon = statusIcons[state.agentStatus] || '○';
+    const color = statusColors[state.agentStatus] || chalk.gray;
+
+    let label = state.statusMessage || state.agentStatus;
+    if (state.agentStatus === 'executing' && state.currentToolExecution?.status === 'running') {
+      label = `↪ ${state.currentToolExecution.name}`;
+    }
+
+    return color(`${icon} ${label}`);
   }
 
   private stripAnsi(str: string): string {

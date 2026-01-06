@@ -35,9 +35,9 @@ function writeToUi(lines: string[], level: 'log' | 'info' | 'warn' | 'error' | '
       continue;
     }
     const decorated =
-      level === 'stderr' || level === 'debug'
-        ? chalk.dim(prefix + line)
-        : prefix + line;
+      level === 'warn' || level === 'error'
+        ? prefix + line
+        : chalk.dim(prefix + line);
     renderManager.writeOutput(decorated);
   }
   return true;

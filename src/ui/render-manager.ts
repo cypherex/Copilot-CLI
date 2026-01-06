@@ -373,11 +373,11 @@ export class RenderManager {
    * Render a region into the buffer
    */
   private renderRegionToBuffer(region: ScreenRegion, startRow: number): void {
-    for (let i = 0; i < region.height && i < region.content.length; i++) {
+    for (let i = 0; i < region.height; i++) {
       const row = startRow + i;
-      if (row >= 0 && row < this.terminalHeight) {
-        this.currentBuffer[row] = this.truncateLine(region.content[i]);
-      }
+      if (row < 0 || row >= this.terminalHeight) continue;
+      const line = i < region.content.length ? region.content[i] : '';
+      this.currentBuffer[row] = this.truncateLine(line);
     }
   }
 

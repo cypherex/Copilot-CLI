@@ -14,10 +14,12 @@ import { getRenderManager } from '../render-manager.js';
 export class TaskRegion extends BaseRegion {
   private unsubscribe?: () => void;
 
+  private static readonly TASK_LIST_LINES = 3;
+
   constructor() {
     super({
       id: 'task-bar',
-      height: 1,
+      height: 1 + TaskRegion.TASK_LIST_LINES,
       position: 'bottom',
       zIndex: 90,
     });
@@ -51,14 +53,15 @@ export class TaskRegion extends BaseRegion {
   render(): void {
     const state = uiState.getState();
     const terminalWidth = getRenderManager()?.getTerminalWidth() ?? process.stdout.columns ?? 80;
-    const parts: string[] = [];
+    const lines: string[] = [];
+    const summaryParts: string[] = [];
 
     // Task progress
     if (state.allTasks.length > 0) {
       const completed = state.allTasks.filter(t => t.status === 'completed').length;
       const total = state.allTasks.length;
-      parts.push(chalk.gray(`[${completed}/${total}]`));
-      parts.push(this.renderProgressBar(completed, total, terminalWidth));
+      summaryParts.push(chalk.gray(`[${completed}/${total}]`));
+      summaryParts.push(this.renderProgressBar(completed, total, terminalWidth));
     }
 
     // Current task
@@ -67,19 +70,26 @@ export class TaskRegion extends BaseRegion {
       const maxDescLen = Math.max(10, terminalWidth - 36);
       let desc = state.currentTask.description;
       if (desc.length > maxDescLen) {
-        desc = desc.slice(0, maxDescLen - 3) + '...';
+        desc = desc.slice(0, maxDescLen - 1) + '…';
       }
       const prio =
         state.currentTask.priority === 'high' ? chalk.red('!') :
         state.currentTask.priority === 'medium' ? chalk.yellow('!') :
         '';
-      parts.push(chalk.blue(`${icon} ${desc}`) + (prio ? chalk.dim(' ') + prio : ''));
+      summaryParts.push(chalk.cyan(`${icon} ${desc}`) + (prio ? chalk.dim(' ') + prio : ''));
     } else {
-      parts.push(chalk.dim('No active task'));
+      summaryParts.push(chalk.dim('No active task'));
     }
 
-    const taskLine = parts.join(chalk.dim(' · '));
-    this.update([taskLine]);
+    const taskLine =
+      (state.allTasks.length > 0 ? chalk.dim('Tasks ') : chalk.dim('Tasks')) +
+      summaryParts.join(chalk.dim(' · '));
+    lines.push(taskLine);
+
+    const taskLines = this.renderTaskListLines(state, terminalWidth, TaskRegion.TASK_LIST_LINES);
+    for (const line of taskLines) lines.push(line);
+
+    this.update(lines);
   }
 
   private getTaskIcon(status: TaskState['status']): string {
@@ -91,6 +101,73 @@ export class TaskRegion extends BaseRegion {
       case 'blocked': return '✗';
       default: return '○';
     }
+  }
+
+  private renderTaskListLines(state: Readonly<UIStateData>, terminalWidth: number, maxLines: number): string[] {
+    if (maxLines <= 0) return [];
+
+    const tasks = state.allTasks.slice();
+    const currentTaskId = state.currentTask?.id;
+
+    const statusRank: Record<TaskState['status'], number> = {
+      in_progress: 0,
+      verifying: 1,
+      pending: 2,
+      blocked: 3,
+      completed: 4,
+    };
+
+    tasks.sort((a, b) => {
+      const ra = statusRank[a.status] ?? 99;
+      const rb = statusRank[b.status] ?? 99;
+      if (ra !== rb) return ra - rb;
+      if (a.priority === 'high' && b.priority !== 'high') return -1;
+      if (b.priority === 'high' && a.priority !== 'high') return 1;
+      if (a.priority === 'medium' && b.priority === 'low') return -1;
+      if (b.priority === 'medium' && a.priority === 'low') return 1;
+      return 0;
+    });
+
+    const visible = tasks.filter(t => t.status !== 'completed');
+    if (visible.length === 0) {
+      return [chalk.dim('  (no pending tasks)')].concat(new Array(Math.max(0, maxLines - 1)).fill(''));
+    }
+
+    const shown = visible.slice(0, maxLines);
+    const remaining = visible.length - shown.length;
+
+    const maxDescLen = Math.max(12, terminalWidth - 12);
+
+    const lines: string[] = [];
+    for (let i = 0; i < shown.length; i++) {
+      const task = shown[i];
+      const icon = this.getTaskIcon(task.status);
+      const prio =
+        task.priority === 'high' ? chalk.red('!') :
+        task.priority === 'medium' ? chalk.yellow('!') :
+        '';
+
+      const color =
+        task.status === 'in_progress' ? chalk.cyan :
+        task.status === 'verifying' ? chalk.yellow :
+        task.status === 'blocked' ? chalk.red :
+        chalk.gray;
+
+      let desc = task.description;
+      if (desc.length > maxDescLen) desc = desc.slice(0, maxDescLen - 1) + '…';
+
+      const isCurrent = Boolean(currentTaskId && task.id === currentTaskId);
+      const left = `${String(i + 1).padStart(2)} ${icon} ${desc}` + (prio ? chalk.dim(' ') + prio : '');
+
+      lines.push(chalk.dim('  ') + (isCurrent ? chalk.bold(color(left)) : color(left)));
+    }
+
+    if (remaining > 0 && lines.length < maxLines) {
+      lines.push(chalk.dim(`  … +${remaining} more`));
+    }
+
+    while (lines.length < maxLines) lines.push('');
+    return lines;
   }
 
   private renderProgressBar(completed: number, total: number, terminalWidth: number): string {
