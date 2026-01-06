@@ -137,6 +137,10 @@ export interface Task {
   breakdownDepth?: number; // How many levels deep in the breakdown tree (0 = root)
   produces?: string[]; // What this task produces (interfaces, data structures, etc.)
   consumes?: string[]; // What this task depends on from other tasks
+
+  // Dependency graph (task ID dependencies)
+  dependsOn?: string[]; // Task IDs that must complete before this task can start
+  isDependencyLeaf?: boolean; // Computed: true if no dependencies or all dependencies completed
   integrationPointIds?: string[]; // IDs of IntegrationPoints related to this task
   designDecisionIds?: string[]; // IDs of DesignDecisions made for/affecting this task
   breakdownComplete?: boolean; // Whether this task has been fully broken down (all subtasks are ready)

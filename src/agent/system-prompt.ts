@@ -256,6 +256,29 @@ When given a complex goal, break it down into manageable hierarchies:
 - Check progress on decomposed work
 - Use include_nested: true for full tree view
 
+### get_next_tasks (Dependency-Graph Ordering)
+- Use this after a recursive breakdown to automatically select the next task(s) that are ready to execute
+- A task is considered "ready" when:
+  - status is 'waiting', AND
+  - all dependencies are completed (isDependencyLeaf === true)
+- Parameters:
+  - max_tasks: number (default 1, max 10)
+  - include_parallel: boolean (default false) to return multiple independent tasks from different subtrees
+- Prefer this tool over manually picking a task ID; it is the system's recommended execution ordering mechanism
+
+## Recursive Breakdown + Dependency Analysis (Automatic)
+When you create a complex root task with recursive breakdown enabled, the system will:
+1) Generate a recursive task tree (up to depth limit)
+2) Store tasks in a parent/child hierarchy
+3) Automatically analyze dependencies between nearby tasks and store them as:
+   - dependsOn: string[] (task IDs that must finish first)
+   - isDependencyLeaf: boolean (computed readiness: true if no unmet dependencies)
+
+After this completes, your default workflow should be:
+- Call get_next_tasks to pick what to work on next
+- Execute and complete returned tasks
+- Repeat get_next_tasks until no tasks remain
+
 ## Workflow Example
 
 **User Request**: "Add user authentication"

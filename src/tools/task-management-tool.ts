@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
+import { getNextTasks } from './get-next-tasks.js';
 import type { ToolDefinition } from './types.js';
 import type { MemoryStore, Task, TrackingItem } from '../memory/types.js';
 import { uiState } from '../ui/ui-state.js';
@@ -32,6 +33,23 @@ const SetCurrentTaskSchema = z.object({
 // Schema for list_tasks
 const ListTasksSchema = z.object({
   status: z.enum(['all', 'active', 'waiting', 'completed', 'blocked', 'abandoned']).optional().default('all').describe('Filter by status'),
+});
+
+// Schema for get_next_tasks
+const GetNextTasksSchema = z.object({
+  max_tasks: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional()
+    .default(1)
+    .describe('Maximum number of tasks to return (default: 1, max: 10)'),
+  include_parallel: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Return multiple independent tasks for parallel execution'),
 });
 
 // Schema for list_subtasks
@@ -532,6 +550,73 @@ Always review the task list before starting new work.`,
     }
 
     return lines.join('\n');
+  }
+}
+
+export class GetNextTasksTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'get_next_tasks',
+    description: `Get the next optimal tasks to work on based on dependency graph analysis.
+
+This tool analyzes the dependency graph and returns tasks that are ready to execute:
+- All dependencies completed (dependency leaf nodes)
+- Status is 'waiting' (not active or completed)
+- Ordered by priority
+
+Use this after recursive task breakdown to automatically determine execution order.
+The system handles dependency resolution - you just execute the tasks returned.
+
+Parameters:
+- max_tasks: Maximum number of tasks to return (default: 1, max: 10)
+- include_parallel: If true, returns multiple independent tasks that can run in parallel (default: false)
+
+Returns (JSON):
+{
+  "ready_tasks": [
+    {
+      "id": "task_0042",
+      "description": "Implement Lexer Tokenization",
+      "complexity": "moderate",
+      "depth": 2,
+      "blocking_count": 3,
+      "dependencies_completed": ["task_0040", "task_0041"]
+    }
+  ],
+  "total_ready": 15,
+  "total_remaining": 247,
+  "execution_progress": "12.5%"
+}`,
+    parameters: {
+      type: 'object',
+      properties: {
+        max_tasks: {
+          type: 'number',
+          description: 'Maximum number of tasks to return (default: 1)',
+        },
+        include_parallel: {
+          type: 'boolean',
+          description: 'Return multiple independent tasks for parallel execution',
+        },
+      },
+      required: [],
+    },
+  };
+
+  protected readonly schema = GetNextTasksSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof GetNextTasksSchema>): Promise<string> {
+    const { max_tasks, include_parallel } = args;
+    const result = getNextTasks(this.memoryStore.getTasks(), {
+      maxTasks: max_tasks,
+      includeParallel: include_parallel,
+    });
+    return JSON.stringify(result, null, 2);
   }
 }
 

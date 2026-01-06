@@ -158,7 +158,7 @@ export interface RecursiveBreakdownResult {
 export class SpawnValidator {
   private rateLimiter: RateLimiter;
 
-  constructor(private llmClient: LLMClient, callsPerSecond: number = 2) {
+  constructor(private llmClient: LLMClient, callsPerSecond: number = 3) {
     this.rateLimiter = new RateLimiter(callsPerSecond);
   }
 
@@ -281,6 +281,22 @@ export class SpawnValidator {
       context.memoryStore
     );
 
+    // Analyze dependencies across all created tasks
+    if (context.verbose) {
+      console.log('\n=== STARTING DEPENDENCY ANALYSIS ===');
+      console.log(`Analyzing dependencies for ${allTaskIds.length} tasks...\n`);
+    }
+
+    await this.analyzeDependencies(allTaskIds, context.memoryStore, context.verbose ?? false);
+
+    if (context.verbose) {
+      const dependencyLeafCount = context.memoryStore
+        .getTasks()
+        .filter((t: any) => allTaskIds.includes(t.id) && t.isDependencyLeaf).length;
+      console.log(`\n=== DEPENDENCY ANALYSIS COMPLETE ===`);
+      console.log(`${dependencyLeafCount} tasks ready to execute (dependency leaf nodes)\n`);
+    }
+
     // Build comprehensive message
     const message = this.buildRecursiveBreakdownMessage(
       context.task,
@@ -301,6 +317,212 @@ export class SpawnValidator {
       },
       suggestedMessage: message,
     };
+  }
+
+  /**
+   * Analyze dependencies across tasks in a recursive breakdown.
+   * Uses the LLM to infer conservative, within-scope dependencies and stores them on tasks.
+   */
+  private async analyzeDependencies(
+    allTaskIds: string[],
+    memoryStore: MemoryStore,
+    verbose: boolean = false
+  ): Promise<void> {
+    type DependencyItem = { task_id: string; depends_on: string[]; reason?: string };
+    type DependencyResponse = { dependencies: DependencyItem[] };
+
+    const allTasks = memoryStore.getTasks();
+    const scopeTaskSet = new Set(allTaskIds);
+    const tasksInScope = allTasks.filter(t => scopeTaskSet.has(t.id));
+
+    // Prefer analyzing "waiting" tasks (root/container tasks are often 'active' and don't need ordering).
+    const tasksToAnalyze = tasksInScope.filter(t => t.status === 'waiting');
+
+    if (tasksToAnalyze.length === 0) {
+      // Still compute leaf status to keep graph consistent.
+      for (const task of allTasks) {
+        const hasUnmetDependencies = (task.dependsOn || []).some(depId => {
+          const depTask = allTasks.find(t => t.id === depId);
+          return depTask && depTask.status !== 'completed';
+        });
+        memoryStore.updateTask(task.id, { isDependencyLeaf: !hasUnmetDependencies });
+      }
+      return;
+    }
+
+    const tasksById = new Map(allTasks.map(t => [t.id, t]));
+
+    // Group by parentId so sibling context is preserved.
+    const byParent = new Map<string, Task[]>();
+    for (const task of tasksToAnalyze) {
+      const parentKey = task.parentId ?? '__root__';
+      const group = byParent.get(parentKey) ?? [];
+      group.push(task);
+      byParent.set(parentKey, group);
+    }
+
+    const maxBatchSize = 10;
+    const minBatchSize = 5;
+
+    const parentGroups = Array.from(byParent.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+    let batchIndex = 0;
+    const totalBatches = parentGroups.reduce((count, [, group]) => {
+      if (group.length <= 1) return count;
+      const numBatches = Math.ceil(group.length / maxBatchSize);
+      return count + numBatches;
+    }, 0);
+
+    for (const [parentKey, group] of parentGroups) {
+      // If a parent only has one waiting child, it has no sibling dependencies in-scope.
+      if (group.length <= 1) {
+        for (const task of group) {
+          memoryStore.updateTask(task.id, { dependsOn: [] });
+          if (verbose) {
+            console.log(`バ" Task '${task.description}' depends on: []`);
+          }
+        }
+        continue;
+      }
+
+      // Chunk by 5-10 to keep each LLM call bounded.
+      const numBatches = Math.ceil(group.length / maxBatchSize);
+      const chunkSize = Math.min(
+        maxBatchSize,
+        Math.max(minBatchSize, Math.ceil(group.length / Math.max(1, numBatches)))
+      );
+      for (let start = 0; start < group.length; start += chunkSize) {
+        const chunk = group.slice(start, start + chunkSize);
+        batchIndex += 1;
+
+        if (verbose) {
+          const firstId = chunk[0]?.id ?? '?';
+          const lastId = chunk[chunk.length - 1]?.id ?? '?';
+          console.log(`Batch ${batchIndex}/${Math.max(1, totalBatches)}: Analyzing tasks ${firstId} to ${lastId}...`);
+        }
+
+        const parentTask =
+          parentKey !== '__root__' ? tasksById.get(parentKey) ?? memoryStore.getTaskById(parentKey) : undefined;
+        const siblingTasks = group;
+
+        const systemPrompt = `You are analyzing task dependencies for automatic execution ordering.
+
+For each task, determine which OTHER tasks (by ID) must be completed BEFORE it can start.
+
+Consider:
+1. Data dependencies: task needs artifacts from another task (check produces/consumes)
+2. Ordering constraints: task must happen after another for logical reasons
+3. Foundation requirements: task requires foundational work to exist first
+4. Same-parent / close-in-tree tasks only: prefer sibling tasks as dependencies
+
+IMPORTANT:
+- Only list dependencies that exist in the provided task list (siblings listed below)
+- Be conservative: only add real dependencies, not nice-to-haves
+- Output ONLY valid JSON (no markdown, no commentary)`;
+
+        const formatList = (items?: string[]) =>
+          items && items.length > 0 ? JSON.stringify(items) : '[]';
+
+        const siblingsText = siblingTasks
+          .map(s => {
+            const produces = formatList(s.produces);
+            const consumes = formatList(s.consumes);
+            return `- ${s.id}: ${s.description} (produces: ${produces}, consumes: ${consumes})`;
+          })
+          .join('\n');
+
+        const tasksText = chunk
+          .map(t => {
+            const produces = formatList(t.produces);
+            const consumes = formatList(t.consumes);
+            const parentLabel = parentTask ? `${parentTask.id}: ${parentTask.description}` : 'None (root)';
+            return `Task ID: ${t.id}
+Description: ${t.description}
+Produces: ${produces}
+Consumes: ${consumes}
+Parent Task: ${parentLabel}
+Sibling Tasks:
+${siblingsText}`;
+          })
+          .join('\n\n');
+
+        const userPrompt = `${tasksText}
+
+Output format (JSON):
+{
+  "dependencies": [
+    {
+      "task_id": "task_0042",
+      "depends_on": ["task_0040", "task_0041"],
+      "reason": "Short reason"
+    }
+  ]
+}`;
+
+        try {
+          const response = await this.rateLimiter.throttle(() =>
+            this.llmClient.chat([
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ])
+          );
+
+          const content = response.choices[0]?.message.content || '';
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) {
+            throw new Error('No JSON object found in LLM response');
+          }
+
+          const parsed = JSON.parse(jsonMatch[0]) as DependencyResponse;
+          const deps = Array.isArray(parsed.dependencies) ? parsed.dependencies : [];
+
+          const depsByTask = new Map<string, string[]>();
+          for (const item of deps) {
+            if (!item || typeof item.task_id !== 'string') continue;
+            if (!Array.isArray(item.depends_on)) continue;
+            depsByTask.set(item.task_id, item.depends_on.filter(d => typeof d === 'string'));
+          }
+
+          // Update dependsOn for all tasks in this chunk; default to [] if omitted.
+          for (const task of chunk) {
+            const rawDeps = depsByTask.get(task.id) ?? [];
+            const normalized = Array.from(
+              new Set(
+                rawDeps
+                  .filter(depId => depId !== task.id)
+                  .filter(depId => scopeTaskSet.has(depId))
+              )
+            );
+
+            memoryStore.updateTask(task.id, { dependsOn: normalized });
+
+            if (verbose) {
+              const depDescriptions = normalized.map(depId => {
+                const dep = tasksById.get(depId);
+                return dep ? `${depId} (${dep.description})` : depId;
+              });
+              console.log(`バ" Task '${task.description}' depends on: [${depDescriptions.join(', ')}]`);
+            }
+          }
+        } catch (error) {
+          console.error('[SpawnValidator] Dependency analysis batch failed:', error);
+          // Be conservative: if batch fails, clear dependencies for chunk tasks so they aren't stuck blocked.
+          for (const task of chunk) {
+            memoryStore.updateTask(task.id, { dependsOn: [] });
+          }
+        }
+      }
+    }
+
+    // Compute leaf status for all tasks based on unmet dependencies.
+    const updatedTasks = memoryStore.getTasks();
+    for (const task of updatedTasks) {
+      const hasUnmetDependencies = (task.dependsOn || []).some(depId => {
+        const depTask = updatedTasks.find(t => t.id === depId);
+        return depTask && depTask.status !== 'completed';
+      });
+      memoryStore.updateTask(task.id, { isDependencyLeaf: !hasUnmetDependencies });
+    }
   }
 
   /**
