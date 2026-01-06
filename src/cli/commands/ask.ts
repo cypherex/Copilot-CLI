@@ -18,6 +18,7 @@ interface AskOptions {
   maxIterations?: number;
   outputFile?: string;
   file?: string;
+  taskTree?: string;
 }
 
 async function readStdin(): Promise<string> {
@@ -48,6 +49,19 @@ async function readStdin(): Promise<string> {
       }
     }, 100);
   });
+}
+
+function countReadyTasks(node: any): number {
+  let count = 0;
+  if (node.ready_to_spawn === true) {
+    count = 1;
+  }
+  if (node.children && Array.isArray(node.children)) {
+    for (const child of node.children) {
+      count += countReadyTasks(child);
+    }
+  }
+  return count;
 }
 
 export async function askCommand(
@@ -91,6 +105,27 @@ export async function askCommand(
     process.exit(1);
   }
 
+  // Store task tree path for later processing (after agent initialization)
+  let taskTreeToLoad: any = null;
+  if (options.taskTree) {
+    try {
+      const taskTreeContent = readFileSync(options.taskTree, 'utf-8');
+      taskTreeToLoad = JSON.parse(taskTreeContent);
+
+      const totalTasks = taskTreeToLoad.total_tasks || 0;
+      const readyTasks = taskTreeToLoad.roots?.reduce((sum: number, root: any) => {
+        return sum + countReadyTasks(root);
+      }, 0) || 0;
+
+      doLog(`Loaded task tree from ${options.taskTree}`);
+      doLog(`Will continue breakdown from ${totalTasks} existing tasks (${readyTasks} ready)...`);
+    } catch (error) {
+      logError(`Error: Failed to read task tree file: ${options.taskTree}`);
+      logError(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  }
+
   const config = await loadConfig();
 
   if (!config.auth.clientId && config.llm.provider === 'copilot') {
@@ -125,6 +160,104 @@ export async function askCommand(
 
     await agent.initialize();
     spinner?.stop();
+
+    // If task tree was loaded, reconstruct tasks and continue breakdown
+    if (taskTreeToLoad) {
+      const memoryStore = agent.getMemoryStore();
+      const spawnValidator = agent.getSpawnValidator();
+
+      // Recursive function to reconstruct task hierarchy
+      function reconstructTasks(node: any, parentId?: string): string {
+        // Create task in memory store
+        const task = memoryStore.addTask({
+          description: node.description,
+          status: node.status || 'waiting',
+          parentId,
+          completionMessage: node.completionMessage,
+          relatedFiles: [],
+          priority: 'medium' as any,
+          estimatedComplexity: node.complexity as any,
+        });
+
+        // Recursively create children
+        if (node.children && Array.isArray(node.children)) {
+          for (const child of node.children) {
+            reconstructTasks(child, task.id);
+          }
+        }
+
+        return task.id;
+      }
+
+      // Reconstruct all task trees from roots
+      const rootTaskIds: string[] = [];
+      if (taskTreeToLoad.roots && Array.isArray(taskTreeToLoad.roots)) {
+        for (const root of taskTreeToLoad.roots) {
+          const rootId = reconstructTasks(root);
+          rootTaskIds.push(rootId);
+        }
+      }
+
+      doLog(`Reconstructed ${taskTreeToLoad.total_tasks} tasks in memory`);
+      doLog('Starting recursive breakdown continuation...\n');
+
+      // Continue breakdown on each root task
+      for (const rootId of rootTaskIds) {
+        const rootTask = memoryStore.getTasks().find((t: any) => t.id === rootId);
+        if (rootTask) {
+          doLog(`Processing: ${rootTask.description}`);
+
+          // Trigger recursive breakdown
+          await spawnValidator.validateSpawn({
+            task: rootTask.description,
+            parent_task_id: undefined,
+            memoryStore,
+            useRecursiveBreakdown: true,
+            maxBreakdownDepth: 4,
+            verbose: true,
+          });
+
+          doLog(`✓ Completed breakdown for: ${rootTask.description}\n`);
+        }
+      }
+
+      // Export updated task tree
+      const fs = await import('fs');
+      const allTasks = memoryStore.getTasks();
+
+      function buildTaskNode(task: any): any {
+        const children = allTasks.filter((t: any) => t.parentId === task.id);
+        return {
+          id: task.id,
+          description: task.description,
+          parent_id: task.parentId,
+          depth: 0, // Will be calculated by export script
+          complexity: task.estimatedComplexity,
+          ready_to_spawn: task.status === 'waiting' && children.length === 0,
+          status: task.status,
+          completionMessage: task.completionMessage,
+          children: children.map((c: any) => buildTaskNode(c)),
+        };
+      }
+
+      const roots = allTasks.filter((t: any) => !t.parentId);
+      const updatedTree = {
+        total_tasks: allTasks.length,
+        root_tasks: roots.length,
+        roots: roots.map((r: any) => buildTaskNode(r)),
+      };
+
+      fs.writeFileSync('task_hierarchy.json', JSON.stringify(updatedTree, null, 2));
+      doLog(`\n✓ Updated task tree exported to task_hierarchy.json`);
+      doLog(`Total tasks: ${allTasks.length}`);
+
+      // Don't continue with normal chat - we're done
+      await agent.shutdown();
+      if (logManager) {
+        await logManager.closeAll();
+      }
+      return;
+    }
 
     // Create renderer to show agent status, tool execution, and outputs
     const renderer = new AskRenderer({

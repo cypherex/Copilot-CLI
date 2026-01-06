@@ -1,0 +1,134 @@
+OLD SCHOOL RUNESCAPE LOC ESTIMATE (Rust from scratch)
+
+=== GAME ENGINE ===
+3D Rendering Engine (custom or wrapper):         25,000-40,000
+  - Scene graph, camera, lighting
+  - Terrain rendering, water, skybox
+  - Character/NPC rendering, animations
+  - UI rendering (oldschool interface)
+Physics & Collision:                              8,000-12,000
+Input Handling (keyboard, mouse, camera):         4,000-6,000
+Audio Engine (music, sound effects):              6,000-10,000
+Asset Loading (models, textures, music):          8,000-12,000
+                                    Engine:   51,000-80,000
+
+=== NETWORKING ===
+Client-Server Protocol:                          12,000-18,000
+Connection Management (login, world select):      6,000-10,000
+Packet Serialization/Deserialization:             8,000-12,000
+Client Prediction & Interpolation:                8,000-12,000
+Anti-cheat (packet validation, bot detection):   10,000-15,000
+                                 Networking:  44,000-67,000
+
+=== GAME SERVER ===
+World Server (tick system, entity management):   20,000-30,000
+Login Server (auth, world assignment):            8,000-12,000
+Player State Management:                         12,000-18,000
+NPC AI System:                                   15,000-25,000
+Pathfinding (A* for NPCs/players):                6,000-10,000
+Combat System:                                   18,000-28,000
+  - Melee, Ranged, Magic calculations
+  - PvP, PvE mechanics
+  - Special attacks, prayers
+Trade/Economy System:                            12,000-18,000
+Grand Exchange:                                  15,000-25,000
+Drop Tables & Loot:                               8,000-12,000
+                                      Server: 114,000-178,000
+
+=== GAME CONTENT (23 SKILLS) ===
+Skills Implementation (23 skills):               92,000-138,000
+  - Attack, Strength, Defence, HP (4k each)
+  - Magic, Ranged, Prayer (6k each)
+  - Runecrafting, Construction, Agility (8k each)
+  - Herblore, Thieving, Crafting (8k each)
+  - Fletching, Slayer, Hunter (6k each)
+  - Mining, Smithing, Fishing (8k each)
+  - Cooking, Firemaking, Woodcutting (6k each)
+  - Farming (12k - complex)
+Quest System (200+ quests):                      80,000-120,000
+  - Quest engine framework (15k)
+  - Individual quests (200 × 250-500 lines avg)
+Minigames (30+ minigames):                       45,000-70,000
+  - Barrows, Fight Caves, etc.
+Achievement Diaries:                              8,000-12,000
+                                    Content: 225,000-340,000
+
+=== WORLD & MAP ===
+Map Data Structures:                              8,000-12,000
+Map Loading/Streaming:                            6,000-10,000
+Instance Management (dungeons, POHs):            10,000-15,000
+Region System:                                    5,000-8,000
+                                 World/Map:   29,000-45,000
+
+=== ITEMS & INVENTORY ===
+Item Database (20,000+ items):                   15,000-25,000
+Inventory System:                                10,000-15,000
+Bank System:                                     12,000-18,000
+Equipment/Stats System:                          10,000-15,000
+Trading System:                                   8,000-12,000
+                                      Items:   55,000-85,000
+
+=== SOCIAL & CHAT ===
+Chat System (public, private, clan):             12,000-18,000
+Friends/Ignore Lists:                             6,000-10,000
+Clan System:                                     15,000-25,000
+                                     Social:   33,000-53,000
+
+=== DATABASE LAYER ===
+Player Data (PostgreSQL/MySQL):                  15,000-25,000
+World State Persistence:                         10,000-15,000
+High Scores/Ladders:                              6,000-10,000
+                                   Database:   31,000-50,000
+
+=== TOOLS ===
+Map Editor:                                      20,000-30,000
+Quest Editor:                                    15,000-25,000
+Item/NPC Editor:                                 12,000-18,000
+Admin Tools:                                     10,000-15,000
+                                      Tools:   57,000-88,000
+
+=== CLIENT UI ===
+Game Interface (oldschool style):                25,000-40,000
+  - Inventory, equipment, skills
+  - Chat, minimap, settings
+  - Quest journal, achievement diary
+  - Grand Exchange interface
+Login Screen & Character Select:                  8,000-12,000
+                                         UI:   33,000-52,000
+
+=== TESTING ===
+Unit Tests:                                      40,000-60,000
+Integration Tests:                               25,000-40,000
+Load Testing Tools:                               5,000-8,000
+                                    Testing:   70,000-108,000
+
+===================================================
+TOTAL ESTIMATE:                              742,000-1,146,000 lines
+
+REALISTIC MIDDLE:                            ~900,000 lines
+===================================================
+
+COMPARISON:
+- Flux Compiler:     ~600,000 lines
+- OSRS Clone:        ~900,000 lines
+- OSRS is 1.5x LARGER ✓
+
+WHY LARGER:
+✓ 23 skills with unique mechanics
+✓ 200+ quests (narrative scripting)
+✓ 20,000+ items with interactions
+✓ Massive content (vs algorithmic compiler)
+✓ Complex MMO networking
+✓ Social/economic systems
+✓ Persistent world state
+
+WHY FLUX COULD BE HARDER:
+✓ Algorithms are deeper (Hindley-Milner, borrow checking)
+✓ Correctness critical (compiler bugs = broken programs)
+✓ Performance critical (compile time matters)
+✓ Less room for "good enough"
+
+VERDICT: OSRS is LARGER but SIMPLER
+- More code (content-heavy)
+- Less algorithmic complexity
+- More forgiving (bugs = gameplay issues, not crashes)

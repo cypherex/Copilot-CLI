@@ -34,6 +34,7 @@ export class CopilotAgent {
   private completionTracker: CompletionTracker;
   private llmConfig: LLMConfig;
   private workingDirectory: string;
+  private spawnValidator: SpawnValidator;
 
   constructor(
     authConfig: AuthConfig,
@@ -120,7 +121,7 @@ export class CopilotAgent {
     const workContinuityManager = new WorkContinuityManager(this.conversation.getMemoryStore());
 
     // Initialize spawn validator and completion workflow validator
-    const spawnValidator = new SpawnValidator(this.llmClient);
+    this.spawnValidator = new SpawnValidator(this.llmClient);
     const completionWorkflowValidator = new CompletionWorkflowValidator(this.llmClient);
 
     // Create SubAgentManager with all infrastructure and register subagent tools
@@ -141,12 +142,12 @@ export class CopilotAgent {
     // Wire validators into tools
     const spawnAgentTool = this.toolRegistry.get('spawn_agent');
     if (spawnAgentTool && 'setValidator' in spawnAgentTool) {
-      (spawnAgentTool as any).setValidator(spawnValidator);
+      (spawnAgentTool as any).setValidator(this.spawnValidator);
     }
 
     const createTaskTool = this.toolRegistry.get('create_task');
     if (createTaskTool && 'setValidator' in createTaskTool) {
-      (createTaskTool as any).setValidator(spawnValidator);
+      (createTaskTool as any).setValidator(this.spawnValidator);
     }
 
     const updateTaskStatusTool = this.toolRegistry.get('update_task_status');
@@ -275,6 +276,10 @@ export class CopilotAgent {
 
   getMemoryStore(): any {
     return this.conversation.getMemoryStore();
+  }
+
+  getSpawnValidator(): SpawnValidator {
+    return this.spawnValidator;
   }
 
   setMaxIterations(max: number | null): void {

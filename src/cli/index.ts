@@ -32,6 +32,7 @@ export function createCLI(): Command {
     .option('--max-iterations <n>', 'Limit iterations (default: unlimited)', parseInt)
     .option('-o, --output-file <path>', 'Save output to file (in addition to displaying)')
     .option('-f, --file <path>', 'Read question/prompt from file')
+    .option('--task-tree <path>', 'Continue task breakdown from existing task_hierarchy.json')
     .action(askCommand);
 
   // Configuration management

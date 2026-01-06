@@ -1,0 +1,165 @@
+STARDEW VALLEY LOC ESTIMATE (Rust from scratch)
+
+=== GAME ENGINE (2D) ===
+2D Rendering (sprite batching, layers):          12,000-18,000
+  - Tile rendering, parallax backgrounds
+  - Sprite animation system
+  - Particle effects (rain, leaves, etc.)
+  - Lighting/shadows (dynamic day/night)
+2D Physics/Collision (tile-based):                4,000-6,000
+Input Handling (keyboard, mouse, gamepad):        3,000-5,000
+Audio Engine (music, ambient, SFX):               4,000-6,000
+Asset Loading (sprites, sounds, data):            5,000-8,000
+Save/Load System:                                 6,000-10,000
+                                    Engine:   34,000-53,000
+
+=== CORE GAME SYSTEMS ===
+Time System (days, seasons, weather):             6,000-10,000
+Calendar & Events:                                8,000-12,000
+Player State (energy, health, skills):            5,000-8,000
+Inventory System:                                 8,000-12,000
+Tool System (hoe, watering can, axe, etc.):       6,000-10,000
+                                 Core Sys:   33,000-52,000
+
+=== FARMING ===
+Crop System (40+ crops, growth stages):          15,000-25,000
+  - Planting, watering, growth ticks
+  - Seasonal crops, quality system
+  - Fertilizer, scarecrows
+Tilling & Soil Management:                        5,000-8,000
+Animal System (cows, chickens, etc.):            18,000-28,000
+  - Animal happiness, production
+  - Feeding, petting, milking
+  - Barn/coop management
+Greenhouse & Buildings:                           8,000-12,000
+Sprinkler System:                                 4,000-6,000
+                                    Farming:  50,000-79,000
+
+=== MINING & COMBAT ===
+Mine Generation (procedural floors):             12,000-18,000
+Combat System:                                   15,000-25,000
+  - Weapons (sword, club, dagger)
+  - Enemy AI (slimes, bats, etc. - 20+ types)
+  - Projectiles, knockback, damage
+Resource Nodes (rocks, ore):                      6,000-10,000
+Foraging (mushrooms, berries):                    5,000-8,000
+                                Mining/Combat: 38,000-61,000
+
+=== SOCIAL & NPCS ===
+NPC System (30+ NPCs):                           25,000-40,000
+  - Daily schedules, pathfinding
+  - Dialogue system (thousands of lines)
+  - Gift preferences
+Relationship System:                             12,000-18,000
+  - Friendship/romance levels
+  - Heart events
+Marriage System:                                 15,000-25,000
+  - Proposals, weddings, spouse AI
+  - Having children
+Town Events/Festivals (10+ events):              20,000-30,000
+  - Egg hunt, fair, winter festival, etc.
+Birthday System:                                  3,000-5,000
+                                  Social/NPC: 75,000-118,000
+
+=== CRAFTING & COOKING ===
+Crafting System (100+ recipes):                  12,000-18,000
+Cooking System (80+ recipes):                    10,000-15,000
+Recipe Learning/Discovery:                        5,000-8,000
+                              Crafting/Cooking: 27,000-41,000
+
+=== FISHING ===
+Fishing Minigame:                                 8,000-12,000
+Fish Types (40+ fish, seasonal):                 10,000-15,000
+Tackle/Bait System:                               4,000-6,000
+Crab Pots:                                        3,000-5,000
+                                     Fishing: 25,000-38,000
+
+=== ECONOMY & SHOPS ===
+Shop System (5+ shops):                          10,000-15,000
+Pricing/Economy:                                  5,000-8,000
+Shipping Bin:                                     4,000-6,000
+Pierre's/Joja Mart:                               6,000-10,000
+                                    Economy:  25,000-39,000
+
+=== QUESTS & PROGRESSION ===
+Quest System:                                     8,000-12,000
+Community Center Bundles:                        15,000-25,000
+  - 6 rooms, 30+ bundles
+  - Completion rewards
+Achievements/Collections:                         6,000-10,000
+Skill System (5 skills, 10 levels each):         12,000-18,000
+  - Farming, Mining, Foraging, Fishing, Combat
+  - Professions at levels 5 & 10
+                              Quests/Progress: 41,000-65,000
+
+=== WORLD & MAP ===
+Map System (town, farm, mines, forest, etc.):    15,000-25,000
+Buildings (interior/exterior transitions):        8,000-12,000
+Farm Customization (buildings, fences):          10,000-15,000
+Secret Areas (secret woods, sewer, etc.):         5,000-8,000
+                                  World/Map:  38,000-60,000
+
+=== ITEMS (700+ items) ===
+Item Database:                                   12,000-18,000
+Item Categories (tools, crops, artisan, etc.):    6,000-10,000
+Quality System (normal, silver, gold, iridium):   4,000-6,000
+Artisan Goods (wine, cheese, honey, etc.):       10,000-15,000
+                                      Items:  32,000-49,000
+
+=== UI ===
+Menus (inventory, crafting, social, map):        20,000-30,000
+HUD (health, energy, time, money):                6,000-10,000
+Journal/Quest Log:                                5,000-8,000
+Collections Tab:                                  4,000-6,000
+Options/Settings:                                 4,000-6,000
+                                         UI:  39,000-60,000
+
+=== MINI-SYSTEMS ===
+Weather System:                                   4,000-6,000
+Mail System:                                      3,000-5,000
+TV Programs (weather, recipes, tips):             4,000-6,000
+Traveling Cart:                                   3,000-5,000
+Horse/Pet System:                                 5,000-8,000
+                                  Mini-Systems: 19,000-30,000
+
+=== TESTING ===
+Unit Tests:                                      25,000-40,000
+Integration Tests:                               15,000-25,000
+                                    Testing:  40,000-65,000
+
+===================================================
+TOTAL ESTIMATE:                              516,000-810,000 lines
+
+REALISTIC MIDDLE:                            ~650,000 lines
+===================================================
+
+COMPARISON:
+- Flux Compiler:     ~600,000 lines
+- OSRS Clone:        ~900,000 lines
+- Stardew Valley:    ~650,000 lines
+
+STARDEW vs FLUX:
+Similar size but VERY different complexity!
+
+STARDEW CHARACTERISTICS:
+✓ Mostly content and game rules
+✓ Simpler algorithms (no PhD required)
+✓ More forgiving (bugs = quirks)
+✓ Lots of data (items, NPCs, dialogue)
+✓ State machines & scheduling
+✗ No deep CS theory
+✗ Single-player (no networking)
+✗ 2D (simpler than 3D)
+
+FLUX CHARACTERISTICS:
+✓ Deep algorithms (type theory)
+✓ Correctness critical
+✓ Performance critical
+✓ Less content, more logic
+✗ Unforgiving (compiler bugs fatal)
+
+VERDICT: Similar LOC, but Stardew is MUCH easier
+- More straightforward logic
+- Can prototype & iterate
+- Bugs are less catastrophic
+- Parallelizable (each system independent)

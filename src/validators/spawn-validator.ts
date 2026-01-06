@@ -3,6 +3,8 @@
 import type { LLMClient, ChatMessage } from '../llm/types.js';
 import type { Task, MemoryStore } from '../memory/types.js';
 import { uiState } from '../ui/ui-state.js';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 
 // ============================================
 // Rate Limiter

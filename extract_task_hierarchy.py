@@ -53,12 +53,13 @@ def extract_tasks_from_session(file_path: str) -> Tuple[Dict[str, Task], List[st
     # Find the main breakdown section
     breakdown_sections = re.findall(breakdown_section_pattern, content, re.DOTALL)
 
+    # If no section markers found, use entire content
     if not breakdown_sections:
-        print("Warning: No recursive breakdown section found")
-        return tasks, root_ids
-
-    # Use the last (most recent) breakdown section
-    breakdown_content = breakdown_sections[-1]
+        print("Warning: No section markers found, analyzing entire file...")
+        breakdown_content = content
+    else:
+        # Use the last (most recent) breakdown section
+        breakdown_content = breakdown_sections[-1]
 
     # Extract all depth analyses
     depth_matches = re.finditer(depth_pattern, breakdown_content)
