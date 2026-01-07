@@ -2,20 +2,20 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { formatDistanceToNow } from 'date-fns';
 import type { Session, SessionMetadata } from './types.js';
 import type { ChatMessage } from '../llm/types.js';
 import type { MemoryStore } from '../memory/types.js';
 import { createFilesystemError } from '../utils/filesystem-errors.js';
+import { getCopilotCliHomeDir } from '../utils/app-paths.js';
 
 export class SessionManager {
   private sessionsDir: string;
   private currentSession: Session | null = null;
 
   constructor() {
-    this.sessionsDir = path.join(os.homedir(), '.copilot-cli', 'sessions');
+    this.sessionsDir = path.join(getCopilotCliHomeDir(), 'sessions');
   }
 
   /**
@@ -135,6 +135,7 @@ export class SessionManager {
           createdAt: new Date(t.createdAt),
           updatedAt: new Date(t.updatedAt),
           completedAt: t.completedAt ? new Date(t.completedAt) : undefined,
+          pendingVerificationAt: t.pendingVerificationAt ? new Date(t.pendingVerificationAt) : undefined,
         }));
       }
 
@@ -157,6 +158,45 @@ export class SessionManager {
           ...e,
           timestamp: new Date(e.timestamp),
         }));
+      }
+
+      if (session.sessionData?.workingState?.commandHistory) {
+        session.sessionData.workingState.commandHistory = session.sessionData.workingState.commandHistory.map((c: any) => ({
+          ...c,
+          timestamp: new Date(c.timestamp),
+        }));
+      }
+
+      if (session.sessionData?.workingState?.lastRepro) {
+        session.sessionData.workingState.lastRepro = {
+          ...session.sessionData.workingState.lastRepro,
+          timestamp: new Date(session.sessionData.workingState.lastRepro.timestamp),
+        };
+      }
+
+      if (session.sessionData?.workingState?.lastVerification) {
+        const v = session.sessionData.workingState.lastVerification;
+        session.sessionData.workingState.lastVerification = {
+          ...v,
+          startedAt: new Date(v.startedAt),
+          finishedAt: new Date(v.finishedAt),
+        };
+      }
+
+      if (session.sessionData?.workingState?.lastTaskBreakdown) {
+        const b = session.sessionData.workingState.lastTaskBreakdown;
+        session.sessionData.workingState.lastTaskBreakdown = {
+          ...b,
+          generatedAt: new Date(b.generatedAt),
+        };
+      }
+
+      if (session.sessionData?.workingState?.lastAutoToT) {
+        const t = session.sessionData.workingState.lastAutoToT;
+        session.sessionData.workingState.lastAutoToT = {
+          ...t,
+          triggeredAt: new Date(t.triggeredAt),
+        };
       }
 
       if (session.sessionData?.archive) {

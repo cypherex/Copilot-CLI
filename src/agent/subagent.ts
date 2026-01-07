@@ -12,6 +12,8 @@ import type { PlanningValidator } from './planning-validator.js';
 import type { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import type { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import type { FileRelationshipTracker } from './file-relationship-tracker.js';
+import { filterToolDefinitions, isToolAllowed } from './tool-allowlist.js';
+import { extractJsonObject } from '../utils/json-extract.js';
 
 export interface SubAgentConfig {
   name: string;
@@ -19,6 +21,8 @@ export interface SubAgentConfig {
   systemPrompt?: string;
   maxIterations?: number;
   workingDirectory?: string;
+  allowedTools?: string[]; // Optional per-agent tool allowlist
+  outputJsonFromReasoning?: boolean; // If true, extract JSON from reasoningContent when content is empty (used for explorer)
 }
 
 export interface SubAgentResult {
@@ -192,17 +196,21 @@ If you encounter tracking items during your work, you have access to these tools
    - Understand the context around your change
    - Ensure search string will match
 
-4. **COMPLETE THE TASK**: Don't stop until the task is fully complete
+4. **USE TREE-OF-THOUGHT WHEN STUCK**:
+   - If you’re stuck after 1-2 attempts (repro still failing, patch keeps failing, unclear root cause), call tree_of_thought
+   - Keep branches read-only; use it to produce competing hypotheses and patch sketches
+
+5. **COMPLETE THE TASK**: Don't stop until the task is fully complete
    - Test your changes if applicable
    - Verify integration points work
    - Clean up any temporary code
 
-5. **BE THOROUGH**:
+6. **BE THOROUGH**:
    - Explore necessary files to understand the system
    - Follow existing code patterns and conventions
    - Make changes that fit naturally with the codebase
 
-6. **TASK COMPLETION**: If you have access to update_task_status:
+7. **TASK COMPLETION**: If you have access to update_task_status:
    - When marking a task as "completed", you MUST provide a completion_message
    - Summarize what was accomplished (files created/modified, functions implemented, etc.)
    - Example: update_task_status({
@@ -260,6 +268,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
     let finalOutput = '';
     let continueLoop = true;
     let currentStage = 'thinking'; // Track current stage
+    const debugSubagent = !!process.env.DEBUG_SUBAGENT || !!process.env.DEBUG_EXPLORER;
 
     // Emit start message
     this.emit('message', {
@@ -293,7 +302,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
           status: 'running',
         });
 
-        const tools = this.toolRegistry.getDefinitions();
+        const tools = filterToolDefinitions(this.toolRegistry.getDefinitions(), this.config.allowedTools);
         const accumulator = new StreamAccumulator();
 
         for await (const chunk of this.llmClient.chatStream(
@@ -304,6 +313,17 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
 
         const response = accumulator.getResponse();
+        const contentLen = (response.content || '').trim().length;
+        const reasoningLen = (response.reasoningContent || '').trim().length;
+        const toolCallsCount = response.toolCalls?.length || 0;
+
+        if (debugSubagent) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `[Subagent Debug] iter ${iteration}/${this.maxIterations} stage=${currentStage} contentLen=${contentLen} reasoningLen=${reasoningLen} toolCalls=${toolCallsCount}`,
+          });
+        }
 
         // Always emit thinking content for logging (even if empty or with tool calls)
         if (response.content) {
@@ -335,16 +355,65 @@ Remember: You are responsible for delivering complete, production-ready work. No
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
+          // If model produced output only in reasoning_content (thinking-enabled providers),
+          // optionally extract JSON for tool-driven subagents (e.g., explorer) without leaking reasoning.
+          // If extraction fails, fall back to returning the raw reasoning content instead of an empty output
+          // (the caller can attempt its own parse/repair).
+          if (this.config.outputJsonFromReasoning && (!response.content || !response.content.trim()) && response.reasoningContent) {
+            const extracted = extractJsonObject(response.reasoningContent);
+            finalOutput = extracted.jsonText || response.reasoningContent;
+          } else if (response.content) {
+            finalOutput = response.content;
+          }
+
           // Final response (no tool calls) - emit as completion message
           this.emit('message', {
             agentId: this.config.name,
-            content: response.content || '',
+            content: finalOutput || response.content || '',
             type: 'final_response',
             iteration,
           });
           this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
           continueLoop = false;
         }
+      }
+
+      // If we hit maxIterations while still in a tool loop, attempt one final "no tools" completion pass.
+      // This is especially important for tool-driven subagents like the explorer, which often need an
+      // additional iteration after tool execution to synthesize a final JSON result.
+      if (continueLoop && this.config.outputJsonFromReasoning) {
+        this.emit('message', {
+          agentId: this.config.name,
+          type: 'system',
+          content: `[Subagent Debug] reached maxIterations (${this.maxIterations}) with pending tool loop; running 1 final no-tools completion pass`,
+        });
+
+        this.conversation.addUserMessage(
+          'Finalize now: you have NO tools. Return the final required output directly (one JSON object if requested).'
+        );
+
+        const accumulator = new StreamAccumulator();
+        for await (const chunk of this.llmClient.chatStream(this.conversation.getMessages(), [])) {
+          accumulator.addChunk(chunk);
+        }
+        const response = accumulator.getResponse();
+
+        if ((!response.content || !response.content.trim()) && response.reasoningContent) {
+          const extracted = extractJsonObject(response.reasoningContent);
+          finalOutput = extracted.jsonText || response.reasoningContent;
+        } else {
+          finalOutput = response.content || finalOutput;
+        }
+
+        this.emit('message', {
+          agentId: this.config.name,
+          content: finalOutput || '',
+          type: 'final_response',
+          iteration: iteration + 1,
+        });
+
+        this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+        continueLoop = false;
       }
 
       const toolsUsed = Array.from(this.toolsUsed);
@@ -385,6 +454,10 @@ Remember: You are responsible for delivering complete, production-ready work. No
   private async executeTools(toolCalls: ToolCall[]): Promise<void> {
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
+
+      if (!isToolAllowed(toolName, this.config.allowedTools)) {
+        throw new Error(`Tool not allowed for this subagent: ${toolName}`);
+      }
       this.toolsUsed.add(toolName);
 
       // Update stage to show which tool is being executed
@@ -618,6 +691,8 @@ export class SubAgentManager extends EventEmitter {
       systemPrompt: config.systemPrompt,
       maxIterations: config.maxIterations,
       workingDirectory: config.workingDirectory,
+      allowedTools: config.allowedTools,
+      outputJsonFromReasoning: config.outputJsonFromReasoning,
     };
 
     const promise = this.agentQueue.addToQueue(queueConfig).then((result) => {

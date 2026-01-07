@@ -91,6 +91,14 @@ List all tasks, optionally filtered by status.
 - Check for blocked tasks regularly
 - Review completed tasks before closing session
 
+### debug_scaffold
+
+Create a hypothesis-driven debugging task tree (repro, explore, hypothesis/experiment pairs, fix, verify). Use this when you need iterative debugging and want tight bookkeeping.
+
+### record_experiment_result
+
+Append a structured experiment log to a task (hypothesis, steps, observed, conclusion, next step). This helps the agent keep track of what was tried across iterations.
+
 ## Validation Flow
 
 Before processing any user message, the agent validates its planning state:

@@ -13,9 +13,9 @@ export class RateLimiter {
 
   /**
    * Create a new RateLimiter
-   * @param minIntervalMs Minimum time between requests (default: 25ms)
+   * @param minIntervalMs Minimum time between requests (default: 100ms)
    */
-  constructor(minIntervalMs: number = 25) {
+  constructor(minIntervalMs: number = 100) {
     this.minIntervalMs = minIntervalMs;
   }
 

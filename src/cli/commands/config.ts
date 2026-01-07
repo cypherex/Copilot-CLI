@@ -6,13 +6,14 @@ import path from 'path';
 import os from 'os';
 import { loadConfig, setConfigValue, getConfigValue } from '../../utils/config.js';
 import { log } from '../../utils/index.js';
+import { getCopilotCliHomeDir } from '../../utils/app-paths.js';
 
 function getCachePath(): string {
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
     return path.join(localAppData, 'copilot-cli', 'cache');
   }
-  return path.join(os.homedir(), '.copilot-cli', 'cache');
+  return path.join(getCopilotCliHomeDir(), 'cache');
 }
 
 export async function configCommand(options: {

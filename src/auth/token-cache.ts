@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import type { AuthToken } from './types.js';
+import { getCopilotCliHomeDir } from '../utils/app-paths.js';
 
 // Platform-specific cache path
 function getDefaultCachePath(): string {
@@ -13,7 +14,7 @@ function getDefaultCachePath(): string {
     return path.join(localAppData, 'copilot-cli', 'cache', 'msal.cache');
   } else {
     // macOS/Linux: Use ~/.copilot-cli
-    return path.join(os.homedir(), '.copilot-cli', 'cache', 'msal.cache');
+    return path.join(getCopilotCliHomeDir(), 'cache', 'msal.cache');
   }
 }
 

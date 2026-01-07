@@ -25,6 +25,7 @@ import { FileRelationshipTracker } from './file-relationship-tracker.js';
 import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { MemoryStore } from '../memory/types.js';
 import { ErrorHandler, handleError } from '../utils/error-handler.js';
+import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from './auto-tot.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
@@ -50,6 +51,7 @@ export class AgenticLoop {
 
   // Track if we just asked LLM to review tracking items (to avoid re-parsing the review response)
   private justAskedToReviewTrackingItems = false;
+  private autoToTTriggeredThisTurn = false;
 
   constructor(
     private llmClient: LLMClient,
@@ -112,6 +114,7 @@ export class AgenticLoop {
   }
 
   async processUserMessage(userMessage: string): Promise<void> {
+    this.autoToTTriggeredThisTurn = false;
     // Check for session resume and display continuity info
     if (this.workContinuityManager && this.workContinuityManager.isSessionResume()) {
       this.workContinuityManager.displaySessionResume();
@@ -119,6 +122,7 @@ export class AgenticLoop {
 
     // Track if any file modifications occurred during this user message processing
     let hadFileModifications = false;
+    let emptyFinalResponseRetries = 0;
 
     // Execute user:prompt-submit hook
     let messageToProcess = userMessage;
@@ -361,14 +365,10 @@ export class AgenticLoop {
         }
 
         const response = accumulator.getResponse();
-
-        // If we didn't stream (tool-only response or very fast), add to messages
-        if (response.content && !hasStartedStreaming) {
-          uiState.addMessage({
-            role: 'assistant',
-            content: response.content,
-            timestamp: Date.now(),
-          });
+        const responseContent = typeof response.content === 'string' ? response.content : '';
+        const hasVisibleContent = responseContent.trim().length > 0;
+        if (hasVisibleContent) {
+          emptyFinalResponseRetries = 0;
         }
 
         // Update status back to idle
@@ -380,13 +380,13 @@ export class AgenticLoop {
         // Execute assistant:response hook
         if (this.hookRegistry) {
           const responseResult = await this.hookRegistry.execute('assistant:response', {
-            assistantMessage: response.content,
+            assistantMessage: responseContent,
             hasToolCalls: !!(response.toolCalls && response.toolCalls.length > 0),
           });
 
           // Handle injected user message (used by Ralph Wiggum loop)
           if (responseResult.metadata?.injectUserMessage && !response.toolCalls?.length) {
-            this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+            this.conversation.addAssistantMessage(responseContent, undefined, response.reasoningContent);
             this.conversation.addUserMessage(responseResult.metadata.injectUserMessage);
             continueLoop = true;
             continue;
@@ -394,7 +394,16 @@ export class AgenticLoop {
         }
 
         if (response.toolCalls && response.toolCalls.length > 0) {
-          this.conversation.addAssistantMessage(response.content || '', response.toolCalls, response.reasoningContent);
+          this.conversation.addAssistantMessage(responseContent, response.toolCalls, response.reasoningContent);
+
+          // If we didn't stream, show assistant content once (even for tool-calling responses)
+          if (hasVisibleContent && !hasStartedStreaming) {
+            uiState.addMessage({
+              role: 'assistant',
+              content: responseContent,
+              timestamp: Date.now(),
+            });
+          }
 
           // Check if any file modification tools were called
           const fileModificationTools = ['create_file', 'patch_file'];
@@ -450,17 +459,75 @@ export class AgenticLoop {
           }
 
           await this.executeTools(response.toolCalls);
+
+          // Auto-wire Tree-of-Thought (ToT) in a few places:
+          // 1) After selecting a task (set_current_task)
+          // 2) After a failing repro (run_repro)
+          // 3) Periodically every 5 iterations (iteration_tick)
+          if (this.memoryStore && !this.autoToTTriggeredThisTurn) {
+            const toolNames = response.toolCalls.map(tc => tc.function.name);
+
+            const trigger =
+              toolNames.includes('run_repro')
+                ? { kind: 'repro_failed' as const }
+                : toolNames.includes('set_current_task')
+                  ? { kind: 'after_task_set' as const }
+                  : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
+
+            if (trigger) {
+              const decision = decideAutoToT(this.memoryStore, trigger);
+              if (decision.shouldTrigger) {
+                recordAutoToT(this.memoryStore, decision);
+                this.autoToTTriggeredThisTurn = true;
+
+                const instruction = buildAutoToTInstruction(decision);
+                if (instruction) {
+                  uiState.addMessage({
+                    role: 'system',
+                    content: instruction,
+                    timestamp: Date.now(),
+                  });
+                  this.conversation.addUserMessage(instruction);
+                }
+              }
+            }
+          }
           continueLoop = true;
         } else {
-          this.conversation.addAssistantMessage(response.content || '');
+          this.conversation.addAssistantMessage(responseContent);
 
           // Log assistant message to UI/session (important for troubleshooting)
-          if (response.content) {
+          if (hasVisibleContent && !hasStartedStreaming) {
             uiState.addMessage({
               role: 'assistant',
-              content: response.content,
+              content: responseContent,
               timestamp: Date.now(),
             });
+          } else {
+            // If the model returns no tool calls AND no visible content, it looks like an abrupt exit.
+            // Treat this as a transient failure and prompt for a proper response.
+            emptyFinalResponseRetries += 1;
+            uiState.addMessage({
+              role: 'system',
+              content: `Warning: model returned an empty response (attempt ${emptyFinalResponseRetries}).`,
+              timestamp: Date.now(),
+            });
+
+            if (emptyFinalResponseRetries <= 2) {
+              this.conversation.addUserMessage(
+                'Your last response was empty. Respond normally with a non-empty assistant message. ' +
+                'If you need to use tools, call them; otherwise provide the answer directly.'
+              );
+              continueLoop = true;
+              continue;
+            }
+
+            uiState.addMessage({
+              role: 'system',
+              content: 'Error: model repeatedly returned an empty response; stopping to avoid a silent exit.',
+              timestamp: Date.now(),
+            });
+            continueLoop = false;
           }
 
           // Check if we need compression before ending the loop
@@ -536,7 +603,7 @@ export class AgenticLoop {
           continueLoop = false;
 
           // Detect incomplete work - if LLM says it's done but left things undone
-          if (this.incompleteWorkDetector && response.content) {
+          if (this.incompleteWorkDetector && hasVisibleContent) {
             // Skip detection if we just asked LLM to review tracking items
             // (prevents re-parsing the LLM's explanation as new tracking items)
             if (this.justAskedToReviewTrackingItems) {
@@ -557,7 +624,7 @@ export class AgenticLoop {
             } else {
               const isToolFree = this.incompleteWorkDetector.isToolFreeResponse({
                 role: 'assistant',
-                content: response.content,
+                content: responseContent,
                 toolCalls: response.toolCalls || []
               });
               // Check for open tracking items and tasks in memory
@@ -570,7 +637,7 @@ export class AgenticLoop {
               const hasOpenTasks = openTasks.length > 0;
 
               const detection = this.incompleteWorkDetector.analyze(
-                response.content,
+                responseContent,
                 hasTrackingItems
               );
 
@@ -690,7 +757,7 @@ Start by calling list_tracking_items with status='open' to see what needs review
               if (detection.trackingItems.length > 0) {
                 await this.incompleteWorkDetector.storeDetectedItems(
                   detection.trackingItems,
-                  response.content || 'LLM response'
+                  responseContent || 'LLM response'
                 );
                 uiState.addMessage({
                   role: 'system',
@@ -747,15 +814,15 @@ Start with list_tracking_items to see what needs review.`;
 
           // Track retrieval usefulness if we had retrievals
           const pendingRetrievalIds = this.conversation.getPendingRetrievalIds();
-          if (pendingRetrievalIds.length > 0 && response.content) {
-            await this.trackRetrievalUsefulness(pendingRetrievalIds, response.content);
+          if (pendingRetrievalIds.length > 0 && hasVisibleContent) {
+            await this.trackRetrievalUsefulness(pendingRetrievalIds, responseContent);
           }
 
           // Audit completed response for incomplete scaffolding - ONLY if files were modified
-          if (this.completionTracker && response.content && hadFileModifications) {
+          if (this.completionTracker && hasVisibleContent && hadFileModifications) {
             const responseId = `response_${++this.responseCounter}`;
             const auditResult = await this.completionTracker.auditResponse(
-              response.content,
+              responseContent,
               this.conversation.getMessages(),
               responseId
             );
@@ -826,6 +893,31 @@ Start with list_tracking_items to see what needs review.`;
     } else {
       await this.executeToolsSequential(toolCalls);
     }
+  }
+
+  private updateAutoParallelToolState(
+    executionId: string,
+    toolIndex: number,
+    updates: Partial<{
+      status: 'pending' | 'running' | 'success' | 'error';
+      executionTime: number;
+      error: string;
+      output: string;
+      args: Record<string, any>;
+    }>
+  ): void {
+    const current = uiState.getState().parallelExecution;
+    if (!current || current.id !== executionId) return;
+    if (!current.tools[toolIndex]) return;
+
+    const tools = [...current.tools];
+    tools[toolIndex] = { ...tools[toolIndex], ...updates };
+    uiState.update({
+      parallelExecution: {
+        ...current,
+        tools,
+      },
+    });
   }
 
   /**
@@ -965,6 +1057,41 @@ Start with list_tracking_items to see what needs review.`;
    * Execute tools in parallel
    */
   private async executeToolsInParallel(toolCalls: ToolCall[]): Promise<void> {
+    const startTime = Date.now();
+    const executionId = `auto_parallel_${startTime}`;
+
+    // Initialize parallel execution state so the UI can render progress.
+    uiState.update({
+      parallelExecution: {
+        id: executionId,
+        description: `${toolCalls.length} operations`,
+        tools: toolCalls.map((tc, index) => {
+          let toolArgs: Record<string, any>;
+          try {
+            toolArgs = JSON.parse(tc.function.arguments);
+          } catch {
+            toolArgs = {};
+          }
+          return {
+            id: `${executionId}_${index}`,
+            tool: tc.function.name,
+            status: 'pending',
+            startTime,
+            args: toolArgs,
+          };
+        }),
+        startTime,
+        isActive: true,
+      },
+    });
+
+    uiState.addLiveMessage(executionId, {
+      role: 'parallel-status',
+      content: '',
+      timestamp: Date.now(),
+      parallelExecutionId: executionId,
+    });
+
     uiState.addMessage({
       role: 'system',
       content: `Running ${toolCalls.length} operations in parallel`,
@@ -972,10 +1099,30 @@ Start with list_tracking_items to see what needs review.`;
     });
 
     const results = await Promise.all(
-      toolCalls.map((toolCall) => this.executeSingleToolParallel(toolCall))
+      toolCalls.map((toolCall, index) => this.executeSingleToolParallel(toolCall, executionId, index))
     );
 
-    const maxDuration = Math.max(...results.map(r => r.duration));
+    const maxDuration = results.length > 0 ? Math.max(...results.map(r => r.duration)) : 0;
+
+    const final = uiState.getState().parallelExecution;
+    if (final && final.id === executionId) {
+      uiState.update({
+        parallelExecution: {
+          ...final,
+          endTime: Date.now(),
+          isActive: false,
+        },
+      });
+    }
+
+    uiState.finalizeLiveMessage(executionId);
+    setTimeout(() => {
+      const current = uiState.getState().parallelExecution;
+      if (current && current.id === executionId) {
+        uiState.update({ parallelExecution: null });
+      }
+    }, 100);
+
     uiState.addMessage({
       role: 'system',
       content: `All ${toolCalls.length} operations completed in ${maxDuration}ms`,
@@ -986,7 +1133,11 @@ Start with list_tracking_items to see what needs review.`;
   /**
    * Execute a single tool for parallel execution
    */
-  private async executeSingleToolParallel(toolCall: ToolCall): Promise<{ duration: number }> {
+  private async executeSingleToolParallel(
+    toolCall: ToolCall,
+    executionId: string,
+    toolIndex: number
+  ): Promise<{ duration: number }> {
     const toolName = toolCall.function.name;
     let toolArgs: Record<string, any>;
 
@@ -996,20 +1147,85 @@ Start with list_tracking_items to see what needs review.`;
       toolArgs = {};
     }
 
+    this.updateAutoParallelToolState(executionId, toolIndex, {
+      status: 'running',
+      args: toolArgs,
+    });
+
     const startTime = Date.now();
 
     try {
+      // Execute tool:pre-execute hook
+      if (this.hookRegistry) {
+        const preResult = await this.hookRegistry.execute('tool:pre-execute', {
+          toolName,
+          toolArgs,
+        });
+        if (!preResult.continue) {
+          const duration = Date.now() - startTime;
+          this.conversation.addToolResult(toolCall.id, toolName, 'Execution cancelled by hook');
+          this.updateAutoParallelToolState(executionId, toolIndex, {
+            status: 'error',
+            executionTime: duration,
+            error: 'Execution cancelled by hook',
+          });
+          return { duration };
+        }
+        if (preResult.modifiedArgs) {
+          toolArgs = preResult.modifiedArgs;
+          this.updateAutoParallelToolState(executionId, toolIndex, { args: toolArgs });
+        }
+      }
+
       const result = await this.toolRegistry.execute(toolName, toolArgs);
       const duration = Date.now() - startTime;
 
       if (result.success) {
         this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
+        this.updateAutoParallelToolState(executionId, toolIndex, {
+          status: 'success',
+          executionTime: duration,
+          output: result.output || '',
+        });
+
+        if (result.output && result.output.trim()) {
+          uiState.addMessage({
+            role: 'tool',
+            content: result.output,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Track file reads in memory
+        if (toolName === 'read_file' && toolArgs.path) {
+          this.conversation.trackFileRead(toolArgs.path, 'Read by tool');
+        }
         this.trackFileEdit(toolName, toolArgs);
 
         // Audit file modifications immediately for incomplete scaffolding
         await this.auditFileModification(toolName, toolArgs, result);
       } else {
         this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
+        this.updateAutoParallelToolState(executionId, toolIndex, {
+          status: 'error',
+          executionTime: duration,
+          error: result.error || 'Unknown error',
+          output: result.output || '',
+        });
+        uiState.addMessage({
+          role: 'tool',
+          content: `${toolName} error: ${result.error}`,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Execute tool:post-execute hook
+      if (this.hookRegistry) {
+        await this.hookRegistry.execute('tool:post-execute', {
+          toolName,
+          toolArgs,
+          toolResult: result,
+        });
       }
 
       return { duration };
@@ -1024,6 +1240,16 @@ Start with list_tracking_items to see what needs review.`;
       });
 
       this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
+      this.updateAutoParallelToolState(executionId, toolIndex, {
+        status: 'error',
+        executionTime: duration,
+        error: errorMessage,
+      });
+      uiState.addMessage({
+        role: 'tool',
+        content: `${toolName} error: ${errorMessage}`,
+        timestamp: Date.now(),
+      });
 
       return { duration };
     }
@@ -1035,8 +1261,16 @@ Start with list_tracking_items to see what needs review.`;
    */
   private canExecuteInParallel(toolCalls: ToolCall[]): boolean {
     // Tools that modify state should not run in parallel with tools that depend on that state
-    const writeTools = new Set(['create_file', 'patch_file', 'execute_bash']);
-    const readTools = new Set(['read_file', 'list_files', 'search_files']);
+    const writeTools = new Set(['create_file', 'patch_file', 'execute_bash', 'parallel']);
+    const readTools = new Set([
+      'read_file',
+      'list_files',
+      'search_files',
+      'grep_repo',
+      'explore_codebase',
+      'tree_of_thought',
+      'unified_diff',
+    ]);
 
     let hasWrites = false;
     let hasReads = false;

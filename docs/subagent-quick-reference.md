@@ -4,10 +4,11 @@
 
 **Use subagents for focused, specific tasks** - not just parallel work. They reduce context bloat and improve quality.
 
-## 5 Roles
+## 6 Roles
 
 | Role | Purpose | Max Iter | Tokens | Best For |
 |------|---------|-----------|--------|----------|
+| **explorer** | Explore repo (read-only) | 2-3 | 6K | Entry points, ownership, locating code |
 | **test-writer** | Write tests | 3 | 8K | Test coverage, edge cases |
 | **investigator** | Diagnose bugs | 3 | 12K | Root cause analysis |
 | **refactorer** | Improve code | 2 | 10K | Code structure, patterns |
@@ -46,6 +47,14 @@ spawn_agent(task="Write tests for the fix")
 ```
 
 ## Quick Examples
+
+### Codebase Exploration (Read-Only)
+```javascript
+explore_codebase({
+  question: "Where is request routing implemented, and what are the entrypoints?",
+  depth: "normal"
+})
+```
 
 ### Test Writing
 ```javascript

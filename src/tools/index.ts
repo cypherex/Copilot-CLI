@@ -5,10 +5,16 @@ import { CreateFileTool } from './create-file.js';
 import { PatchFileTool } from './patch-file.js';
 import { ReadFileTool } from './read-file.js';
 import { ExecuteBashTool } from './execute-bash.js';
+import { GrepRepoTool } from './grep-repo.js';
 import { ListFilesTool } from './list-files.js';
+import { UnifiedDiffTool } from './unified-diff-tool.js';
 import { ParallelTool } from './parallel-tool.js';
 import { SpawnAgentTool, WaitAgentTool, ListAgentsTool, GetAgentQueueStatusTool } from './subagent-tool.js';
-import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool, GetNextTasksTool, ListSubtasksTool, BreakDownTaskTool, ReviewTrackingItemTool, CloseTrackingItemTool, ListTrackingItemsTool } from './task-management-tool.js';
+import { ExploreCodebaseTool } from './explore-codebase.js';
+import { TreeOfThoughtTool } from './tree-of-thought.js';
+import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool, GetNextTasksTool, ListSubtasksTool, BreakDownTaskTool, ReviewTrackingItemTool, CloseTrackingItemTool, ListTrackingItemsTool, DebugScaffoldTool, RecordExperimentResultTool } from './task-management-tool.js';
+import { RunReproTool } from './repro-tool.js';
+import { VerifyProjectTool } from './verify-tool.js';
 import { SummarizeContextTool, ExtractFocusTool, MergeContextTool } from './context-management-tool.js';
 import { AddDecisionTool, GetDecisionsTool, SupersedeDecisionTool } from './decision-management-tool.js';
 import { SetTaskComplexityTool, ReportTaskComplexityTool, GetComplexityInsightsTool } from './task-complexity-tool.js';
@@ -46,8 +52,10 @@ export class ToolRegistry {
   private registerDefaultTools(): void {
     this.register(new CreateFileTool());
     this.register(new PatchFileTool());
+    this.register(new UnifiedDiffTool());
     this.register(new ReadFileTool());
     this.register(new ExecuteBashTool());
+    this.register(new GrepRepoTool());
     this.register(new ListFilesTool());
     this.register(new ParallelTool(this)); // Parallel tool needs registry reference
   }
@@ -57,8 +65,11 @@ export class ToolRegistry {
     this.subAgentManager = manager;
     if (memoryStore) {
       this.register(new SpawnAgentTool(manager, memoryStore));
+      this.register(new ExploreCodebaseTool(manager, memoryStore));
+      this.register(new TreeOfThoughtTool(manager, memoryStore));
     } else {
       this.register(new SpawnAgentTool(manager));
+      this.register(new TreeOfThoughtTool(manager));
     }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));
@@ -74,6 +85,11 @@ export class ToolRegistry {
     this.register(new GetNextTasksTool(memoryStore));
     this.register(new ListSubtasksTool(memoryStore));
     this.register(new BreakDownTaskTool(memoryStore));
+    this.register(new DebugScaffoldTool(memoryStore));
+    this.register(new RecordExperimentResultTool(memoryStore));
+    // SWE-bench helpers
+    this.register(new RunReproTool(memoryStore));
+    this.register(new VerifyProjectTool(memoryStore));
     // Tracking item tools
     this.register(new ReviewTrackingItemTool(memoryStore));
     this.register(new CloseTrackingItemTool(memoryStore));

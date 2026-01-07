@@ -20,6 +20,7 @@ import { SubagentRenderer, subagentRendererRegistry } from '../ui/subagent-rende
 import { uiState } from '../ui/ui-state.js';
 import { getRenderManager } from '../ui/render-manager.js';
 import type { SpawnValidator } from '../validators/spawn-validator.js';
+import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from '../agent/auto-tot.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
@@ -146,7 +147,9 @@ function updateSubagentLiveMessage(agentId: string, force = false): void {
 
   const progressParts: string[] = [];
   if (buffer.lastProgress?.iteration !== undefined) {
-    const max = buffer.lastProgress.maxIterations ? `/${buffer.lastProgress.maxIterations}` : '';
+  const max = buffer.lastProgress.maxIterations
+    ? `/${Number.isFinite(buffer.lastProgress.maxIterations) ? buffer.lastProgress.maxIterations : '∞'}`
+    : '';
     progressParts.push(`iter ${buffer.lastProgress.iteration}${max}`);
   }
   if (buffer.lastProgress?.currentTool) {
@@ -259,6 +262,7 @@ WHEN TO USE (STRONGLY RECOMMENDED - Use More Aggressively):
 
 Available Roles:
 - investigator: Diagnose bugs and trace execution (deep analysis)
+- explorer: Read-only codebase exploration with structured summaries
 - test-writer: Write comprehensive tests with edge cases
 - refactorer: Improve code quality and organization
 - documenter: Create and maintain documentation
@@ -451,6 +455,7 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
     let systemPrompt: string | undefined;
     let maxIterations: number | undefined;
     let focusedTask = task;
+    let allowedTools: string[] | undefined;
 
     // Enrich task with hierarchical context
     if (this.memoryStore) {
@@ -496,6 +501,11 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       if (roleConfig) {
         maxIterations = roleConfig.defaultMaxIterations;
 
+        // Tool-restricted roles
+        if (roleConfig.id === 'explorer') {
+          allowedTools = ['read_file', 'grep_repo'];
+        }
+
         // Build focused context with communication patterns
         const pattern = getRecommendedPattern(task, files);
         focusedTask = buildSubagentTask(role, focusedTask, files, pattern);
@@ -537,11 +547,29 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       }
     }
 
+    // Auto-wire Tree-of-Thought (ToT) inside the spawned subagent by prepending a required prelude.
+    // This is useful after task selection/breakdown or when repro/verification indicates ambiguity.
+    if (this.memoryStore) {
+      const decision = decideAutoToT(this.memoryStore, { kind: 'subagent_spawn' });
+      if (decision.shouldTrigger && decision.toolArgs) {
+        // Keep subagent ToT lightweight.
+        decision.toolArgs.branches = 2;
+        decision.toolArgs.max_iterations = Math.min(decision.toolArgs.max_iterations, 400);
+        recordAutoToT(this.memoryStore, decision);
+        const instruction = buildAutoToTInstruction(decision);
+        if (instruction) {
+          focusedTask = `${instruction}\n\n${focusedTask}`;
+        }
+      }
+    }
+
     const agentId = this.subAgentManager.spawn({
       name: name || `SubAgent for: ${task.slice(0, 30)}...`,
       task: focusedTask,
       systemPrompt,
       maxIterations,
+      allowedTools,
+      outputJsonFromReasoning: role === 'explorer' ? true : undefined,
     });
 
     // Add subagent to UIState tracking

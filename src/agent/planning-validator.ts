@@ -26,22 +26,57 @@ export class PlanningValidator {
 
   constructor(private memoryStore: MemoryStore) {}
 
+  private isWriteToolName(toolName: string): boolean {
+    // Tools that directly modify files/state.
+    // Note: execute_bash is intentionally excluded because it is often used read-only; if needed, treat it separately.
+    return toolName === 'create_file' || toolName === 'patch_file' || toolName === 'apply_unified_diff';
+  }
+
+  private parallelArgsContainWriteTools(args: unknown, depth: number = 0): boolean {
+    if (depth > 2) return false;
+    if (!args || typeof args !== 'object') return true; // conservative: can't inspect
+
+    const tools = (args as any).tools;
+    if (!Array.isArray(tools)) return true; // conservative: can't inspect
+
+    for (const call of tools) {
+      const name = call?.tool;
+      const params = call?.parameters;
+      if (typeof name !== 'string') return true; // conservative: can't inspect
+
+      if (this.isWriteToolName(name)) return true;
+      if (name === 'parallel' && this.parallelArgsContainWriteTools(params, depth + 1)) return true;
+    }
+
+    return false;
+  }
+
   /**
    * Check if tool calls include write operations that require planning
    * Returns true if any tool call is a write operation
    */
-  hasWriteOperationTools(toolCalls: Array<{ function: { name: string } }>): boolean {
+  hasWriteOperationTools(toolCalls: Array<{ function: { name: string; arguments?: string } }>): boolean {
     if (!toolCalls || toolCalls.length === 0) {
       return false;
     }
 
-    // Tools that modify files or state (require planning)
-    const writeTools = [
-      'create_file',
-      'patch_file',
-    ];
+    return toolCalls.some(tc => {
+      const name = tc.function.name;
 
-    return toolCalls.some(tc => writeTools.includes(tc.function.name));
+      if (this.isWriteToolName(name)) return true;
+
+      // Prevent bypass: parallel can contain write tools even if the top-level tool call is "parallel"
+      if (name === 'parallel') {
+        try {
+          const parsed = tc.function.arguments ? JSON.parse(tc.function.arguments) : null;
+          return this.parallelArgsContainWriteTools(parsed);
+        } catch {
+          return true; // conservative: if we can't parse, assume it may contain writes
+        }
+      }
+
+      return false;
+    });
   }
 
   /**

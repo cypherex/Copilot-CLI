@@ -17,6 +17,8 @@ Welcome to the Copilot CLI Agent documentation hub.
 - [Subagent Quick Reference](subagent-quick-reference.md) - Quick lookup for subagent roles, tools, and workflows
 - [Subagent Development Guide](subagent-development.md) - Implementation details for developing subagent features
 - [Task Management](task-management.md) - Guide to the task planning and management system
+- [Codebase Exploration](codebase-exploration.md) - Read-only explorer subagent and `explore_codebase` contract
+- [Debugging & Theory Testing](debugging-theory-testing.md) - Hypothesis-driven debugging workflow with `debug_scaffold` and `record_experiment_result`
 
 ### Memory System
 

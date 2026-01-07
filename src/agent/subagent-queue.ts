@@ -12,6 +12,8 @@ import type { PlanningValidator } from './planning-validator.js';
 import type { ProactiveContextMonitor } from './proactive-context-monitor.js';
 import type { IncompleteWorkDetector } from './incomplete-work-detector.js';
 import type { FileRelationshipTracker } from './file-relationship-tracker.js';
+import { filterToolDefinitions, isToolAllowed } from './tool-allowlist.js';
+import { extractJsonObject } from '../utils/json-extract.js';
 
 export interface QueuedAgent {
   config: {
@@ -20,6 +22,8 @@ export interface QueuedAgent {
     systemPrompt?: string;
     maxIterations?: number;
     workingDirectory?: string;
+    allowedTools?: string[]; // Optional per-agent tool allowlist
+    outputJsonFromReasoning?: boolean; // If true, extract JSON from reasoningContent when content is empty (used for explorer)
   };
   resolve: (result: SubAgentResult) => void;
   reject: (error: Error) => void;
@@ -329,7 +333,8 @@ class SubAgent extends EventEmitter {
     if (modelName) {
       this.conversation.setModelContextLimit(modelName);
     }
-    this.maxIterations = config.maxIterations || 1000;
+    // Treat maxIterations=0 as unlimited (useful for tool-driven debug/exploration flows).
+    this.maxIterations = config.maxIterations === 0 ? Number.POSITIVE_INFINITY : (config.maxIterations || 1000);
   }
 
   private buildDefaultSystemPrompt(): string {
@@ -411,6 +416,8 @@ Remember: You are responsible for delivering complete, production-ready work. No
     let continueLoop = true;
     let hadFileModifications = false;
     const ITERATION_DELAY_MS = 35; // Minimal delay to prevent API rate limiting
+    const debugSubagent = !!process.env.DEBUG_SUBAGENT || !!process.env.DEBUG_EXPLORER;
+    let lastResponseHadToolCalls = false;
 
     try {
       while (continueLoop && iteration < this.maxIterations) {
@@ -453,7 +460,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
           }
         }
 
-        const tools = this.toolRegistry.getDefinitions();
+        const tools = filterToolDefinitions(this.toolRegistry.getDefinitions(), this.config.allowedTools);
         const accumulator = new StreamAccumulator();
 
         for await (const chunk of this.llmClient.chatStream(
@@ -464,6 +471,19 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
 
         const response = accumulator.getResponse();
+        const contentLen = (response.content || '').trim().length;
+        const reasoningLen = (response.reasoningContent || '').trim().length;
+        const toolCallsCount = response.toolCalls?.length || 0;
+        lastResponseHadToolCalls = toolCallsCount > 0;
+
+        // Emit a lightweight per-iteration trace for debugging tool-driven subagents like explorer.
+        if (debugSubagent || this.config.outputJsonFromReasoning) {
+          this.emit('message', {
+            content: `[Subagent Debug] iter ${iteration}/${this.maxIterations} contentLen=${contentLen} reasoningLen=${reasoningLen} toolCalls=${toolCallsCount}`,
+            type: 'system',
+            iteration,
+          });
+        }
 
         if (response.content) {
           finalOutput = response.content;
@@ -508,6 +528,17 @@ Remember: You are responsible for delivering complete, production-ready work. No
           continueLoop = true;
         } else {
           this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+
+          // If model produced output only in reasoning_content (thinking-enabled providers),
+          // optionally extract JSON for tool-driven subagents (e.g., explorer) without leaking reasoning.
+          // If extraction fails, fall back to returning the raw reasoning content instead of an empty output
+          // (the caller can attempt its own parse/repair).
+          if (this.config.outputJsonFromReasoning && (!response.content || !response.content.trim()) && response.reasoningContent) {
+            const extracted = extractJsonObject(response.reasoningContent);
+            finalOutput = extracted.jsonText || response.reasoningContent;
+          } else if (response.content) {
+            finalOutput = response.content;
+          }
 
           // Check if we need compression before ending the loop
           const contextManager = this.conversation.getContextManager();
@@ -610,6 +641,37 @@ Remember: You are responsible for delivering complete, production-ready work. No
         }
       }
 
+      // If we hit maxIterations while still expecting a post-tool synthesis step, do one final no-tools pass.
+      // This prevents empty explorer outputs when the model used up its iteration budget on tool calls.
+      if (continueLoop && lastResponseHadToolCalls && this.config.outputJsonFromReasoning) {
+        this.emit('message', {
+          content: `[Subagent Debug] reached maxIterations (${this.maxIterations}) after tool calls; running 1 final no-tools completion pass`,
+          type: 'system',
+          iteration,
+        });
+
+        this.conversation.addUserMessage(
+          'Finalize now: you have NO tools. Return the final required output directly (one JSON object if requested).'
+        );
+
+        const accumulator = new StreamAccumulator();
+        for await (const chunk of this.llmClient.chatStream(this.conversation.getMessages(), [])) {
+          accumulator.addChunk(chunk);
+        }
+
+        const response = accumulator.getResponse();
+
+        if (this.config.outputJsonFromReasoning && (!response.content || !response.content.trim()) && response.reasoningContent) {
+          const extracted = extractJsonObject(response.reasoningContent);
+          finalOutput = extracted.jsonText || response.reasoningContent;
+        } else if (response.content) {
+          finalOutput = response.content;
+        }
+
+        this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+        continueLoop = false;
+      }
+
       // Trim conversation history to save tokens
       await this.conversation.trimHistory();
 
@@ -637,13 +699,26 @@ Remember: You are responsible for delivering complete, production-ready work. No
   private async executeTools(toolCalls: ToolCall[]): Promise<void> {
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
+      if (!isToolAllowed(toolName, this.config.allowedTools)) {
+        throw new Error(`Tool not allowed for this subagent: ${toolName}`);
+      }
       this.toolsUsed.add(toolName);
 
       let toolArgs: Record<string, any>;
+      let toolArgsParseError: string | undefined;
       try {
         toolArgs = JSON.parse(toolCall.function.arguments);
-      } catch {
+      } catch (e) {
         toolArgs = {};
+        toolArgsParseError = e instanceof Error ? e.message : String(e);
+        if (process.env.DEBUG_TOOL_ARGS || process.env.DEBUG_EXPLORER || process.env.DEBUG_SUBAGENT) {
+          const raw = String(toolCall.function.arguments || '');
+          const preview = raw.replace(/\s+/g, ' ').slice(0, 220);
+          this.emit('message', {
+            type: 'system',
+            content: `[Subagent Debug] tool args JSON.parse failed for ${toolName}: ${toolArgsParseError}. rawLen=${raw.length} rawPreview=${preview}${raw.length > 220 ? '…' : ''}`,
+          });
+        }
       }
 
       // Execute tool:pre-execute hook
@@ -666,6 +741,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
         toolName,
         args: toolArgs,
         toolCallId: toolCall.id,
+        ...(toolArgsParseError ? { parseError: toolArgsParseError } : {}),
       });
 
       let result: { success: boolean; output?: string; error?: string };

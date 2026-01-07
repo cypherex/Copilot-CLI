@@ -119,6 +119,7 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
+  pendingVerificationAt?: Date; // When status transitioned to pending_verification
   completionMessage?: string; // Summary of what was accomplished when task was completed
   relatedFiles: string[];
   priority: MemoryPriority;
@@ -179,6 +180,21 @@ export interface WorkingState {
   currentTask?: string; // Task ID
   recentErrors: ErrorContext[];
   editHistory: EditRecord[];
+  commandHistory: CommandRecord[];
+  lastRepro?: CommandRecord;
+  lastVerification?: VerificationRecord;
+  lastTaskBreakdown?: {
+    rootTaskId: string;
+    totalTasks: number;
+    readyTasks: number;
+    generatedAt: Date;
+  };
+  lastAutoToT?: {
+    key: string;
+    reason: string;
+    taskId?: string;
+    triggeredAt: Date;
+  };
   lastUpdated: Date;
   lastContextSummary?: string;
   summaryScope?: 'current_task' | 'recent_messages' | 'all_transcript' | 'files' | 'pre-subagent';
@@ -190,6 +206,32 @@ export interface WorkingState {
     timestamp: Date;
   };
   lastMergedOutput?: string;
+}
+
+export type CommandKind = 'repro' | 'verify' | 'other';
+
+export interface CommandRecord {
+  id: string;
+  command: string;
+  cwd: string;
+  exitCode: number;
+  kind: CommandKind;
+  timestamp: Date;
+  outputSnippet?: string;
+}
+
+export interface VerificationRecord {
+  id: string;
+  commands: string[];
+  cwd: string;
+  passed: boolean;
+  startedAt: Date;
+  finishedAt: Date;
+  results: Array<{
+    command: string;
+    exitCode: number;
+    durationMs: number;
+  }>;
 }
 
 // Session resume info for work continuity

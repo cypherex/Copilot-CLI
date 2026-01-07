@@ -198,19 +198,14 @@ describe('RateLimiter', () => {
 
   describe('Stress Test', () => {
     it('should handle 100 requests without errors', async () => {
-      // Increase timeout for this long-running test (100 * 100ms = 10s)
-
       const promises = Array(100).fill(null).map(async () => {
         await rateLimiter.acquire();
       });
 
       await expect(Promise.all(promises)).resolves.not.toThrow();
-    });
+    }, 30000);
 
     it('should maintain timing consistency with high concurrency', async () => {
-      // Increase timeout for this long-running test (50 * 100ms = 5s)
-      jest.setTimeout(10000);
-
       const startTime = Date.now();
 
       // Launch 50 concurrent requests
@@ -226,6 +221,6 @@ describe('RateLimiter', () => {
       // Allow for randomness (+/- 20%)
       expect(elapsed).toBeGreaterThan(4000);
       expect(elapsed).toBeLessThan(7000);
-    });
+    }, 20000);
   });
 });

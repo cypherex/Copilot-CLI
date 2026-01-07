@@ -67,6 +67,37 @@ const BreakDownTaskSchema = z.object({
   })).min(2).max(25).describe('Array of subtasks to create (2-25 subtasks recommended)'),
 });
 
+// Schema for debug_scaffold
+const DebugScaffoldSchema = z.object({
+  bug: z.string().describe('Bug report / debugging goal (what is wrong, where, and what expected behavior is)'),
+  parent_task_id: z.string().optional().describe('Optional parent task ID to attach this debug workflow under'),
+  priority: z.enum(['high', 'medium', 'low']).optional().default('high').describe('Priority for the root debug task'),
+  related_files: z.array(z.string()).optional().describe('Optional relevant files'),
+  experiments: z.number().int().min(1).max(5).optional().default(1).describe('How many hypothesis/experiment pairs to scaffold (default: 1)'),
+  set_current_to_repro: z.boolean().optional().default(true).describe('Set the Repro task as current and active (default: true)'),
+  include_regression_test_task: z.boolean().optional().default(true).describe('Include a task to add/adjust regression tests (default: true)'),
+});
+
+// Schema for record_experiment_result
+const RecordExperimentResultSchema = z.object({
+  task_id: z.string().optional().describe('Task ID to record against (defaults to current task)'),
+  title: z.string().optional().describe('Short title for this experiment note'),
+  hypothesis: z.string().optional().describe('Hypothesis being tested'),
+  prediction: z.string().optional().describe('Predicted observation if hypothesis is true'),
+  steps: z.array(z.string()).optional().describe('Exact steps/commands run'),
+  observed: z.string().optional().describe('What actually happened (key output, behavior, stack trace summary)'),
+  conclusion: z.enum(['supports', 'refutes', 'inconclusive']).describe('Whether the result supports the hypothesis'),
+  next_step: z.string().optional().describe('What to do next based on the conclusion'),
+  status: z.enum(['active', 'blocked', 'waiting', 'pending_verification', 'completed']).optional()
+    .describe('Optional task status to set after recording'),
+  blocked_by: z.string().optional().describe('If status=blocked, what is blocking'),
+  waiting_for: z.string().optional().describe('If status=waiting, what is needed'),
+  create_followup_task: z.boolean().optional().default(false).describe('Create a follow-up task (default: false)'),
+  followup_description: z.string().optional().describe('Description for the follow-up task'),
+  followup_priority: z.enum(['high', 'medium', 'low']).optional().default('medium').describe('Priority for follow-up task'),
+  followup_parent_task_id: z.string().optional().describe('Parent task for follow-up (defaults to same parent as task_id, else root debug task)'),
+});
+
 export class CreateTaskTool extends BaseTool {
   private spawnValidator?: SpawnValidator;
 
@@ -255,6 +286,13 @@ Note: Task completion is validated to ensure proper workflow and next step plann
       throw new Error(`Task not found: ${task_id}`);
     }
 
+    // Capture whether this task had file edits recorded in working state (used for verification gating)
+    const workingStateForVerification = this.memoryStore.getWorkingState();
+    const relatedEditsForVerification = workingStateForVerification.editHistory.filter(
+      (edit: any) => edit.relatedTaskId === task_id
+    );
+    const hasRecordedEdits = relatedEditsForVerification.length > 0;
+
     // VALIDATION: Require completion_message when marking as completed
     if (status === 'completed' && !completion_message) {
       throw new Error('completion_message is required when marking a task as completed. Provide a summary of what was accomplished (files created/modified, functions implemented, etc.)');
@@ -266,6 +304,31 @@ Note: Task completion is validated to ensure proper workflow and next step plann
         `To mark a task completed, it must transition from "pending_verification" -> "completed". ` +
         `Set status to "pending_verification", run verification (build/test/lint), fix any errors, then mark it "completed" with completion_message.`
       );
+    }
+
+    // VALIDATION: Require a passing verification run after entering pending_verification (for tasks with recorded edits)
+    if (status === 'completed' && hasRecordedEdits) {
+      const verification = workingStateForVerification.lastVerification;
+      if (!verification) {
+        throw new Error(
+          `Cannot mark task completed: no verification run recorded for this session. ` +
+          `Run verify_project({ commands: [...] }) after setting status to "pending_verification".`
+        );
+      }
+      if (!verification.passed) {
+        throw new Error(
+          `Cannot mark task completed: last verification failed. ` +
+          `Fix failures and re-run verify_project({ commands: [...] }).`
+        );
+      }
+      const pendingAt = task.pendingVerificationAt ? new Date(task.pendingVerificationAt).getTime() : task.updatedAt.getTime();
+      const verifiedAt = new Date(verification.finishedAt).getTime();
+      if (verifiedAt < pendingAt) {
+        throw new Error(
+          `Cannot mark task completed: verification is older than the task's pending_verification transition. ` +
+          `Re-run verify_project({ commands: [...] }) after setting status to "pending_verification".`
+        );
+      }
     }
 
     // VALIDATION: Check if completion should be allowed
@@ -345,6 +408,10 @@ Note: Task completion is validated to ensure proper workflow and next step plann
 
     // Non-completion status update (no validation needed)
     const updates: Partial<Task> = { status, updatedAt: new Date() };
+
+    if (status === 'pending_verification') {
+      updates.pendingVerificationAt = new Date();
+    }
 
     // For completion without validator, still populate filesModified and completionMessage
     if (status === 'completed') {
@@ -1151,6 +1218,292 @@ Use this to:
       }
     }
 
+    return lines.join('\n');
+  }
+}
+
+function formatIso(ts: Date): string {
+  return ts.toISOString().replace('T', ' ').replace('Z', 'Z');
+}
+
+function buildExperimentLogEntry(args: z.infer<typeof RecordExperimentResultSchema>): string {
+  const lines: string[] = [];
+  lines.push(`[Experiment Log] ${formatIso(new Date())}`);
+  if (args.title) lines.push(`Title: ${args.title}`);
+  if (args.hypothesis) lines.push(`Hypothesis: ${args.hypothesis}`);
+  if (args.prediction) lines.push(`Prediction: ${args.prediction}`);
+  if (args.steps && args.steps.length > 0) {
+    lines.push('Steps:');
+    for (const step of args.steps.slice(0, 25)) lines.push(`- ${step}`);
+  }
+  if (args.observed) lines.push(`Observed: ${args.observed}`);
+  lines.push(`Conclusion: ${args.conclusion}`);
+  if (args.next_step) lines.push(`Next: ${args.next_step}`);
+  return lines.join('\n');
+}
+
+export class DebugScaffoldTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'debug_scaffold',
+    description: `Scaffold a hypothesis-driven debugging workflow using the task system.
+
+Creates a small task tree that supports iterative theory testing:
+- Repro: make it fail reliably and capture evidence
+- Explore: locate code paths/entrypoints (often via explore_codebase)
+- Hypothesis/Experiment pairs: state hypothesis, run a targeted test, record outcome
+- Fix: implement the smallest change
+- Verify: rerun repro + checks
+- Regressions (optional): add/adjust tests
+
+Use record_experiment_result to log experiment outcomes and keep a persistent trail of what was tried.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        bug: { type: 'string' },
+        parent_task_id: { type: 'string' },
+        priority: { type: 'string', enum: ['high', 'medium', 'low'], default: 'high' },
+        related_files: { type: 'array', items: { type: 'string' } },
+        experiments: { type: 'number', default: 1 },
+        set_current_to_repro: { type: 'boolean', default: true },
+        include_regression_test_task: { type: 'boolean', default: true },
+      },
+      required: ['bug'],
+    },
+  };
+
+  protected readonly schema = DebugScaffoldSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof DebugScaffoldSchema>): Promise<string> {
+    const existingParent = args.parent_task_id
+      ? this.memoryStore.getTasks().find(t => t.id === args.parent_task_id)
+      : undefined;
+
+    if (args.parent_task_id && !existingParent) {
+      throw new Error(`Parent task not found: ${args.parent_task_id}`);
+    }
+
+    const root = this.memoryStore.addTask({
+      description: `Debug: ${args.bug}`.slice(0, 200),
+      status: 'waiting',
+      priority: args.priority,
+      relatedToGoal: true,
+      relatedFiles: args.related_files || [],
+      parentId: args.parent_task_id,
+    });
+
+    const repro = this.memoryStore.addTask({
+      description: 'Repro: reproduce issue and capture evidence',
+      status: args.set_current_to_repro ? 'active' : 'waiting',
+      priority: 'high',
+      relatedToGoal: true,
+      relatedFiles: args.related_files || [],
+      parentId: root.id,
+    });
+
+    const explore = this.memoryStore.addTask({
+      description: 'Explore: locate code path/entrypoints and ownership',
+      status: 'waiting',
+      priority: 'high',
+      relatedToGoal: true,
+      relatedFiles: args.related_files || [],
+      parentId: root.id,
+    });
+
+    const hypothesisTasks: Task[] = [];
+    const experimentTasks: Task[] = [];
+
+    for (let i = 1; i <= args.experiments; i++) {
+      hypothesisTasks.push(this.memoryStore.addTask({
+        description: `Hypothesis ${i}: state a single suspected cause`,
+        status: 'waiting',
+        priority: 'high',
+        relatedToGoal: true,
+        relatedFiles: args.related_files || [],
+        parentId: root.id,
+      }));
+
+      experimentTasks.push(this.memoryStore.addTask({
+        description: `Experiment ${i}: run a targeted test (record outcome)`,
+        status: 'waiting',
+        priority: 'high',
+        relatedToGoal: true,
+        relatedFiles: args.related_files || [],
+        parentId: root.id,
+      }));
+    }
+
+    const fix = this.memoryStore.addTask({
+      description: 'Fix: implement smallest change that addresses root cause',
+      status: 'waiting',
+      priority: 'high',
+      relatedToGoal: true,
+      relatedFiles: args.related_files || [],
+      parentId: root.id,
+    });
+
+    const verify = this.memoryStore.addTask({
+      description: 'Verify: rerun repro + checks, confirm requirements',
+      status: 'waiting',
+      priority: 'high',
+      relatedToGoal: true,
+      relatedFiles: args.related_files || [],
+      parentId: root.id,
+    });
+
+    const regression = args.include_regression_test_task
+      ? this.memoryStore.addTask({
+          description: 'Regressions: add/adjust tests to prevent recurrence',
+          status: 'waiting',
+          priority: 'medium',
+          relatedToGoal: true,
+          relatedFiles: args.related_files || [],
+          parentId: root.id,
+        })
+      : undefined;
+
+    if (args.set_current_to_repro) {
+      this.memoryStore.updateWorkingState({
+        currentTask: repro.id,
+        lastUpdated: new Date(),
+      });
+    }
+
+    const lines: string[] = [];
+    lines.push(`Created debug task tree under: ${root.id}`);
+    if (existingParent) lines.push(`Parent: ${existingParent.description}`);
+    lines.push('');
+    lines.push(`Root: ${root.description}`);
+    lines.push(`- ${repro.id} (active): ${repro.description}`);
+    lines.push(`- ${explore.id}: ${explore.description}`);
+    hypothesisTasks.forEach((t, idx) => lines.push(`- ${t.id}: Hypothesis ${idx + 1}`));
+    experimentTasks.forEach((t, idx) => lines.push(`- ${t.id}: Experiment ${idx + 1}`));
+    lines.push(`- ${fix.id}: ${fix.description}`);
+    lines.push(`- ${verify.id}: ${verify.description}`);
+    if (regression) lines.push(`- ${regression.id}: ${regression.description}`);
+    lines.push('');
+    lines.push('Tip: Use record_experiment_result to log each experiment outcome (commands + observed + conclusion + next step).');
+    return lines.join('\n');
+  }
+}
+
+export class RecordExperimentResultTool extends BaseTool {
+  readonly definition: ToolDefinition = {
+    name: 'record_experiment_result',
+    description: `Record a hypothesis/experiment result against a task to keep a persistent debugging trail.
+
+This appends a structured log entry to the task's completionMessage and can optionally update task status.
+
+Recommended usage:
+- Run an experiment (commands / repro steps)
+- Call record_experiment_result with what you tried and what happened
+- Move on to the next hypothesis/experiment with confidence and traceability`,
+    parameters: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        title: { type: 'string' },
+        hypothesis: { type: 'string' },
+        prediction: { type: 'string' },
+        steps: { type: 'array', items: { type: 'string' } },
+        observed: { type: 'string' },
+        conclusion: { type: 'string', enum: ['supports', 'refutes', 'inconclusive'] },
+        next_step: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'blocked', 'waiting', 'pending_verification', 'completed'] },
+        blocked_by: { type: 'string' },
+        waiting_for: { type: 'string' },
+        create_followup_task: { type: 'boolean', default: false },
+        followup_description: { type: 'string' },
+        followup_priority: { type: 'string', enum: ['high', 'medium', 'low'], default: 'medium' },
+        followup_parent_task_id: { type: 'string' },
+      },
+      required: ['conclusion'],
+    },
+  };
+
+  protected readonly schema = RecordExperimentResultSchema;
+  private memoryStore: MemoryStore;
+
+  constructor(memoryStore: MemoryStore) {
+    super();
+    this.memoryStore = memoryStore;
+  }
+
+  protected async executeInternal(args: z.infer<typeof RecordExperimentResultSchema>): Promise<string> {
+    const workingState = this.memoryStore.getWorkingState();
+    const taskId = args.task_id || workingState.currentTask;
+    if (!taskId) {
+      throw new Error('No task_id provided and no current task is set. Use set_current_task or pass task_id.');
+    }
+
+    const task = this.memoryStore.getTasks().find(t => t.id === taskId);
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    if (args.status === 'blocked' && !args.blocked_by) {
+      throw new Error('blocked_by is required when status is "blocked".');
+    }
+    if (args.status === 'waiting' && !args.waiting_for) {
+      throw new Error('waiting_for is required when status is "waiting".');
+    }
+    if (args.create_followup_task && !args.followup_description) {
+      throw new Error('followup_description is required when create_followup_task is true.');
+    }
+
+    const entry = buildExperimentLogEntry(args);
+    const nextMessage = task.completionMessage ? `${task.completionMessage}\n\n${entry}` : entry;
+
+    const updates: Partial<Task> = {
+      completionMessage: nextMessage,
+      updatedAt: new Date(),
+    };
+
+    if (args.status) {
+      updates.status = args.status as any;
+      if (args.status === 'completed') {
+        updates.completedAt = new Date();
+      }
+      if (args.status === 'blocked') {
+        updates.blockedBy = args.blocked_by;
+      }
+      if (args.status === 'waiting') {
+        updates.waitingFor = args.waiting_for;
+      }
+    }
+
+    this.memoryStore.updateTask(taskId, updates);
+
+    let followupTaskId: string | undefined;
+    if (args.create_followup_task && args.followup_description) {
+      const followupParentId = args.followup_parent_task_id ?? task.parentId;
+      if (followupParentId) {
+        const parent = this.memoryStore.getTasks().find(t => t.id === followupParentId);
+        if (!parent) throw new Error(`Follow-up parent task not found: ${followupParentId}`);
+      }
+
+      const followup = this.memoryStore.addTask({
+        description: args.followup_description.slice(0, 200),
+        status: 'waiting',
+        priority: args.followup_priority,
+        relatedToGoal: true,
+        relatedFiles: task.relatedFiles || [],
+        parentId: followupParentId,
+      });
+      followupTaskId = followup.id;
+    }
+
+    const lines: string[] = [];
+    lines.push(`Recorded experiment result on task: ${task.id}`);
+    lines.push(`Task: ${task.description}`);
+    lines.push(`Conclusion: ${args.conclusion}`);
+    if (args.status) lines.push(`Status: ${task.status} -> ${args.status}`);
+    if (followupTaskId) lines.push(`Created follow-up task: ${followupTaskId}`);
     return lines.join('\n');
   }
 }

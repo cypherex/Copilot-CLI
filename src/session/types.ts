@@ -40,8 +40,47 @@ export interface WorkingStateData {
   activeFiles: ActiveFileData[];
   recentErrors: ErrorEntry[];
   editHistory: EditEntry[];
+  commandHistory?: CommandEntry[];
+  lastRepro?: CommandEntry;
+  lastVerification?: VerificationEntry;
+  lastTaskBreakdown?: {
+    rootTaskId: string;
+    totalTasks: number;
+    readyTasks: number;
+    generatedAt: Date;
+  };
+  lastAutoToT?: {
+    key: string;
+    reason: string;
+    taskId?: string;
+    triggeredAt: Date;
+  };
   currentTask?: string;
   lastUpdated: Date;
+}
+
+export interface CommandEntry {
+  id: string;
+  command: string;
+  cwd: string;
+  exitCode: number;
+  kind: string;
+  timestamp: Date;
+  outputSnippet?: string;
+}
+
+export interface VerificationEntry {
+  id: string;
+  commands: string[];
+  cwd: string;
+  passed: boolean;
+  startedAt: Date;
+  finishedAt: Date;
+  results: Array<{
+    command: string;
+    exitCode: number;
+    durationMs: number;
+  }>;
 }
 
 export interface ActiveFileData {
@@ -119,6 +158,12 @@ export interface SessionTaskData {
   description: string;
   status: string;
   priority: string;
+  parentId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  completedAt?: Date;
+  pendingVerificationAt?: Date;
+  completionMessage?: string;
 }
 
 export interface SessionDecisionData {

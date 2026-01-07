@@ -6,6 +6,7 @@ export default {
   maxWorkers: 1,
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts', '**/*.spec.ts'],
+  testPathIgnorePatterns: ['\\.integration\\.test\\.ts$'],
   transform: {
     '^.+\.tsx?$': ['ts-jest', {
       useESM: true,

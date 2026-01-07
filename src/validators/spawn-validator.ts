@@ -210,6 +210,54 @@ export class SpawnValidator {
     return null;
   }
 
+  private extractFirstJsonArray(text: string): string | null {
+    const start = text.indexOf('[');
+    if (start === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+          continue;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '[') {
+        depth += 1;
+        continue;
+      }
+
+      if (ch === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, i + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
   private sanitizeJsonForParsing(jsonText: string): string {
     // Fix common model issues:
     // - Unescaped newlines/tabs/control chars inside JSON strings
@@ -275,6 +323,138 @@ export class SpawnValidator {
     // Remove trailing commas before } or ]
     out = out.replace(/,\s*([}\]])/g, '$1');
     return out;
+  }
+
+  private async analyzeTasksWithFullContextBatch(
+    tasks: string[],
+    complexities: Map<string, ComplexityAssessment>,
+    parentContext: any,
+    memoryStore: MemoryStore,
+    attempts: number = 2
+  ): Promise<Map<string, any>> {
+    if (tasks.length === 0) return new Map();
+    if (tasks.length === 1) {
+      const task = tasks[0];
+      const complexity = complexities.get(task) || await this.assessTaskComplexity(task);
+      const result = await this.analyzeTaskWithFullContext(task, complexity, parentContext, memoryStore);
+      return new Map([[task, result]]);
+    }
+
+    const systemPrompt = `You are an expert task breakdown specialist. You will analyze MULTIPLE tasks in a single response.
+
+Return ONLY valid JSON ARRAY and nothing else. No markdown. No code fences.
+
+CRITICAL:
+- Output MUST be a JSON array with ONE object per input task, IN THE SAME ORDER.
+- EACH object MUST include a "task" field that EXACTLY matches the input task string.
+- Each object MUST match the same schema used for single-task breakdown:
+
+[
+  {
+    "task": "<exact input task string>",
+    "requiresBreakdown": <boolean>,
+    "reasoning": "<why breakdown is/isn't needed>",
+    "coverageAnalysis": "<detailed coverage analysis>",
+    "subtasks": [
+      {
+        "description": "<specific, focused task description>",
+        "produces": [<array>],
+        "consumes": [<array>],
+        "covers": "<which requirement/aspect this addresses>"
+      }
+    ],
+    "integrationPoints": [
+      { "integrates_with": "<component>", "requirement": "<requirement>", "dataContract": "<contract>" }
+    ],
+    "designDecisions": [
+      { "decision": "<decision>", "reasoning": "<reasoning>", "alternatives": [<array>], "affects": [<array>], "scope": "global" | "module" | "task" }
+    ],
+    "missingTasks": [ "<any missing aspects>" ]
+  }
+]`;
+
+    const taskContext = this.buildTaskContext(memoryStore);
+    const userPrompt = `COMPLETE TASK BREAKDOWN (BATCH)
+
+Project Context:
+- Goal: ${parentContext.projectGoal}
+- Existing Design Decisions: ${parentContext.designDecisions.length}
+- Known Integration Points: ${parentContext.integrationPoints.length}
+
+Current Task Context:
+${taskContext}
+
+Tasks to Break Down (${tasks.length}):
+${tasks.map((task, i) => {
+      const c = complexities.get(task);
+      return [
+        `${i + 1}. "${task}"`,
+        `   - Complexity Rating: ${c?.rating ?? 'unknown'}`,
+        `   - Complexity Evidence: ${c?.evidence ? JSON.stringify(c.evidence) : '{}'}`,
+        `   - Complexity Reasoning: ${c?.reasoning ?? ''}`,
+      ].join('\n');
+    }).join('\n\n')}
+
+Return the JSON array with one object per task in the same order.`;
+
+    let lastError: any;
+    for (let attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
+      try {
+        const response = await this.rateLimiter.throttle(() =>
+          this.llmClient.chat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ])
+        );
+
+        const content = response.choices[0]?.message.content || '';
+        const jsonCandidate = this.extractFirstJsonArray(content);
+        if (!jsonCandidate) {
+          throw new Error('No JSON array found in LLM response');
+        }
+
+        const sanitized = this.sanitizeJsonForParsing(jsonCandidate);
+        const parsed = JSON.parse(sanitized);
+        if (!Array.isArray(parsed) || parsed.length !== tasks.length) {
+          throw new Error(`JSON array length mismatch (expected ${tasks.length}, got ${Array.isArray(parsed) ? parsed.length : 'non-array'})`);
+        }
+
+        const result = new Map<string, any>();
+        for (let i = 0; i < tasks.length; i++) {
+          const item = parsed[i];
+          const expectedTask = tasks[i];
+          if (!item || typeof item !== 'object') {
+            throw new Error(`Batch item ${i} is not an object`);
+          }
+          if (item.task !== expectedTask) {
+            throw new Error(`Batch item ${i} task mismatch (expected "${expectedTask}", got "${String(item.task)}")`);
+          }
+          result.set(expectedTask, item);
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        try {
+          uiState.addMessage({
+            role: 'system',
+            content: `[SpawnValidator] Batch breakdown attempt ${attempt} failed: ${errorMessage}`,
+            timestamp: Date.now(),
+          });
+        } catch {
+          // ignore
+        }
+
+        // brief backoff before retrying
+        if (attempt < attempts) {
+          await this.sleep(250 * attempt);
+        }
+      }
+    }
+
+    console.error('[SpawnValidator] Batch breakdown failed:', lastError);
+    return new Map();
   }
 
   /**
@@ -406,6 +586,20 @@ export class SpawnValidator {
     }
 
     await this.analyzeDependencies(allTaskIds, context.memoryStore, context.verbose ?? false);
+
+    // Record breakdown completion in working state for orchestration (e.g., ToT triggers)
+    try {
+      context.memoryStore.updateWorkingState({
+        lastTaskBreakdown: {
+          rootTaskId,
+          totalTasks: breakdownResult.totalTasks,
+          readyTasks: breakdownResult.readyTasks,
+          generatedAt: new Date(),
+        },
+      });
+    } catch {
+      // Non-fatal
+    }
 
     if (context.verbose) {
       const dependencyLeafCount = context.memoryStore
@@ -1258,9 +1452,6 @@ Return JSON array: [
       this.logVerbose(`${indent}[Depth ${currentDepth}] Analyzing: "${taskDescription}"`);
     }
 
-    // Sleep before complexity assessment
-    await this.sleep(300);
-
     // Assess complexity
     const complexity = await this.assessTaskComplexity(taskDescription);
 
@@ -1298,9 +1489,6 @@ Return JSON array: [
     if (verbose) {
       this.logVerbose(`${indent}  ⚙ Breaking down into subtasks...`);
     }
-
-    // Sleep before breakdown analysis
-    await this.sleep(500);
 
     // Perform breakdown with full context
     const breakdownResult = await this.analyzeTaskWithFullContext(
@@ -1345,7 +1533,7 @@ Return JSON array: [
 
     // Process subtasks in batches to balance speed and rate limiting
     const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
-    const batchSize = 4; // Process 3 tasks at a time
+    const batchSize = 4; // Process up to 4 tasks at a time
 
     if (verbose) {
       this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
@@ -1359,26 +1547,19 @@ Return JSON array: [
         this.logVerbose(`${indent}    [Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(subtaskDescriptions.length / batchSize)}] Processing ${batch.length} tasks...`);
       }
 
-      // Process batch in parallel
-      const batchNodes = await Promise.all(
-        batch.map((desc: string) =>
-          this.breakdownNode(
-            desc,
-            currentDepth + 1,
-            maxDepth,
-            enrichedContext,
-            memoryStore,
-            verbose
-          )
-        )
+      // Micro-batched breakdown: 1 batch LLM call (plus retries/fallback) instead of N parallel calls.
+      const batchNodes = await this.breakdownNodesBatch(
+        batch,
+        currentDepth + 1,
+        maxDepth,
+        enrichedContext,
+        memoryStore,
+        verbose
       );
 
       subtaskNodes.push(...batchNodes);
 
-      // Delay between batches (but not after the last batch)
-      if (i + batchSize < subtaskDescriptions.length) {
-        await this.sleep(3000); // 3 seconds between batches
-      }
+      // No explicit delay needed: rateLimiter throttles LLM calls.
     }
 
     if (verbose) {
@@ -1394,6 +1575,114 @@ Return JSON array: [
       readyToSpawn: false, // Parent node - not directly spawnable
       breakdownDepth: currentDepth,
     };
+  }
+
+  /**
+   * Break down up to ~4 sibling tasks using batched LLM calls, with per-item fallback.
+   * This reduces round-trips compared to calling breakdownNode in parallel for each item.
+   */
+  private async breakdownNodesBatch(
+    taskDescriptions: string[],
+    currentDepth: number,
+    maxDepth: number,
+    parentContext: any,
+    memoryStore: MemoryStore,
+    verbose: boolean = false
+  ): Promise<TaskNode[]> {
+    if (taskDescriptions.length === 0) return [];
+
+    const complexities = await this.batchAssessComplexity(taskDescriptions);
+
+    const nodeByTask = new Map<string, TaskNode>();
+    const tasksNeedingBreakdown: string[] = [];
+
+    for (const task of taskDescriptions) {
+      const complexity = complexities.get(task) || await this.assessTaskComplexity(task);
+
+      if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
+        nodeByTask.set(task, {
+          description: task,
+          complexity,
+          readyToSpawn: true,
+          breakdownDepth: currentDepth,
+        });
+        continue;
+      }
+
+      if (currentDepth >= maxDepth) {
+        nodeByTask.set(task, {
+          description: task,
+          complexity,
+          readyToSpawn: false,
+          breakdownDepth: currentDepth,
+        });
+        continue;
+      }
+
+      tasksNeedingBreakdown.push(task);
+    }
+
+    const breakdownByTask = await this.analyzeTasksWithFullContextBatch(
+      tasksNeedingBreakdown,
+      complexities,
+      parentContext,
+      memoryStore
+    );
+
+    for (const task of tasksNeedingBreakdown) {
+      const complexity = complexities.get(task) || await this.assessTaskComplexity(task);
+      const breakdownResult = breakdownByTask.get(task) || await this.analyzeTaskWithFullContext(task, complexity, parentContext, memoryStore);
+
+      if (!breakdownResult?.requiresBreakdown) {
+        nodeByTask.set(task, {
+          description: task,
+          complexity,
+          readyToSpawn: true,
+          breakdownDepth: currentDepth,
+          designDecisions: breakdownResult?.designDecisions,
+          integrationPoints: breakdownResult?.integrationPoints,
+        });
+        continue;
+      }
+
+      const enrichedContext = {
+        ...parentContext,
+        designDecisions: [...parentContext.designDecisions, ...(breakdownResult.designDecisions || [])],
+        integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
+      };
+
+      const subtaskDescriptions: string[] = Array.isArray(breakdownResult.subtasks)
+        ? breakdownResult.subtasks.map((st: any) => st?.description).filter(Boolean)
+        : [];
+
+      const batchSize = 4;
+      const subtaskNodes: TaskNode[] = [];
+      for (let i = 0; i < subtaskDescriptions.length; i += batchSize) {
+        const batch = subtaskDescriptions.slice(i, i + batchSize);
+        const batchNodes = await this.breakdownNodesBatch(
+          batch,
+          currentDepth + 1,
+          maxDepth,
+          enrichedContext,
+          memoryStore,
+          verbose
+        );
+        subtaskNodes.push(...batchNodes);
+      }
+
+      nodeByTask.set(task, {
+        description: task,
+        complexity,
+        subtasks: subtaskNodes,
+        integrationPoints: breakdownResult.integrationPoints,
+        designDecisions: breakdownResult.designDecisions,
+        readyToSpawn: false,
+        breakdownDepth: currentDepth,
+      });
+    }
+
+    // Preserve input order.
+    return taskDescriptions.map(t => nodeByTask.get(t)!).filter(Boolean);
   }
 
   /**
@@ -1547,37 +1836,47 @@ QUALITY STANDARDS:
 - Integration points clearly defined with contracts/interfaces
 - Typical range: 5-20 subtasks (more if genuinely complex, fewer if naturally cohesive)
 
-Return JSON with COMPLETE breakdown focused on integration and production-readiness.`;
+    Return JSON with COMPLETE breakdown focused on integration and production-readiness.`;
 
-    try {
-      const response = await this.rateLimiter.throttle(() =>
-        this.llmClient.chat([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ])
-      );
+    const attempts = 3;
+    let lastError: any;
 
-      const content = response.choices[0]?.message.content || '';
-      const jsonCandidate = this.extractFirstJsonObject(content);
-      if (!jsonCandidate) {
-        throw new Error('No JSON object found in LLM response');
-      }
-
-      const sanitized = this.sanitizeJsonForParsing(jsonCandidate);
-      return JSON.parse(sanitized);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        uiState.addMessage({
-          role: 'system',
-          content: `[SpawnValidator] Context-aware breakdown failed: ${errorMessage}`,
-          timestamp: Date.now(),
-        });
-      } catch {
-        // ignore
+        const response = await this.rateLimiter.throttle(() =>
+          this.llmClient.chat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ])
+        );
+
+        const content = response.choices[0]?.message.content || '';
+        const jsonCandidate = this.extractFirstJsonObject(content);
+        if (!jsonCandidate) {
+          throw new Error('No JSON object found in LLM response');
+        }
+
+        const sanitized = this.sanitizeJsonForParsing(jsonCandidate);
+        return JSON.parse(sanitized);
+      } catch (error) {
+        lastError = error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        try {
+          uiState.addMessage({
+            role: 'system',
+            content: `[SpawnValidator] Context-aware breakdown attempt ${attempt} failed: ${errorMessage}`,
+            timestamp: Date.now(),
+          });
+        } catch {
+          // ignore
+        }
+        if (attempt < attempts) {
+          await this.sleep(250 * attempt);
+        }
       }
-      console.error('[SpawnValidator] Context-aware breakdown failed:', error);
     }
+
+    console.error('[SpawnValidator] Context-aware breakdown failed:', lastError);
 
     // Fallback
     return {

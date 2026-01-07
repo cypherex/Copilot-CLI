@@ -207,7 +207,14 @@ export class CopilotClient implements LLMClient {
     // Add conversation history as context
     if (contextMessages.length > 0) {
       const historyText = contextMessages
-        .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .map(m => {
+          if (m.role === 'user') return `User: ${m.content}`;
+          if (m.role === 'assistant') return `Assistant: ${m.content}`;
+          // Tool messages should stay clearly labeled; Copilot doesn't support tool roles natively,
+          // so we include them as explicit "Tool(name)" lines in the context.
+          const toolName = m.name || 'unknown';
+          return `Tool(${toolName}): ${m.content}`;
+        })
         .join('\n\n');
       additionalContext.push({
         text: `Previous conversation:\n${historyText}`,

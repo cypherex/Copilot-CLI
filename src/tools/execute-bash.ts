@@ -1,14 +1,14 @@
 // Execute Bash Tool
 
 import { z } from 'zod';
-import { execa } from 'execa';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
+import { execaBash } from '../utils/bash.js';
 
 const executeBashSchema = z.object({
   command: z.string(),
   cwd: z.string().optional(),
-  timeout: z.number().optional().default(30000),
+  timeout: z.number().int().min(0).optional().default(30000),
 });
 
 export class ExecuteBashTool extends BaseTool {
@@ -45,9 +45,11 @@ Note: Only use parallel for commands that don't depend on each other.`,
   protected readonly schema = executeBashSchema;
 
   protected async executeInternal(args: z.infer<typeof executeBashSchema>): Promise<string> {
-    const result = await execa('bash', ['-c', args.command], {
+    const timeout = args.timeout && args.timeout > 0 ? args.timeout : undefined;
+
+    const result = await execaBash(args.command, {
       cwd: args.cwd || process.cwd(),
-      timeout: args.timeout,
+      timeout,
       all: true,
       reject: false,
     });

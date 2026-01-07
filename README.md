@@ -214,6 +214,10 @@ The agent has access to these tools:
 - **read_file**: Read file contents (with optional line ranges)
 - **execute_bash**: Run shell commands (including Python scripts)
 - **list_files**: List files using glob patterns
+- **grep_repo**: Search the repository (read-only, rg/grep)
+- **explore_codebase**: Spawn read-only explorer subagent and return structured findings
+- **debug_scaffold**: Scaffold a hypothesis-driven debugging task tree
+- **record_experiment_result**: Record experiment outcomes against tasks (persistent debugging trail)
 
 ## Examples
 

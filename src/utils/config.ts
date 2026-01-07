@@ -2,10 +2,10 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import os from 'os';
 import dotenv from 'dotenv';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig } from '../llm/types.js';
+import { getCopilotCliHomeDir } from './app-paths.js';
 
 // Load .env file
 dotenv.config();
@@ -15,8 +15,13 @@ export interface AppConfig {
   llm: LLMConfig;
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.copilot-cli');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+function getConfigDir(): string {
+  return getCopilotCliHomeDir();
+}
+
+function getConfigFile(): string {
+  return path.join(getConfigDir(), 'config.json');
+}
 
 import type { LLMProvider } from '../llm/types.js';
 
@@ -88,7 +93,7 @@ export async function loadConfig(): Promise<AppConfig> {
   const defaults = getDefaultConfig();
 
   try {
-    const configData = await fs.readFile(CONFIG_FILE, 'utf-8');
+    const configData = await fs.readFile(getConfigFile(), 'utf-8');
     const fileConfig = JSON.parse(configData);
     return deepMerge(defaults, fileConfig);
   } catch {
@@ -97,12 +102,12 @@ export async function loadConfig(): Promise<AppConfig> {
 }
 
 export async function saveConfig(config: Partial<AppConfig>): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
+  await fs.mkdir(getConfigDir(), { recursive: true });
 
   const currentConfig = await loadConfig();
   const newConfig = deepMerge(currentConfig, config);
 
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(newConfig, null, 2), 'utf-8');
+  await fs.writeFile(getConfigFile(), JSON.stringify(newConfig, null, 2), 'utf-8');
 }
 
 export async function getConfigValue(key: string): Promise<any> {

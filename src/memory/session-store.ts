@@ -50,6 +50,7 @@ export class SessionMemoryStore {
       activeFiles: [],
       recentErrors: [],
       editHistory: [],
+      commandHistory: [],
       lastUpdated: new Date(),
     };
   }
@@ -105,6 +106,10 @@ export class SessionMemoryStore {
     }
 
     this.workingState = data.workingState;
+    // Backward compatible defaults for older sessions
+    if (!this.workingState.commandHistory) {
+      this.workingState.commandHistory = [];
+    }
     this.archiveEntries = data.archive;
     this.retrievalHistory = data.retrievalHistory;
   }
@@ -176,6 +181,15 @@ export class SessionMemoryStore {
   }
 
   getActiveTask(): Task | undefined {
+    // Prefer explicitly selected current task, even if it isn't marked active yet.
+    // This lets set_current_task establish context, and validators can still enforce status=active for writes.
+    if (this.workingState.currentTask) {
+      const current = this.tasks.get(this.workingState.currentTask);
+      if (current && current.status !== 'completed' && current.status !== 'abandoned') {
+        return current;
+      }
+    }
+
     const activeLike = Array.from(this.tasks.values()).filter(
       (t) => t.status === 'active' || t.status === 'pending_verification'
     );
@@ -520,6 +534,7 @@ export class SessionMemoryStore {
       activeFiles: [],
       recentErrors: [],
       editHistory: [],
+      commandHistory: [],
       lastUpdated: new Date(),
     };
   }

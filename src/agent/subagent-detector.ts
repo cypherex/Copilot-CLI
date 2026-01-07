@@ -122,6 +122,29 @@ const PATTERNS: PatternMatch[] = [
     },
   },
 
+  // Codebase exploration patterns (MEDIUM PRIORITY - SUGGESTION)
+  {
+    pattern: /\b(explore|search|find|locate)\b.*\b(codebase|repo|repository|project)\b/i,
+    opportunity: {
+      roleId: 'explorer',
+      shouldSpawn: true,
+      reason: 'Codebase exploration requested - consider spawning explorer subagent',
+      priority: 'medium',
+      mandatory: false,
+    },
+  },
+
+  {
+    pattern: /\bwhere\b.*\b(live|defined|implemented|handled)\b.*\?/i,
+    opportunity: {
+      roleId: 'explorer',
+      shouldSpawn: true,
+      reason: 'Locating implementation in codebase - explorer subagent can quickly map files',
+      priority: 'medium',
+      mandatory: false,
+    },
+  },
+
   {
     pattern: /\b(debug|debugging|diagnos)\b/i,
     opportunity: {
@@ -559,7 +582,7 @@ export function buildSubagentHint(opportunity: SubagentOpportunity): string {
     );
 
     if (opportunity.roleId) {
-      lines.push(`Recommended Role: ${opportunity.roleId}`);
+      lines.push(`Suggested Role: ${opportunity.roleId}`);
     }
 
     if (opportunity.taskCount && opportunity.taskCount > 1) {

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "userFacts": [],
+  "preferences": [],
+  "decisions": [],
+  "projectContext": [],
+  "featureGroups": [],
+  "decayConfig": {
+    "preferenceDecayRate": 0.01,
+    "userFactDecayRate": 0.005,
+    "exploratoryDecayRate": 0.05,
+    "minConfidence": 0.1,
+    "stableCategories": [
+      "personal",
+      "permanent"
+    ]
+  }
+}

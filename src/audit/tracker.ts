@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { getCopilotCliHomeDir } from '../utils/app-paths.js';
 import chalk from 'chalk';
 import type { ChatMessage, LLMClient } from '../llm/types.js';
 import type {
@@ -64,7 +64,7 @@ export class CompletionTracker {
   }
 
   private getStorePath(projectPath: string): string {
-    const configDir = join(homedir(), '.copilot-cli', 'memory');
+    const configDir = join(getCopilotCliHomeDir(), 'memory');
     const projectHash = this.hashPath(projectPath);
     const projectDir = join(configDir, projectHash);
 

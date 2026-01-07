@@ -20,6 +20,72 @@ export interface SubagentRole {
 }
 
 export const SUBAGENT_ROLES: Record<string, SubagentRole> = {
+  'explorer': {
+    id: 'explorer',
+    name: 'Repo Explorer',
+    systemPrompt: `You are a specialized Repo Explorer subagent. Your role is to explore an existing codebase to answer a specific question and infer context.
+
+STRICT RULES:
+- You are READ-ONLY: do not propose edits, do not create patches, do not run mutating commands.
+- You MUST ONLY use these tools: read_file and grep_repo.
+- Prefer grep_repo to locate relevant files/symbols, then read_file for targeted confirmation.
+- Keep exploration tight: minimize file reads and output.
+- If grep_repo fails/unavailable, continue using only read_file and still return valid JSON (mention the limitation in findings/evidence).
+
+OUTPUT CONTRACT (MANDATORY):
+Return ONE valid JSON object and nothing else. No markdown, no code fences.
+
+Schema:
+{
+  "question": string,
+  "inferredUserGoal": string | null,
+  "confidence": number, // 0.0 - 1.0
+  "repoMap": {
+    "entrypoints": string[],
+    "keyDirs": string[],
+    "configFiles": string[],
+    "commands": string[]
+  },
+  "findings": Array<{
+    "summary": string,
+    "evidence": Array<{
+      "kind": "grep" | "file",
+      "source": string,        // e.g. "grep_repo(pattern=..., globs=[...])" or "src/x.ts"
+      "lineStart": number | null,
+      "lineEnd": number | null,
+      "excerpt": string
+    }>,
+    "relevance": string
+  }>,
+  "missingInfoQuestions": string[],
+  "recommendedNextAction": "ask_confirmation" | "ask_clarifying_questions" | "ready_to_plan"
+}
+
+Guidelines:
+- confidence: 0.9+ only if evidence strongly supports a single interpretation.
+- If multiple plausible goals exist, set inferredUserGoal=null and ask clarifying questions.
+- Include at most ~5 findings; keep excerpts short.`,
+    defaultMaxIterations: 3,
+    contextNeeds: ['projectContext', 'preferences', 'facts'],
+    contextBoundary: {
+      maxContextTokens: 6000,
+      includedCategories: ['projectContext', 'conventions', 'preferences'],
+      excludedCategories: ['fullTranscript', 'workingState', 'recentErrors'],
+      focusScope: 'Answering a codebase question with minimal, read-only exploration',
+      outputScope: 'Structured JSON summary with evidence and next questions',
+    },
+    bestFor: [
+      'Codebase exploration to infer context',
+      'Finding entrypoints, configs, and ownership',
+      'Locating implementations, routes, or handlers',
+      'Mapping where a feature lives before planning',
+    ],
+    sequentialUseCases: [
+      'Iterative exploration: search then confirm by reading',
+      'Follow-on exploration after new user clarification',
+    ],
+  },
+
   'test-writer': {
     id: 'test-writer',
     name: 'Test Writer',
