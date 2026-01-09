@@ -5,6 +5,7 @@ import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import type { SubAgentManager } from '../agent/subagent.js';
 import type { MemoryStore } from '../memory/types.js';
+import type { ConversationManager } from '../agent/conversation.js';
 import { extractJsonObject } from '../utils/json-extract.js';
 import { getRole } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
@@ -14,11 +15,10 @@ const TreeOfThoughtSchema = z.object({
   problem: z.string().min(1),
   branches: z.number().int().min(2).max(5).optional().default(3),
   role: z.string().optional().default('investigator'),
-  files: z.array(z.string()).optional(),
-  max_iterations: z.number().int().min(100).max(5000).optional().default(800),
-  allow_execute: z.boolean().optional().default(false),
-  require_evidence: z.boolean().optional().default(true),
-  auto_reflect: z.boolean().optional().default(true),
+                  files: z.array(z.string()).optional(),
+                        max_iterations: z.number().int().min(15).max(5000).optional().default(40),
+                        min_iterations: z.number().int().min(0).max(100).optional().default(10),
+                        allow_execute: z.boolean().optional().default(false),                    require_evidence: z.boolean().optional().default(true),  auto_reflect: z.boolean().optional().default(true),
   reflection_passes: z.number().int().min(0).max(3).optional().default(0),
 });
 
@@ -70,7 +70,7 @@ function truncateForPrompt(text: string, maxChars: number): string {
   return `${t.slice(0, Math.max(0, maxChars - 20))}\n...<truncated>...`;
 }
 
-function validateBranchJson(mode: ToTMode, parsed: any, requireEvidence: boolean): ModeValidationResult {
+function validateBranchJson(mode: ToTMode, parsed: any): ModeValidationResult {
   const errors: string[] = [];
   if (!parsed || typeof parsed !== 'object') {
     return { ok: false, errors: ['Output is not a JSON object'] };
@@ -109,43 +109,12 @@ function validateBranchJson(mode: ToTMode, parsed: any, requireEvidence: boolean
     if (!Array.isArray(parsed.verification)) errors.push('Missing/invalid: verification (string[])');
   }
 
-  if (requireEvidence) {
-    if (!parsed.evidence || typeof parsed.evidence !== 'object') {
-      errors.push('Missing/invalid: evidence (object)');
-    } else {
-      if (!Array.isArray(parsed.evidence.files_read)) errors.push('Missing/invalid: evidence.files_read (string[])');
-      if (!Array.isArray(parsed.evidence.grep_queries)) errors.push('Missing/invalid: evidence.grep_queries (string[])');
-      if (!Array.isArray(parsed.evidence.key_snippets)) errors.push('Missing/invalid: evidence.key_snippets (string[])');
-    }
-  }
-
   return { ok: errors.length === 0, errors };
 }
 
-function scoreBranch(mode: ToTMode, parsed: any, requireEvidence: boolean): { score: number; notes: string[] } {
+function scoreBranch(mode: ToTMode, parsed: any): { score: number; notes: string[] } {
   const notes: string[] = [];
-  let score = 0;
-
-  // Evidence quality (0-4)
-  if (requireEvidence && parsed?.evidence) {
-    const files = Array.isArray(parsed.evidence.files_read) ? parsed.evidence.files_read.length : 0;
-    const greps = Array.isArray(parsed.evidence.grep_queries) ? parsed.evidence.grep_queries.length : 0;
-    const snippets = Array.isArray(parsed.evidence.key_snippets) ? parsed.evidence.key_snippets.length : 0;
-
-    if (files >= 2) score += 2;
-    else if (files >= 1) score += 1;
-    else notes.push('No files_read');
-
-    if (greps >= 1) score += 1;
-    else notes.push('No grep_queries');
-
-    if (snippets >= 1) score += 1;
-    else notes.push('No key_snippets');
-  } else if (requireEvidence) {
-    notes.push('Missing evidence block');
-  } else {
-    score += 1; // small baseline if evidence not required
-  }
+  let score = 5; // Base score for pure reasoning
 
   // Experiment clarity (0-2)
   const hasExperiment =
@@ -188,7 +157,6 @@ function formatForChat(
   mode: ToTMode,
   problem: string,
   branches: BranchSummary[],
-  requireEvidence: boolean,
   refinements: RefinementSummary[]
 ): string {
   const sorted = [...branches].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
@@ -216,10 +184,6 @@ function formatForChat(
       }
       if (Array.isArray(top.parsed_json.verification) && top.parsed_json.verification.length > 0) {
         lines.push(`Verify: ${top.parsed_json.verification[0]}`);
-      }
-      if (requireEvidence && top.parsed_json.evidence) {
-        const files = Array.isArray(top.parsed_json.evidence.files_read) ? top.parsed_json.evidence.files_read : [];
-        if (files.length > 0) lines.push(`Evidence files: ${files.slice(0, 3).join(', ')}${files.length > 3 ? '...' : ''}`);
       }
     } else if (top.parse_error) {
       lines.push(`Parse error: ${top.parse_error}`);
@@ -273,7 +237,7 @@ function formatForChat(
   }
 
   lines.push('');
-  lines.push('Next: pick one branch, gather evidence (read_file/grep_repo), implement minimal patch, then run run_repro and verify_project.');
+  lines.push('Next: pick one branch and follow the suggested logic.');
   return lines.join('\n');
 }
 
@@ -296,7 +260,8 @@ The tool is read-only by default (no file writes) and returns actionable suggest
         branches: { type: 'number', description: 'Number of branches (2-5, default: 3)', default: 3 },
         role: { type: 'string', description: 'Subagent role to use for branches (default: investigator)' },
         files: { type: 'array', items: { type: 'string' }, description: 'Optional relevant files to focus on' },
-        max_iterations: { type: 'number', description: 'Max iterations per branch (default: 800)', default: 800 },
+        max_iterations: { type: 'number', description: 'Max iterations per branch (default: 40)', default: 40 },
+        min_iterations: { type: 'number', description: 'Min iterations per branch (default: 10)', default: 10 },
         allow_execute: { type: 'boolean', description: 'Allow execute_bash in branches (default: false)', default: false },
         require_evidence: { type: 'boolean', description: 'Require evidence block with citations (default: true)', default: true },
         auto_reflect: {
@@ -318,28 +283,41 @@ The tool is read-only by default (no file writes) and returns actionable suggest
 
   constructor(
     private subAgentManager: SubAgentManager,
-    private memoryStore?: MemoryStore
+    private memoryStore?: MemoryStore,
+    private conversation?: ConversationManager
   ) {
     super();
   }
 
   protected async executeInternal(args: z.infer<typeof TreeOfThoughtSchema>): Promise<string> {
     const mode: ToTMode = args.mode ?? 'diagnose';
-    const requireEvidence = args.require_evidence ?? true;
+    const requireEvidence = false; // Pure reasoning agents don't gather new evidence
     const role = args.role || 'investigator';
     const roleConfig = getRole(role);
 
-    const allowedTools = (() => {
-      const base = ['read_file', 'grep_repo', 'list_files'];
-      if (args.allow_execute) base.push('execute_bash', 'run_repro', 'verify_project');
-      return base;
-    })();
+    // Pure reasoning: no tools allowed
+    const allowedTools: string[] = [];
+
+    // Extract recent conversation history if available
+    let conversationContext = '';
+    if (this.conversation) {
+      const messages = this.conversation.getMessages();
+      // Get last 15 messages, filtering out system messages and huge tool outputs
+      const recent = messages
+        .slice(-15)
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => {
+          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          return `${m.role.toUpperCase()}: ${content.slice(0, 500)}${content.length > 500 ? '...' : ''}`;
+        })
+        .join('\n\n');
+      
+      if (recent) {
+        conversationContext = `\nRECENT CONVERSATION HISTORY:\n${recent}\n`;
+      }
+    }
 
     const buildSchemaHint = (branch: number): string => {
-      const evidenceSchema = requireEvidence
-        ? `, "evidence": { "files_read": ["..."], "grep_queries": ["..."], "key_snippets": ["..."] }`
-        : '';
-
       if (mode === 'clarify') {
         return `{
   "branch": ${branch},
@@ -347,7 +325,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
   "unknowns": ["..."],
   "clarifying_questions": ["..."],
   "acceptance_criteria": ["..."],
-  "next_actions": ["..."]${evidenceSchema}
+  "next_actions": ["..."]
 }`;
       }
       if (mode === 'triage') {
@@ -358,7 +336,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
   "quick_checks": ["..."],
   "next_experiment": ["..."],
   "expected_observation": "<what you'd expect>",
-  "decision_rule": "<how to choose after experiment>"${evidenceSchema}
+  "decision_rule": "<how to choose after experiment>"
 }`;
       }
       if (mode === 'next_step') {
@@ -370,7 +348,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
     { "name": "Option B", "why": "...", "experiment": "...", "expected": "...", "decision_rule": "..." }
   ],
   "recommended_next": "<single best next step>",
-  "verification": ["..."]${evidenceSchema}
+  "verification": ["..."]
 }`;
       }
       if (mode === 'patch_plan') {
@@ -380,20 +358,20 @@ The tool is read-only by default (no file writes) and returns actionable suggest
   "files_to_change": ["..."],
   "patch_sketch": "<minimal diff sketch or edit instructions>",
   "risk": "<what could break>",
-  "verification": ["..."]${evidenceSchema}
+  "verification": ["..."]
 }`;
       }
       // diagnose (default)
       return `{
   "branch": ${branch},
   "hypothesis": "<most likely root cause>",
-  "evidence_to_collect": ["..."],
+  "evidence_to_collect": ["<MISSING INFO: what files/greps do you need?>"],
   "likely_files": ["..."],
   "proposed_fix": "<what to change>",
   "next_experiment": "<single experiment to disambiguate>",
   "expected_observation": "<what you'd expect>",
   "decision_rule": "<how to decide between hypotheses>",
-  "verification": ["..."]${evidenceSchema}
+  "verification": ["..."]
 }`;
     };
 
@@ -402,22 +380,23 @@ The tool is read-only by default (no file writes) and returns actionable suggest
       const specialization =
         mode === 'diagnose'
           ? (branch === 1
-              ? 'Focus on stacktrace-driven localization and the minimal experiment to confirm.'
+              ? 'Role: The Logic Analyst. Focus on rigorous control flow analysis and stack trace causality.'
               : branch === 2
-                ? 'Focus on codebase archeology: find similar patterns and likely bug class.'
-                : 'Focus on minimal patch sketch + targeted regression test idea.')
+                ? 'Role: The Pattern Detective. Focus on identifying implicit rules, subtle anomalies, and structural symmetries. Treat the code as a puzzle: what invariant property is being violated? Look for "spatial" relationships in data flow.'
+                : 'Role: The Devil\'s Advocate. Actively try to disprove the leading hypothesis. Look for edge cases, race conditions, and hidden assumptions.')
           : mode === 'triage'
-            ? (branch === 1 ? 'Focus on fastest repro/localization.' : 'Focus on system-level suspects and quick bisection.')
+            ? (branch === 1 ? 'Role: The Rapid Responder. Focus on isolating the immediate failure domain.' : 'Role: The Context Mapper. Focus on recent changes and system-level dependencies.')
             : mode === 'clarify'
-              ? (branch === 1 ? 'Focus on interpreting requirements.' : 'Focus on turning ambiguity into acceptance criteria.')
+              ? (branch === 1 ? 'Role: The Literal Interpreter. Focus on exact requirements.' : 'Role: The Ambiguity Hunter. Focus on finding what is NOT stated.')
               : mode === 'next_step'
-                ? (branch === 1 ? 'Focus on experiments to disambiguate.' : 'Focus on smallest safe patch-first path.')
-                : 'Focus on safest minimal patch and verification.';
+                ? (branch === 1 ? 'Role: The Pragmatist. Focus on the safest, smallest incremental step.' : 'Role: The Strategist. Focus on the high-leverage move that unlocks the most value.')
+                : 'Role: The Architect. Focus on maintainability, robustness, and preventing regression.';
 
       return [
         `You are Branch ${branch}/${args.branches} in a Tree-of-Thought analysis.`,
-        `You must NOT modify files. Do NOT use create_file/patch_file/apply_unified_diff.`,
-        `You may use read-only tools (read_file/grep_repo/list_files). If allowedTools include run_repro/verify_project/execute_bash, you may run commands to gather evidence.`,
+        `You are a PURE REASONING AGENT. You do NOT have access to tools or the file system.`,
+        `Rely entirely on the provided context, problem description, and your general knowledge.`,
+        conversationContext,
         specialization,
         ``,
         `Problem:`,
@@ -426,8 +405,27 @@ The tool is read-only by default (no file writes) and returns actionable suggest
         `Output ONLY valid JSON (no markdown) with this exact shape:`,
         buildSchemaHint(branch),
         ``,
-        `Grounding requirement: if you claim something about code, cite it via evidence.{files_read,grep_queries,key_snippets}.`,
-        `Be concrete and minimal. Prefer a targeted verification command.`,
+        `Be concrete and analytical.`,
+        `CRITICAL: Do not rush to a conclusion. You must spend at least 10 iterations expanding on your ideas. Use the "thinking" (reasoning) space effectively.`,
+        `IF YOU LACK CONTEXT: Do not just list files. Perform a **Hypothetical Analysis**. Reason about dependencies: "If function A does X, then B must handle Y. I need to verify A." Use your iterations to build a precise "Information Acquisition Plan" in the 'evidence_to_collect' field.`,
+        `   - If you identified missing context, your 'recommended_next' step should explicitly state: "Gather [specific evidence], then RE-RUN Tree of Thoughts to verify the hypothesis."`,
+        `   - Avoid the "Streetlight Effect": Do not invent logic errors in the code you can see just because you cannot see the real source (e.g., imports, external libs). It is better to hypothesize about the invisible dependencies.`,
+        ``,
+        `METACOGNITIVE THINKING PROTOCOL (Guide - expand as needed):`,
+        `1. [Iterations 1-3+] Deconstruction & Goal Alignment:`,
+        `   - Re-read the goal. Are we solving the *right* problem? Challenge the premise.`,
+        `   - List all assumptions. Which ones are unchecked?`,
+        `2. [Iterations 4-6+] Pattern Recognition & Implicit Rules (ARC-AGI Style):`,
+        `   - LOOK FOR PATTERNS: What repeating structures, naming conventions, or "shapes" are present?`,
+        `   - Identify the "Invariant": What property *should* always hold true but is broken?`,
+        `   - Look for "spatial" anomalies in data flow or file hierarchy.`,
+        `3. [Iterations 7-8+] Red Teaming & Falsification:`,
+        `   - Assume your best idea is WRONG. Why? Construct a counter-argument.`,
+        `   - What evidence would definitively *disprove* your hypothesis?`,
+        `4. [Iterations 9-10+] Synthesis & Abstraction:`,
+        `   - Move from specific fix to general principle.`,
+        `   - Propose a solution that restores the structural integrity of the system.`,
+        `   - Finalize the JSON output only when you have high confidence.`,
       ].join('\n');
     });
 
@@ -448,6 +446,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
         task,
         systemPrompt,
         maxIterations: args.max_iterations,
+        minIterations: args.min_iterations,
         allowedTools,
       });
     });
@@ -473,11 +472,11 @@ The tool is read-only by default (no file writes) and returns actionable suggest
       };
 
       if (!summary.parse_error && summary.parsed_json) {
-        const validation = validateBranchJson(mode, summary.parsed_json, requireEvidence);
+        const validation = validateBranchJson(mode, summary.parsed_json);
         if (!validation.ok) {
           summary.parse_error = validation.errors.join('; ');
         } else {
-          const scored = scoreBranch(mode, summary.parsed_json, requireEvidence);
+          const scored = scoreBranch(mode, summary.parsed_json);
           summary.score = scored.score;
           summary.score_notes = scored.notes;
         }
@@ -567,6 +566,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
           task: refinementTask,
           systemPrompt: refinementSystemPrompt,
           maxIterations: Math.min(500, args.max_iterations),
+          minIterations: Math.max(1, Math.floor((args.min_iterations ?? 6) / 2)),
           allowedTools,
         });
 
@@ -595,6 +595,6 @@ The tool is read-only by default (no file writes) and returns actionable suggest
       }
     }
 
-    return formatForChat(mode, args.problem, branches, requireEvidence, refinements);
+    return formatForChat(mode, args.problem, branches, refinements);
   }
 }

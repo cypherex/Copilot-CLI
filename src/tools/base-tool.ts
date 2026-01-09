@@ -1,19 +1,19 @@
 // Base Tool abstract class with Zod validation
 
 import { z } from 'zod';
-import type { Tool, ToolDefinition, ToolExecutionResult } from './types.js';
+import type { Tool, ToolDefinition, ToolExecutionResult, ToolExecutionContext } from './types.js';
 
 export abstract class BaseTool implements Tool {
   abstract readonly definition: ToolDefinition;
   protected abstract readonly schema: z.ZodSchema;
 
-  async execute(args: Record<string, any>): Promise<ToolExecutionResult> {
+  async execute(args: Record<string, any>, context?: ToolExecutionContext): Promise<ToolExecutionResult> {
     try {
       // Validate arguments
       const validatedArgs = this.schema.parse(args);
 
       // Execute tool logic
-      const result = await this.executeInternal(validatedArgs);
+      const result = await this.executeInternal(validatedArgs, context);
 
       return {
         success: true,
@@ -41,7 +41,7 @@ export abstract class BaseTool implements Tool {
     }
   }
 
-  protected abstract executeInternal(args: any): Promise<string>;
+  protected abstract executeInternal(args: any, context?: ToolExecutionContext): Promise<string>;
 
   protected getMetadata(): Record<string, any> {
     return {

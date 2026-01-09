@@ -137,7 +137,7 @@ export class CopilotAgent {
       fileRelationshipTracker,
       llmConfig.model // Pass model name for context limit configuration
     );
-    this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore());
+    this.toolRegistry.registerSubAgentTools(this.subAgentManager, this.conversation.getMemoryStore(), this.conversation);
 
     // Wire validators into tools
     const spawnAgentTool = this.toolRegistry.get('spawn_agent');

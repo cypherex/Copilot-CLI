@@ -20,6 +20,7 @@ export interface SubAgentConfig {
   task: string;
   systemPrompt?: string;
   maxIterations?: number;
+  minIterations?: number; // Minimum iterations before allowed to finish
   workingDirectory?: string;
   allowedTools?: string[]; // Optional per-agent tool allowlist
   outputJsonFromReasoning?: boolean; // If true, extract JSON from reasoningContent when content is empty (used for explorer)
@@ -38,6 +39,7 @@ export interface SubAgentProgress {
   name: string;
   iteration: number;
   maxIterations: number;
+  minIterations?: number;
   currentTool?: string;
   stage?: string; // Current stage within the iteration (e.g., 'thinking', 'executing', 'analyzing')
   stageLastUpdated?: number; // Timestamp when stage last updated
@@ -47,6 +49,7 @@ export interface SubAgentProgress {
 export class SubAgent extends EventEmitter {
   private conversation: ConversationManager;
   private maxIterations: number;
+  private minIterations: number;
   private toolsUsed: Set<string> = new Set();
   private currentIteration = 0; // Track current iteration for progress reporting
   private abortSignal?: AbortSignal;
@@ -96,6 +99,7 @@ export class SubAgent extends EventEmitter {
     }
 
     this.maxIterations = config.maxIterations || 10000;
+    this.minIterations = config.minIterations || 0;
   }
 
   private buildDefaultSystemPrompt(): string {
@@ -289,6 +293,15 @@ Remember: You are responsible for delivering complete, production-ready work. No
           type: 'system',
         });
 
+        // Inject iteration status into conversation so the LLM knows where it is in the process
+        if (this.minIterations > 0) {
+          this.conversation.addSystemMessage(
+            `[System] Iteration ${iteration} of ${this.maxIterations} (Minimum ${this.minIterations} required)`
+          );
+        } else {
+          this.conversation.addSystemMessage(`[System] Iteration ${iteration} of ${this.maxIterations}`);
+        }
+
         // Update stage to thinking before LLM call
         currentStage = 'thinking';
         this.emit('progress', {
@@ -345,6 +358,7 @@ Remember: You are responsible for delivering complete, production-ready work. No
             name: this.config.name,
             iteration,
             maxIterations: this.maxIterations,
+            minIterations: this.minIterations,
             currentTool: undefined,
             stage: currentStage,
             stageLastUpdated: Date.now(),
@@ -355,6 +369,23 @@ Remember: You are responsible for delivering complete, production-ready work. No
           await this.executeTools(response.toolCalls);
           continueLoop = true;
         } else {
+          // Check for minIterations enforcement
+          if (iteration < this.minIterations) {
+            if (debugSubagent) {
+              this.emit('message', {
+                agentId: this.config.name,
+                type: 'system',
+                content: `[Subagent Debug] Iteration ${iteration} < minIterations (${this.minIterations}); forcing expansion`,
+              });
+            }
+            this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+            this.conversation.addUserMessage(
+              `Continue: you are at iteration ${iteration} of ${this.minIterations} minimum. Do not finalize yet. Expand on your reasoning, explore edge cases, and refine your thoughts further.`
+            );
+            continueLoop = true;
+            continue;
+          }
+
           // If model produced output only in reasoning_content (thinking-enabled providers),
           // optionally extract JSON for tool-driven subagents (e.g., explorer) without leaking reasoning.
           // If extraction fails, fall back to returning the raw reasoning content instead of an empty output
@@ -488,7 +519,9 @@ Remember: You are responsible for delivering complete, production-ready work. No
       });
 
       try {
-        const result = await this.toolRegistry.execute(toolName, toolArgs);
+        const result = await this.toolRegistry.execute(toolName, toolArgs, {
+          conversation: this.conversation,
+        });
 
         // Emit tool result event for real-time display and logging
         this.emit('tool_result', {
@@ -690,6 +723,7 @@ export class SubAgentManager extends EventEmitter {
       task: config.task,
       systemPrompt: config.systemPrompt,
       maxIterations: config.maxIterations,
+      minIterations: config.minIterations,
       workingDirectory: config.workingDirectory,
       allowedTools: config.allowedTools,
       outputJsonFromReasoning: config.outputJsonFromReasoning,

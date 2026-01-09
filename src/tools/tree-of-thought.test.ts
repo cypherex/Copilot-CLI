@@ -33,11 +33,6 @@ function goodBranch(branch: number): string {
     expected_observation: 'Test passes after fix',
     decision_rule: 'If foo(null) throws then fix is confirmed',
     verification: ['npm test'],
-    evidence: {
-      files_read: ['src/a.ts', 'src/b.ts'],
-      grep_queries: ['foo('],
-      key_snippets: ['function foo(x) { ... }'],
-    },
   });
 }
 
@@ -52,11 +47,6 @@ function weakBranch(branch: number): string {
     expected_observation: '',
     decision_rule: '',
     verification: [],
-    evidence: {
-      files_read: [],
-      grep_queries: [],
-      key_snippets: [],
-    },
   });
 }
 
@@ -73,7 +63,7 @@ function refinement(pass: number): string {
 describe('TreeOfThoughtTool (reflection)', () => {
   it('does not auto-reflect when top branch is strong', async () => {
     const mgr = new FakeSubAgentManager([goodBranch(1), goodBranch(2)]);
-    const tool = new TreeOfThoughtTool(mgr as any);
+    const tool = new TreeOfThoughtTool(mgr as any, undefined, undefined);
 
     const res = await tool.execute({
       mode: 'diagnose',
@@ -90,7 +80,7 @@ describe('TreeOfThoughtTool (reflection)', () => {
 
   it('auto-reflects when results look weak', async () => {
     const mgr = new FakeSubAgentManager([weakBranch(1), weakBranch(2), refinement(1)]);
-    const tool = new TreeOfThoughtTool(mgr as any);
+    const tool = new TreeOfThoughtTool(mgr as any, undefined, undefined);
 
     const res = await tool.execute({
       mode: 'diagnose',
@@ -107,7 +97,7 @@ describe('TreeOfThoughtTool (reflection)', () => {
 
   it('forces multiple reflection passes when requested', async () => {
     const mgr = new FakeSubAgentManager([goodBranch(1), goodBranch(2), refinement(1), refinement(2)]);
-    const tool = new TreeOfThoughtTool(mgr as any);
+    const tool = new TreeOfThoughtTool(mgr as any, undefined, undefined);
 
     const res = await tool.execute({
       mode: 'diagnose',

@@ -1,5 +1,7 @@
 // Tool type definitions
 
+import type { ConversationManager } from '../agent/conversation.js';
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -17,7 +19,11 @@ export interface ToolExecutionResult {
   metadata?: Record<string, any>;
 }
 
+export interface ToolExecutionContext {
+  conversation?: ConversationManager;
+}
+
 export interface Tool {
   definition: ToolDefinition;
-  execute(args: Record<string, any>): Promise<ToolExecutionResult>;
+  execute(args: Record<string, any>, context?: ToolExecutionContext): Promise<ToolExecutionResult>;
 }

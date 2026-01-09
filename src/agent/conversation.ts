@@ -160,6 +160,13 @@ export class ConversationManager {
     }
   }
 
+  addSystemMessage(content: string): void {
+    this.messages.push({
+      role: 'system',
+      content,
+    });
+  }
+
   addAssistantMessage(content: string, toolCalls?: ToolCall[], reasoningContent?: string): void {
     this.messages.push({
       role: 'assistant',

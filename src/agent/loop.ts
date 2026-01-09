@@ -503,7 +503,7 @@ export class AgenticLoop {
               content: responseContent,
               timestamp: Date.now(),
             });
-          } else {
+          } else if (!hasVisibleContent) {
             // If the model returns no tool calls AND no visible content, it looks like an abrupt exit.
             // Treat this as a transient failure and prompt for a proper response.
             emptyFinalResponseRetries += 1;
@@ -528,6 +528,7 @@ export class AgenticLoop {
               timestamp: Date.now(),
             });
             continueLoop = false;
+            break;
           }
 
           // Check if we need compression before ending the loop
@@ -577,26 +578,43 @@ export class AgenticLoop {
             }
           }
 
-          // Check for open tasks BEFORE ending loop
-          if (this.memoryStore) {
-            const allTasks = this.memoryStore.getTasks();
-            const openTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'abandoned');
-            if (openTasks.length > 0) {
-              // Agent tried to finish but has open tasks!
-              const taskList = openTasks.map(t => `- [${t.status}] ${t.description}`).join('\n');
+          // Validate completion with PlanningValidator
+          if (this.planningValidator && this.memoryStore) {
+            const state = this.planningValidator.getState();
+            
+            // Only enforce planning if a goal or tasks already exist
+            if (state.hasGoal || state.taskCount > 0) {
+              const validation = this.planningValidator.validate(true); // Treat as write-intent to enforce tasks
+              
+              if (!validation.canProceed) {
+                this.planningValidator.displayValidation(validation);
+                
+                const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
+                this.conversation.addUserMessage(validationMessage);
+                
+                continueLoop = true;
+                continue;
+              }
+              
+              // Check for open tasks even if validation passes (maybe one is active but model says it's done)
+              const allTasks = this.memoryStore.getTasks();
+              const openTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'abandoned');
+              if (openTasks.length > 0) {
+                const taskList = openTasks.map(t => `- [${t.status}] ${t.description}`).join('\n');
+                
+                uiState.addMessage({
+                  role: 'system',
+                  content: `⚠️  Cannot finish: ${openTasks.length} open task(s) remaining`,
+                  timestamp: Date.now(),
+                });
 
-              uiState.addMessage({
-                role: 'system',
-                content: `⚠️  Cannot finish: ${openTasks.length} open task(s) remaining`,
-                timestamp: Date.now(),
-              });
+                this.conversation.addUserMessage(
+                  `You said the work is complete, but there are ${openTasks.length} open tasks that need to be completed:\n\n${taskList}\n\nPlease continue working on these tasks. Use update_task_status to mark them as completed when done, or blocked if you encounter issues.`
+                );
 
-              this.conversation.addUserMessage(
-                `You cannot finish yet. There are ${openTasks.length} open tasks that need to be completed:\n\n${taskList}\n\nPlease continue working on these tasks. Use update_task_status to mark them as completed when done, or blocked if you encounter issues.`
-              );
-
-              continueLoop = true;
-              continue; // Go to next iteration
+                continueLoop = true;
+                continue; // Go to next iteration
+              }
             }
           }
 
@@ -683,26 +701,6 @@ export class AgenticLoop {
             } else {
               this.consecutiveIdenticalDetections = 0;
               this.lastDetectionHash = detectionHash;
-            }
-
-            // Case 0: LLM says it's done but has open tasks (priority check)
-            if (isToolFree && detection.completionPhrases.length > 0 && hasOpenTasks) {
-              const taskList = openTasks.map(t => `- [${t.status}] ${t.description}`).join('\n');
-              const taskPrompt = `You said the work is complete, but there are ${openTasks.length} open tasks that need to be completed:
-
-${taskList}
-
-Please continue working on these tasks. Use mark_task_complete when you finish each one, or mark_task_blocked if you encounter issues.`;
-
-              uiState.addMessage({
-                role: 'system',
-                content: `⚠️ Cannot complete: ${openTasks.length} open tasks remaining`,
-                timestamp: Date.now(),
-              });
-
-              this.conversation.addUserMessage(taskPrompt);
-              continueLoop = true;
-              continue;
             }
 
             // Case 1: LLM says it's done but has tracking items (pre-response check)
@@ -976,7 +974,9 @@ Start with list_tracking_items to see what needs review.`;
       const startTime = Date.now();
 
       try {
-        result = await this.toolRegistry.execute(toolName, toolArgs);
+        result = await this.toolRegistry.execute(toolName, toolArgs, {
+          conversation: this.conversation,
+        });
         const duration = Date.now() - startTime;
 
         // Update uiState with tool result

@@ -44,6 +44,7 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
   const lastReproFailing = !!working.lastRepro && working.lastRepro.exitCode !== 0;
   const taskText = task?.description ?? '';
   const shouldConsider =
+    trigger.kind === 'iteration_tick' || // Always consider periodic checks
     lastReproFailing ||
     isBugLike(taskText) ||
     (working.lastVerification ? !working.lastVerification.passed : false);
@@ -69,8 +70,7 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
   // Trigger-specific gating
   if (trigger.kind === 'iteration_tick') {
     if (trigger.iteration % 5 !== 0) return { shouldTrigger: false };
-    // Only do this periodic trigger when we’re failing to converge.
-    if (!lastReproFailing && !working.lastVerification) return { shouldTrigger: false };
+    // Relaxed: Run periodic check regardless of failure state to ensure architectural alignment
   }
 
   if (trigger.kind === 'after_task_set') {
@@ -125,8 +125,8 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
       branches: 3,
       role: 'investigator',
       allow_execute: false,
-      max_iterations: 800,
-      require_evidence: true,
+      max_iterations: 40,
+      require_evidence: false,
     },
   };
 }

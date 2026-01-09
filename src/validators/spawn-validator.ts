@@ -1698,10 +1698,16 @@ Return JSON array: [
 
 CORE PRINCIPLES:
 
-1. COMPLETENESS - Ensure NOTHING is forgotten:
+0. PROPORTIONALITY - Match rigor to scope (CRITICAL):
+   - Check the project goal: Is this a prototype, a script, or a mission-critical system?
+   - For SIMPLE TOOLS (e.g. calculator, CLI script): Keep it simple. Single file or minimal structure. Do NOT add CI/CD, complex architecture, or heavy process unless requested.
+   - For COMPLEX SYSTEMS (e.g. OS, Game Engine): Use full rigor, extensive testing, and architectural planning.
+   - SCALE YOUR OUTPUT: Do not apply enterprise standards to a "Hello World" request.
+
+1. COMPLETENESS - Ensure NOTHING is forgotten (Relative to Scope):
    - All features and variations mentioned or implied
-   - Tests (unit, integration, edge cases, error cases)
-   - Error handling (detection, recovery, reporting, messages)
+   - Tests (appropriate for scope: maybe just a few assertions for a script, full suite for an engine)
+   - Error handling (appropriate for scope)
    - Data structures (types, enums, structs, traits, interfaces)
    - Utilities and helpers
    - Edge cases (empty input, invalid data, boundary conditions)
@@ -1796,13 +1802,19 @@ ${taskContext}
 
 BREAKDOWN APPROACH:
 
+Step 0: SCOPE CHECK (Proportionality)
+Before listing aspects, determine the "Ambition Level":
+- Prototype/Script? -> Aim for minimal, flat task list. No CI/CD, no microservices.
+- Production System? -> Use full rigor.
+- Middle Ground? -> Balance structure with speed.
+
 Step 1: IDENTIFY ALL ASPECTS
 List EVERY component, feature, requirement, and consideration for this task:
 - Core features and their variations
 - Data structures and types needed
 - Error handling scenarios
 - Edge cases and validation
-- Tests required
+- Tests required (Scale to scope!)
 - Integration points with other components
 - Helper utilities needed
 
@@ -1834,7 +1846,8 @@ QUALITY STANDARDS:
 - Tasks should be right-sized: cohesive units, not artificial splits
 - Nothing should be forgotten: all features, tests, errors, edge cases, helpers covered
 - Integration points clearly defined with contracts/interfaces
-- Typical range: 5-20 subtasks (more if genuinely complex, fewer if naturally cohesive)
+- Typical range: 5-20 subtasks (less for simple tools, more for complex engines)
+- **CRITICAL:** Do not propose "enterprise" infrastructure (CI/CD, Kubernetes, etc.) for simple apps unless explicitly requested.
 
     Return JSON with COMPLETE breakdown focused on integration and production-readiness.`;
 

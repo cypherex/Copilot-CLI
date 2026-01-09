@@ -1,6 +1,6 @@
 // Tool Registry
 
-import type { Tool, ToolDefinition } from './types.js';
+import type { Tool, ToolDefinition, ToolExecutionContext } from './types.js';
 import { CreateFileTool } from './create-file.js';
 import { PatchFileTool } from './patch-file.js';
 import { ReadFileTool } from './read-file.js';
@@ -61,15 +61,15 @@ export class ToolRegistry {
   }
 
   // Register subagent tools once the manager is available
-  registerSubAgentTools(manager: SubAgentManager, memoryStore?: MemoryStore): void {
+  registerSubAgentTools(manager: SubAgentManager, memoryStore?: MemoryStore, conversation?: ConversationManager): void {
     this.subAgentManager = manager;
     if (memoryStore) {
       this.register(new SpawnAgentTool(manager, memoryStore));
       this.register(new ExploreCodebaseTool(manager, memoryStore));
-      this.register(new TreeOfThoughtTool(manager, memoryStore));
+      this.register(new TreeOfThoughtTool(manager, memoryStore, conversation));
     } else {
       this.register(new SpawnAgentTool(manager));
-      this.register(new TreeOfThoughtTool(manager));
+      this.register(new TreeOfThoughtTool(manager, undefined, conversation));
     }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));
@@ -133,12 +133,12 @@ export class ToolRegistry {
     return this.getAll().map((tool) => tool.definition);
   }
 
-  async execute(name: string, args: Record<string, any>) {
+  async execute(name: string, args: Record<string, any>, context?: ToolExecutionContext) {
     const tool = this.get(name);
     if (!tool) {
       throw new Error(`Tool not found: ${name}`);
     }
-    return tool.execute(args);
+    return tool.execute(args, context);
   }
 }
 
