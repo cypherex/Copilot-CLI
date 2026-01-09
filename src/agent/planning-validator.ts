@@ -125,24 +125,33 @@ export class PlanningValidator {
       };
     }
 
-    // Check 3: For write operations, must have a current task
-    if (isWriteOperation && !state.hasActiveTask) {
+    // Check 3: For write operations, must have a current task (unless all finished)
+    if (isWriteOperation && !state.hasActiveTask && state.hasPendingTasks) {
+      const candidates = this.memoryStore.getTasks()
+        .filter((t: any) => t.status === 'waiting' || t.status === 'active')
+        .slice(0, 3)
+        .map((t: any) => `set_current_task('${t.id}') // ${t.description.slice(0, 40)}...`);
+
+      const explicitSuggestions = candidates.length > 0
+        ? [`You have waiting tasks. Call one of these FIRST:\n   ${candidates.join('\n   ')}`]
+        : [];
+
       return {
         canProceed: false,
         reason: 'No current task set. Write operations require a current task.',
         suggestions: [
-          'Use list_tasks to see available tasks',
+          ...explicitSuggestions,
+          'Use list_tasks to see all available tasks',
           '⚠️ IMPORTANT: Select a LEAF task (task with no subtasks) to work on',
           'Use list_subtasks to check if a task has children before selecting it',
           'If a task has subtasks, work on those subtasks first',
           'Use set_current_task to focus on a specific leaf task',
-          'Use update_task_status to mark the selected task as active',
         ],
       };
     }
 
-    // Check 4: For write operations, current task should be active
-    if (isWriteOperation && state.currentTask && state.currentTask.status !== 'active') {
+    // Check 4: For write operations, current task should be active (unless all finished)
+    if (isWriteOperation && state.currentTask && state.currentTask.status !== 'active' && state.hasPendingTasks) {
       reasons.push(`Current task "${state.currentTask.description}" is ${state.currentTask.status}, not active`);
       suggestions.push('Use update_task_status to set current task to active');
     }
