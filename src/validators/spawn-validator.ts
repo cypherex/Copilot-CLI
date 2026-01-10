@@ -1336,11 +1336,13 @@ Return JSON array: [
   }
 
   /**
-   * Recursive task breakdown with full context preservation
-   * This performs a complete breakdown until all leaf tasks are simple/moderate
+   * Recursive task breakdown with full context preservation (BREADTH-FIRST)
+   * This performs a complete breakdown until all leaf tasks are simple/moderate.
+   * Breadth-first approach ensures the model sees the entire horizontal layer
+   * before diving into vertical details.
    */
   async recursiveBreakdownWithContext(
-    rootTask: string,
+    rootTaskDescription: string,
     memoryStore: MemoryStore,
     options: {
       maxDepth?: number;
@@ -1357,45 +1359,137 @@ Return JSON array: [
     const maxDepth = options.maxDepth || 4;
     const verbose = options.verbose ?? false;
     
-    // Ensure parentContext is fully initialized even if only partial options were provided
-    const parentContext = {
-      projectGoal: options.parentContext?.projectGoal || memoryStore.getGoal()?.description || '',
-      designDecisions: options.parentContext?.designDecisions || [],
-      integrationPoints: options.parentContext?.integrationPoints || [],
-      siblingTasks: options.parentContext?.siblingTasks || [],
-      additionalContext: options.parentContext?.additionalContext || '',
-    };
+    const projectGoal = options.parentContext?.projectGoal || memoryStore.getGoal()?.description || '';
+    const additionalContext = options.parentContext?.additionalContext || '';
 
     if (verbose) {
       this.logVerbose('\n═══════════════════════════════════════════════════════════');
-      this.logVerbose('STARTING RECURSIVE TASK BREAKDOWN');
+      this.logVerbose('STARTING BREADTH-FIRST RECURSIVE TASK BREAKDOWN');
       this.logVerbose('═══════════════════════════════════════════════════════════');
-      this.logVerbose(`Root Task: "${rootTask}"`);
+      this.logVerbose(`Root Task: "${rootTaskDescription}"`);
       this.logVerbose(`Max Depth: ${maxDepth}`);
-      this.logVerbose(`Project Goal: ${parentContext.projectGoal || 'None'}`);
+      this.logVerbose(`Project Goal: ${projectGoal || 'None'}`);
       this.logVerbose('');
     }
 
-    const taskTree = await this.breakdownNode(
-      rootTask,
-      0,
-      maxDepth,
-      parentContext,
-      memoryStore,
-      verbose
-    );
+    // Initial root node complexity assessment
+    const rootComplexity = await this.assessTaskComplexity(rootTaskDescription);
+    const rootNode: TaskNode = {
+      description: rootTaskDescription,
+      complexity: rootComplexity,
+      readyToSpawn: rootComplexity.rating !== 'complex',
+      breakdownDepth: 0,
+      designDecisions: options.parentContext?.designDecisions || [],
+      integrationPoints: options.parentContext?.integrationPoints || [],
+    };
 
-    // Small delay before collecting stats
-    if (verbose) {
-      await this.sleep(500);
+    if (rootNode.readyToSpawn) {
+      if (verbose) this.logVerbose('✓ Root task is already simple/moderate. No breakdown needed.');
+      return {
+        taskTree: rootNode,
+        totalTasks: 1,
+        readyTasks: 1,
+        maxDepth: 0,
+        allIntegrationPoints: rootNode.integrationPoints || [],
+        allDesignDecisions: rootNode.designDecisions || [],
+        breakdownComplete: true,
+      };
+    }
+
+    // Breadth-First Expansion Queue
+    // We store references to nodes that need further breakdown
+    const expansionQueue: TaskNode[] = [rootNode];
+    let currentDepth = 0;
+
+    while (expansionQueue.length > 0 && currentDepth < maxDepth) {
+      const levelSize = expansionQueue.length;
+      if (verbose) {
+        this.logVerbose(`\n--- Layer Depth ${currentDepth} (${levelSize} tasks to expand) ---`);
+      }
+
+      // Process current level
+      // We process tasks at the same level together where possible
+      const nextLevelQueue: TaskNode[] = [];
+
+      for (let i = 0; i < levelSize; i++) {
+        const currentNode = expansionQueue.shift()!;
+        
+        if (verbose) {
+          this.logVerbose(`  ⚙ Expanding: "${currentNode.description}"`);
+        }
+
+        // Build context for this specific node from its parent
+        const parentContext = {
+          projectGoal,
+          additionalContext,
+          designDecisions: currentNode.designDecisions || [],
+          integrationPoints: currentNode.integrationPoints || [],
+        };
+
+        // Perform breakdown for this complex node
+        const breakdownResult = await this.analyzeTaskWithFullContext(
+          currentNode.description,
+          currentNode.complexity,
+          parentContext,
+          memoryStore
+        );
+
+        if (!breakdownResult.requiresBreakdown || !breakdownResult.subtasks || breakdownResult.subtasks.length === 0) {
+          currentNode.readyToSpawn = true;
+          if (verbose) this.logVerbose(`    ✓ LLM decided breakdown not needed for: "${currentNode.description}"`);
+          continue;
+        }
+
+        // Create subtask nodes
+        const subtaskNodes: TaskNode[] = breakdownResult.subtasks.map((st: any) => ({
+          description: st.description,
+          complexity: { rating: 'complex' as const, evidence: {}, reasoning: 'Pending assessment' }, // Will be assessed below
+          readyToSpawn: false,
+          breakdownDepth: currentDepth + 1,
+          produces: st.produces,
+          consumes: st.consumes,
+          // Inherit context but allow filtering or augmentation if needed
+          designDecisions: [...(currentNode.designDecisions || []), ...(breakdownResult.designDecisions || [])],
+          integrationPoints: [...(currentNode.integrationPoints || []), ...(breakdownResult.integrationPoints || [])],
+        }));
+
+        currentNode.subtasks = subtaskNodes;
+        currentNode.integrationPoints = breakdownResult.integrationPoints;
+        currentNode.designDecisions = breakdownResult.designDecisions;
+
+        // Assess complexity of all new subtasks in batch
+        const subtaskDescriptions = subtaskNodes.map(n => n.description);
+        const complexities = await this.batchAssessComplexity(subtaskDescriptions);
+
+        for (const subNode of subtaskNodes) {
+          const comp = complexities.get(subNode.description) || { rating: 'moderate' as const, evidence: { hasMultipleSteps: true, requiresCoordination: false }, reasoning: 'Defaulting to moderate' };
+          subNode.complexity = comp;
+          subNode.readyToSpawn = comp.rating !== 'complex';
+
+          if (!subNode.readyToSpawn && (currentDepth + 1) < maxDepth) {
+            nextLevelQueue.push(subNode);
+          } else if (!subNode.readyToSpawn) {
+            if (verbose) this.logVerbose(`    ⚠ Subtask too complex but max depth reached: "${subNode.description}"`);
+          }
+        }
+
+        if (verbose) {
+          const readyCount = subtaskNodes.filter(n => n.readyToSpawn).length;
+          this.logVerbose(`    → Created ${subtaskNodes.length} subtasks (${readyCount} ready, ${subtaskNodes.length - readyCount} complex)`);
+        }
+      }
+
+      // Move to next depth level
+      expansionQueue.push(...nextLevelQueue);
+      currentDepth++;
     }
 
     // Collect statistics
-    const stats = this.collectTreeStats(taskTree);
+    const stats = this.collectTreeStats(rootNode);
 
     if (verbose) {
       this.logVerbose('\n═══════════════════════════════════════════════════════════');
-      this.logVerbose('BREAKDOWN COMPLETE');
+      this.logVerbose('BREADTH-FIRST BREAKDOWN COMPLETE');
       this.logVerbose('═══════════════════════════════════════════════════════════');
       this.logVerbose(`Total Tasks: ${stats.totalTasks}`);
       this.logVerbose(`Ready Tasks: ${stats.readyTasks}`);
@@ -1406,13 +1500,12 @@ Return JSON array: [
     }
 
     return {
-      taskTree,
+      taskTree: rootNode,
       totalTasks: stats.totalTasks,
       readyTasks: stats.readyTasks,
       maxDepth: stats.maxDepth,
       allIntegrationPoints: stats.allIntegrationPoints,
       allDesignDecisions: stats.allDesignDecisions,
-      // Breakdown is complete if all leaf tasks are ready (root doesn't count as it's not directly spawnable)
       breakdownComplete: stats.readyTasks === (stats.totalTasks - 1) || (stats.totalTasks === 1 && stats.readyTasks === 1),
     };
   }
@@ -1428,10 +1521,7 @@ Return JSON array: [
    * Log verbose message to UI state (for ask mode capture) and console (for demos)
    */
   private logVerbose(message: string): void {
-    // Always log to console for demos and debugging
-    //console.log(message);
-
-    // Also try to add to uiState for ask mode logging (won't throw if uiState not initialized)
+    // Always try to add to uiState for ask mode logging (won't throw if uiState not initialized)
     try {
       uiState.addMessage({
         role: 'system',
@@ -1439,258 +1529,8 @@ Return JSON array: [
         timestamp: Date.now(),
       });
     } catch (error) {
-      // Silently ignore - console.log above will handle output
+      // Silently ignore
     }
-  }
-
-  /**
-   * Recursively break down a single task node
-   */
-  private async breakdownNode(
-    taskDescription: string,
-    currentDepth: number,
-    maxDepth: number,
-    parentContext: any,
-    memoryStore: MemoryStore,
-    verbose: boolean = false
-  ): Promise<TaskNode> {
-    const indent = '  '.repeat(currentDepth);
-
-    if (verbose) {
-      this.logVerbose(`${indent}[Depth ${currentDepth}] Analyzing: "${taskDescription}"`);
-    }
-
-    // Assess complexity
-    const complexity = await this.assessTaskComplexity(taskDescription);
-
-    if (verbose) {
-      this.logVerbose(`${indent}  → Complexity: ${complexity.rating.toUpperCase()}`);
-    }
-
-    // If simple or moderate, this is a leaf node - ready to spawn
-    if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
-      if (verbose) {
-        this.logVerbose(`${indent}  ✓ Ready to spawn (leaf task)`);
-      }
-      return {
-        description: taskDescription,
-        complexity,
-        readyToSpawn: true,
-        breakdownDepth: currentDepth,
-      };
-    }
-
-    // Complex task - check if we should break it down
-    if (currentDepth >= maxDepth) {
-      if (verbose) {
-        this.logVerbose(`${indent}  ⚠ Max depth reached - cannot break down further`);
-      }
-      // Hit max depth - mark as needing manual breakdown
-      return {
-        description: taskDescription,
-        complexity,
-        readyToSpawn: false, // NOT ready - too complex and at max depth
-        breakdownDepth: currentDepth,
-      };
-    }
-
-    if (verbose) {
-      this.logVerbose(`${indent}  ⚙ Breaking down into subtasks...`);
-    }
-
-    // Perform breakdown with full context
-    const breakdownResult = await this.analyzeTaskWithFullContext(
-      taskDescription,
-      complexity,
-      parentContext,
-      memoryStore
-    );
-
-    if (!breakdownResult.requiresBreakdown) {
-      if (verbose) {
-        this.logVerbose(`${indent}  → LLM decided breakdown not needed`);
-        this.logVerbose(`${indent}  ✓ Ready to spawn`);
-      }
-      // LLM decided breakdown not needed despite complexity
-      return {
-        description: taskDescription,
-        complexity,
-        readyToSpawn: true,
-        breakdownDepth: currentDepth,
-        designDecisions: breakdownResult.designDecisions,
-        integrationPoints: breakdownResult.integrationPoints,
-      };
-    }
-
-    if (verbose) {
-      this.logVerbose(`${indent}  → Created ${breakdownResult.subtasks.length} subtasks`);
-      if (breakdownResult.designDecisions?.length) {
-        this.logVerbose(`${indent}  → Captured ${breakdownResult.designDecisions.length} design decisions`);
-      }
-      if (breakdownResult.integrationPoints?.length) {
-        this.logVerbose(`${indent}  → Identified ${breakdownResult.integrationPoints.length} integration points`);
-      }
-    }
-
-    // Break down into subtasks and recursively analyze each
-    const enrichedContext = {
-      ...parentContext,
-      designDecisions: [...parentContext.designDecisions, ...(breakdownResult.designDecisions || [])],
-      integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
-    };
-
-    // Process subtasks in batches to balance speed and rate limiting
-    const subtaskDescriptions = breakdownResult.subtasks.map((st: any) => st.description);
-    const batchSize = 4; // Process up to 4 tasks at a time
-
-    if (verbose) {
-      this.logVerbose(`${indent}  ⤷ Analyzing ${subtaskDescriptions.length} subtasks recursively (batches of ${batchSize})...`);
-    }
-
-    const subtaskNodes: TaskNode[] = [];
-    for (let i = 0; i < subtaskDescriptions.length; i += batchSize) {
-      const batch = subtaskDescriptions.slice(i, i + batchSize);
-
-      if (verbose && subtaskDescriptions.length > batchSize) {
-        this.logVerbose(`${indent}    [Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(subtaskDescriptions.length / batchSize)}] Processing ${batch.length} tasks...`);
-      }
-
-      // Micro-batched breakdown: 1 batch LLM call (plus retries/fallback) instead of N parallel calls.
-      const batchNodes = await this.breakdownNodesBatch(
-        batch,
-        currentDepth + 1,
-        maxDepth,
-        enrichedContext,
-        memoryStore,
-        verbose
-      );
-
-      subtaskNodes.push(...batchNodes);
-
-      // No explicit delay needed: rateLimiter throttles LLM calls.
-    }
-
-    if (verbose) {
-      this.logVerbose(`${indent}  ✓ Completed breakdown`);
-    }
-
-    return {
-      description: taskDescription,
-      complexity,
-      subtasks: subtaskNodes,
-      integrationPoints: breakdownResult.integrationPoints,
-      designDecisions: breakdownResult.designDecisions,
-      readyToSpawn: false, // Parent node - not directly spawnable
-      breakdownDepth: currentDepth,
-    };
-  }
-
-  /**
-   * Break down up to ~4 sibling tasks using batched LLM calls, with per-item fallback.
-   * This reduces round-trips compared to calling breakdownNode in parallel for each item.
-   */
-  private async breakdownNodesBatch(
-    taskDescriptions: string[],
-    currentDepth: number,
-    maxDepth: number,
-    parentContext: any,
-    memoryStore: MemoryStore,
-    verbose: boolean = false
-  ): Promise<TaskNode[]> {
-    if (taskDescriptions.length === 0) return [];
-
-    const complexities = await this.batchAssessComplexity(taskDescriptions);
-
-    const nodeByTask = new Map<string, TaskNode>();
-    const tasksNeedingBreakdown: string[] = [];
-
-    for (const task of taskDescriptions) {
-      const complexity = complexities.get(task) || await this.assessTaskComplexity(task);
-
-      if (complexity.rating === 'simple' || complexity.rating === 'moderate') {
-        nodeByTask.set(task, {
-          description: task,
-          complexity,
-          readyToSpawn: true,
-          breakdownDepth: currentDepth,
-        });
-        continue;
-      }
-
-      if (currentDepth >= maxDepth) {
-        nodeByTask.set(task, {
-          description: task,
-          complexity,
-          readyToSpawn: false,
-          breakdownDepth: currentDepth,
-        });
-        continue;
-      }
-
-      tasksNeedingBreakdown.push(task);
-    }
-
-    const breakdownByTask = await this.analyzeTasksWithFullContextBatch(
-      tasksNeedingBreakdown,
-      complexities,
-      parentContext,
-      memoryStore
-    );
-
-    for (const task of tasksNeedingBreakdown) {
-      const complexity = complexities.get(task) || await this.assessTaskComplexity(task);
-      const breakdownResult = breakdownByTask.get(task) || await this.analyzeTaskWithFullContext(task, complexity, parentContext, memoryStore);
-
-      if (!breakdownResult?.requiresBreakdown) {
-        nodeByTask.set(task, {
-          description: task,
-          complexity,
-          readyToSpawn: true,
-          breakdownDepth: currentDepth,
-          designDecisions: breakdownResult?.designDecisions,
-          integrationPoints: breakdownResult?.integrationPoints,
-        });
-        continue;
-      }
-
-      const enrichedContext = {
-        ...parentContext,
-        designDecisions: [...parentContext.designDecisions, ...(breakdownResult.designDecisions || [])],
-        integrationPoints: [...parentContext.integrationPoints, ...(breakdownResult.integrationPoints || [])],
-      };
-
-      const subtaskDescriptions: string[] = Array.isArray(breakdownResult.subtasks)
-        ? breakdownResult.subtasks.map((st: any) => st?.description).filter(Boolean)
-        : [];
-
-      const batchSize = 4;
-      const subtaskNodes: TaskNode[] = [];
-      for (let i = 0; i < subtaskDescriptions.length; i += batchSize) {
-        const batch = subtaskDescriptions.slice(i, i + batchSize);
-        const batchNodes = await this.breakdownNodesBatch(
-          batch,
-          currentDepth + 1,
-          maxDepth,
-          enrichedContext,
-          memoryStore,
-          verbose
-        );
-        subtaskNodes.push(...batchNodes);
-      }
-
-      nodeByTask.set(task, {
-        description: task,
-        complexity,
-        subtasks: subtaskNodes,
-        integrationPoints: breakdownResult.integrationPoints,
-        designDecisions: breakdownResult.designDecisions,
-        readyToSpawn: false,
-        breakdownDepth: currentDepth,
-      });
-    }
-
-    // Preserve input order.
-    return taskDescriptions.map(t => nodeByTask.get(t)!).filter(Boolean);
   }
 
   /**

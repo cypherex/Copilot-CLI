@@ -157,7 +157,7 @@ export class CopilotAgent {
     }
 
     // Set execution context for parallel tool (hooks + file tracking + auditing)
-    this.toolRegistry.setExecutionContext(this.hookRegistry, this.conversation, this.completionTracker);
+    this.toolRegistry.setExecutionContext(this.hookRegistry, this.conversation, this.completionTracker, this.llmClient);
 
     this.loop = new AgenticLoop(this.llmClient, this.toolRegistry, this.conversation);
     this.loop.setHookRegistry(this.hookRegistry);

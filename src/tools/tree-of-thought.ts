@@ -1,257 +1,197 @@
-// Tree-of-Thought Tool - spawn parallel subagents to generate competing hypotheses/plans
+// Tree-of-Thought Tool - Standalone reasoning engine
+// Generates competing hypotheses/plans using a 4-phase metacognitive protocol
 
 import { z } from 'zod';
+import chalk from 'chalk';
 import { BaseTool } from './base-tool.js';
-import type { ToolDefinition } from './types.js';
-import type { SubAgentManager } from '../agent/subagent.js';
-import type { MemoryStore } from '../memory/types.js';
-import type { ConversationManager } from '../agent/conversation.js';
+import type { ToolDefinition, ToolExecutionContext, ToolExecutionResult } from './types.js';
+import type { LLMClient, ChatMessage } from '../llm/types.js';
+import { StreamAccumulator } from '../llm/streaming.js';
 import { extractJsonObject } from '../utils/json-extract.js';
 import { getRole } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
-import { attachSubagentUI } from './subagent-ui-utils.js';
 import { uiState } from '../ui/ui-state.js';
+import type { MemoryStore } from '../memory/types.js';
 
 const TreeOfThoughtSchema = z.object({
   mode: z.enum(['clarify', 'triage', 'diagnose', 'next_step', 'patch_plan']).optional().default('diagnose'),
   problem: z.string().min(1),
   branches: z.number().int().min(2).max(5).optional().default(3),
   role: z.string().optional().default('investigator'),
-                  files: z.array(z.string()).optional(),
-                        max_iterations: z.number().int().min(15).max(5000).optional().default(40),
-                        min_iterations: z.number().int().min(0).max(100).optional().default(10),
-                        allow_execute: z.boolean().optional().default(false),                    require_evidence: z.boolean().optional().default(true),  auto_reflect: z.boolean().optional().default(true),
+  files: z.array(z.string()).optional(),
+  max_iterations: z.number().int().min(15).max(5000).optional().default(40),
+  min_iterations: z.number().int().min(0).max(100).optional().default(10),
+  auto_reflect: z.boolean().optional().default(true),
   reflection_passes: z.number().int().min(0).max(3).optional().default(0),
 });
 
 type ToTMode = z.infer<typeof TreeOfThoughtSchema>['mode'];
 
-type BranchSummary = {
-  agent_id: string;
-  branch: number;
-  role: string;
+interface BranchResult {
+  branchIdx: number;
   success: boolean;
-  parsed_json?: any;
-  parse_error?: string;
   output: string;
-  tools_used: string[];
+  parsedJson?: any;
+  parseError?: string;
+  iterations: number;
   score?: number;
-  score_notes?: string[];
-};
-
-type ModeValidationResult = { ok: boolean; errors: string[] };
-
-type RefinementSummary = {
-  agent_id: string;
-  pass: number;
-  success: boolean;
-  parsed_json?: any;
-  parse_error?: string;
-  output: string;
-  tools_used: string[];
-};
-
-type RefinementValidationResult = { ok: boolean; errors: string[] };
-
-function validateRefinementJson(parsed: any): RefinementValidationResult {
-  const errors: string[] = [];
-  if (!parsed || typeof parsed !== 'object') return { ok: false, errors: ['Output is not a JSON object'] };
-
-  if (typeof parsed.pass !== 'number') errors.push('Missing/invalid: pass (number)');
-  if (typeof parsed.refined_focus !== 'string') errors.push('Missing/invalid: refined_focus (string)');
-  if (!Array.isArray(parsed.missing_evidence)) errors.push('Missing/invalid: missing_evidence (string[])');
-  if (!Array.isArray(parsed.risks)) errors.push('Missing/invalid: risks (string[])');
-  if (!Array.isArray(parsed.improved_verification)) errors.push('Missing/invalid: improved_verification (string[])');
-
-  return { ok: errors.length === 0, errors };
+  scoreNotes?: string[];
 }
 
-function truncateForPrompt(text: string, maxChars: number): string {
-  const t = String(text ?? '');
-  if (t.length <= maxChars) return t;
-  return `${t.slice(0, Math.max(0, maxChars - 20))}\n...<truncated>...`;
-}
+/**
+ * Unique Branch Runner - manages the reasoning loop for a single ToT branch
+ */
+class BranchRunner {
+  private messages: ChatMessage[] = [];
+  private currentIteration = 0;
+  private branchId: string;
 
-function validateBranchJson(mode: ToTMode, parsed: any): ModeValidationResult {
-  const errors: string[] = [];
-  if (!parsed || typeof parsed !== 'object') {
-    return { ok: false, errors: ['Output is not a JSON object'] };
+  constructor(
+    private branchIdx: number,
+    private totalBranches: number,
+    private llmClient: LLMClient,
+    private systemPrompt: string,
+    private userTask: string,
+    private maxIterations: number,
+    private minIterations: number,
+    private mode: string
+  ) {
+    this.branchId = `tot_branch_${Date.now()}_${branchIdx}`;
+    // Push context first
+    this.messages.push({ role: 'user', content: userTask });
+    // Push rules/persona last so they are more impactful
+    this.messages.push({ role: 'system', content: systemPrompt });
   }
 
-  if (typeof parsed.branch !== 'number') errors.push('Missing/invalid: branch (number)');
+  async run(): Promise<BranchResult> {
+    const shortId = this.branchId.slice(-6);
+    uiState.addMessage({
+      role: 'system',
+      content: `[ToT] Branch ${this.branchIdx} starting reasoning loop...`,
+      timestamp: Date.now()
+    });
 
-  if (mode === 'clarify') {
-    if (typeof parsed.interpretation !== 'string') errors.push('Missing/invalid: interpretation (string)');
-    if (!Array.isArray(parsed.clarifying_questions)) errors.push('Missing/invalid: clarifying_questions (string[])');
-    if (!Array.isArray(parsed.acceptance_criteria)) errors.push('Missing/invalid: acceptance_criteria (string[])');
-    if (!Array.isArray(parsed.next_actions)) errors.push('Missing/invalid: next_actions (string[])');
-  } else if (mode === 'triage') {
-    if (typeof parsed.problem_summary !== 'string') errors.push('Missing/invalid: problem_summary (string)');
-    if (typeof parsed.suspected_area !== 'string') errors.push('Missing/invalid: suspected_area (string)');
-    if (!Array.isArray(parsed.quick_checks)) errors.push('Missing/invalid: quick_checks (string[])');
-    if (!Array.isArray(parsed.next_experiment)) errors.push('Missing/invalid: next_experiment (string[])');
-  } else if (mode === 'diagnose') {
-    if (typeof parsed.hypothesis !== 'string') errors.push('Missing/invalid: hypothesis (string)');
-    if (!Array.isArray(parsed.evidence_to_collect)) errors.push('Missing/invalid: evidence_to_collect (string[])');
-    if (!Array.isArray(parsed.likely_files)) errors.push('Missing/invalid: likely_files (string[])');
-    if (typeof parsed.proposed_fix !== 'string') errors.push('Missing/invalid: proposed_fix (string)');
-    if (typeof parsed.next_experiment !== 'string') errors.push('Missing/invalid: next_experiment (string)');
-    if (typeof parsed.decision_rule !== 'string') errors.push('Missing/invalid: decision_rule (string)');
-    if (!Array.isArray(parsed.verification)) errors.push('Missing/invalid: verification (string[])');
-  } else if (mode === 'next_step') {
-    if (typeof parsed.primary_goal !== 'string') errors.push('Missing/invalid: primary_goal (string)');
-    if (!Array.isArray(parsed.options)) errors.push('Missing/invalid: options (array)');
-    if (typeof parsed.recommended_next !== 'string') errors.push('Missing/invalid: recommended_next (string)');
-    if (!Array.isArray(parsed.verification)) errors.push('Missing/invalid: verification (string[])');
-  } else if (mode === 'patch_plan') {
-    if (typeof parsed.hypothesis !== 'string') errors.push('Missing/invalid: hypothesis (string)');
-    if (!Array.isArray(parsed.files_to_change)) errors.push('Missing/invalid: files_to_change (string[])');
-    if (typeof parsed.patch_sketch !== 'string') errors.push('Missing/invalid: patch_sketch (string)');
-    if (typeof parsed.risk !== 'string') errors.push('Missing/invalid: risk (string)');
-    if (!Array.isArray(parsed.verification)) errors.push('Missing/invalid: verification (string[])');
-  }
+    let finalOutput = '';
+    let success = true;
+    let errorMsg: string | undefined;
 
-  return { ok: errors.length === 0, errors };
-}
+    try {
+      // Add a small staggered delay based on branch index to prevent API collision
+      await new Promise(resolve => setTimeout(resolve, (this.branchIdx - 1) * 800));
 
-function scoreBranch(mode: ToTMode, parsed: any): { score: number; notes: string[] } {
-  const notes: string[] = [];
-  let score = 5; // Base score for pure reasoning
+      while (this.currentIteration < this.maxIterations) {
+        this.currentIteration++;
+        
+        const phase = this.getPhase(this.currentIteration);
+        
+        // Inject iteration directive
+        if (this.currentIteration <= this.minIterations) {
+          const directive = this.currentIteration === this.minIterations
+            ? `CRITICAL: Reasoning phase complete. You MUST now output your FINAL RESPONSE in the valid JSON format specified. Output JSON only.`
+            : `Continue reasoning (Phase: ${phase}). Iteration ${this.currentIteration}/${this.minIterations} (min). Expand your thoughts.`;
+          this.messages.push({ role: 'system', content: `[System] ${directive}` });
+        }
 
-  // Experiment clarity (0-2)
-  const hasExperiment =
-    typeof parsed?.next_experiment === 'string' ||
-    Array.isArray(parsed?.next_experiment) ||
-    typeof parsed?.recommended_next === 'string';
-  if (hasExperiment) score += 1;
-  else notes.push('No explicit next experiment/step');
+        const accumulator = new StreamAccumulator();
+        try {
+          for await (const chunk of this.llmClient.chatStream(this.messages, [])) {
+            accumulator.addChunk(chunk);
+          }
+        } catch (streamErr: any) {
+          console.error(`[ToT Error] Branch ${this.branchIdx} stream failed: ${streamErr.message}`);
+          throw streamErr;
+        }
 
-  const hasDecisionRule = typeof parsed?.decision_rule === 'string' || (Array.isArray(parsed?.options) && parsed.options.length > 0);
-  if (hasDecisionRule) score += 1;
-  else if (mode === 'diagnose') notes.push('No decision_rule to disambiguate');
+        const response = accumulator.getResponse();
+        const content = response.content || '';
+        this.messages.push({ role: 'assistant', content, reasoningContent: response.reasoningContent });
 
-  // Patch minimality (0-2)
-  const patchText = String(parsed?.patch_sketch ?? parsed?.proposed_fix ?? '');
-  if (patchText) {
-    if (patchText.length < 600) score += 2;
-    else score += 1;
-  } else {
-    if (mode === 'patch_plan' || mode === 'diagnose') notes.push('No patch_sketch/proposed_fix');
-  }
+        // Update the UI with the full thought (no slicing)
+        uiState.addMessage({
+          role: 'system',
+          content: `[ToT Branch ${this.branchIdx}][Iter ${this.currentIteration}] ${content.trim()}`,
+          timestamp: Date.now()
+        });
 
-  // Verification specificity (0-2)
-  const verification = parsed?.verification;
-  if (Array.isArray(verification) && verification.length > 0) {
-    score += 1;
-    if (verification.some((c: string) => /\b(test|pytest|jest|go test|cargo test|mvn|gradle)\b/i.test(String(c)))) {
-      score += 1;
-    }
-  } else {
-    notes.push('No verification commands');
-  }
+        // Check if we have JSON and are past minIterations
+        const hasJson = content.includes('{') && content.includes('}');
+        if (hasJson && this.currentIteration >= this.minIterations) {
+          finalOutput = content;
+          break; 
+        }
 
-  // Bound to 0..10
-  score = Math.max(0, Math.min(10, score));
-  return { score, notes };
-}
-
-function formatForChat(
-  mode: ToTMode,
-  problem: string,
-  branches: BranchSummary[],
-  refinements: RefinementSummary[]
-): string {
-  const sorted = [...branches].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-  const top = sorted[0];
-
-  const lines: string[] = [];
-  lines.push(`[ToT Suggestions] mode=${mode} branches=${branches.length}`);
-  lines.push('');
-  lines.push('Problem:');
-  lines.push(problem.trim());
-  lines.push('');
-
-  if (top) {
-    lines.push(`Top branch: #${top.branch}${top.score !== undefined ? ` (score ${top.score.toFixed(1)}/10)` : ''}`);
-    if (top.parsed_json) {
-      const highlight =
-        top.parsed_json.recommended_next ||
-        top.parsed_json.next_experiment ||
-        top.parsed_json.proposed_fix ||
-        top.parsed_json.hypothesis ||
-        top.parsed_json.problem_summary ||
-        top.parsed_json.interpretation;
-      if (typeof highlight === 'string') {
-        lines.push(`Focus: ${highlight}`);
+        // If it provided JSON too early, tell it to keep thinking
+        if (hasJson && this.currentIteration < this.minIterations) {
+          this.messages.push({ role: 'user', content: `Good start, but continue exploring. Do not finalize yet. Reach iteration ${this.minIterations} first.` });
+        }
+        
+        // If we reached max iterations without JSON, use the last content
+        if (this.currentIteration >= this.maxIterations) {
+          finalOutput = content;
+        }
       }
-      if (Array.isArray(top.parsed_json.verification) && top.parsed_json.verification.length > 0) {
-        lines.push(`Verify: ${top.parsed_json.verification[0]}`);
-      }
-    } else if (top.parse_error) {
-      lines.push(`Parse error: ${top.parse_error}`);
+    } catch (err: any) {
+      success = false;
+      errorMsg = err.message;
+      uiState.addMessage({
+        role: 'system',
+        content: `[ToT Error] Branch ${this.branchIdx} CRASHED: ${err.message}`,
+        timestamp: Date.now()
+      });
     }
-    lines.push('');
+
+    const parsed = extractJsonObject(finalOutput);
+
+    return {
+      branchIdx: this.branchIdx,
+      success,
+      output: finalOutput,
+      parsedJson: parsed.parsed,
+      parseError: parsed.error || errorMsg,
+      iterations: this.currentIteration,
+    };
   }
 
-  lines.push('Branches (summary):');
-  for (const b of sorted) {
-    const prefix = `- #${b.branch}${b.score !== undefined ? ` (${b.score.toFixed(1)}/10)` : ''}${b.parse_error ? ' [invalid]' : ''}`;
-    lines.push(prefix);
-    if (b.parse_error) {
-      lines.push(`  parse_error: ${b.parse_error}`);
-      continue;
-    }
-    const p = b.parsed_json;
-    const oneLiner =
-      p?.recommended_next ||
-      p?.next_experiment ||
-      p?.proposed_fix ||
-      p?.hypothesis ||
-      p?.problem_summary ||
-      p?.interpretation ||
-      '';
-    if (oneLiner) lines.push(`  ${String(oneLiner).split('\n')[0].slice(0, 180)}`);
-    if (Array.isArray(p?.verification) && p.verification.length > 0) {
-      lines.push(`  verify: ${String(p.verification[0]).slice(0, 180)}`);
-    }
-    if (b.score_notes && b.score_notes.length > 0) {
-      lines.push(`  notes: ${b.score_notes.slice(0, 3).join('; ')}`);
-    }
+  private getPhase(iter: number): string {
+    if (iter <= 3) return 'Deconstruction';
+    if (iter <= 6) return 'Pattern Recognition';
+    if (iter <= 8) return 'Red Teaming';
+    return 'Synthesis';
   }
 
-  const validRefinements = refinements.filter((r) => !r.parse_error && r.parsed_json);
-  if (validRefinements.length > 0) {
-    lines.push('');
-    lines.push('Refinement passes:');
-    for (const r of validRefinements) {
-      const p = r.parsed_json;
-      lines.push(`- pass ${p.pass}: ${String(p.refined_focus).split('\n')[0].slice(0, 220)}`);
-      if (Array.isArray(p.improved_verification) && p.improved_verification.length > 0) {
-        lines.push(`  verify: ${String(p.improved_verification[0]).slice(0, 220)}`);
-      }
-      if (Array.isArray(p.missing_evidence) && p.missing_evidence.length > 0) {
-        lines.push(`  missing_evidence: ${String(p.missing_evidence[0]).slice(0, 220)}`);
-      }
-      if (Array.isArray(p.risks) && p.risks.length > 0) {
-        lines.push(`  risk: ${String(p.risks[0]).slice(0, 220)}`);
-      }
-    }
+  private updateUi(status: string) {
+    const shortId = this.branchId.slice(-6);
+    uiState.updateLiveMessage(this.branchId, {
+      content: chalk.yellow(`▶ [ToT] Branch ${this.branchIdx}/${this.totalBranches} (${shortId})
+  Status: ${status}`),
+    });
   }
 
-  lines.push('');
-  lines.push('Next: pick one branch and follow the suggested logic.');
-  lines.push('');
-  lines.push('SYSTEM: You now have a reasoned plan. Do not just summarize it to the user. You MUST immediately call the necessary tools (read_file, create_task, etc.) to execute this plan. Do not stop.');
-  return lines.join('\n');
-}
+    private updateUiPreview(content: string) {
+      const shortId = this.branchId.slice(-6);
+      const preview = content.trim() || '...';
+      uiState.updateLiveMessage(this.branchId, {
+        content: chalk.yellow(`▶ [ToT] Branch ${this.branchIdx}/${this.totalBranches} (${shortId})
+  `) +
+                 chalk.dim(`  Current Thought: ${preview}`) + `
+  ` +
+                 chalk.cyan(`  Iter: ${this.currentIteration}/${this.minIterations}+`),
+      });
+      
+      // Also push a system message for the trace log
+      uiState.addMessage({
+        role: 'system',
+        content: `[ToT Branch ${this.branchIdx}] ${preview}`,
+        timestamp: Date.now()
+      });
+    }}
 
 export class TreeOfThoughtTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'tree_of_thought',
-    description: `Generate competing hypotheses/next steps by spawning multiple parallel subagents ("branches").
-
-This is intended for runtime reasoning: clarifying an ask, triage, diagnosis, deciding next experiment, or planning a patch.
-The tool is read-only by default (no file writes) and returns actionable suggestions (not an enforced decision).`,
+    description: `Perform high-level architectural reasoning by spawning parallel "thought branches". 
+Use this for complex triage, diagnosis, or strategy formulation where multiple competing hypotheses are needed.
+The tool is read-only and returns actionable suggestions.`,
     parameters: {
       type: 'object',
       properties: {
@@ -262,22 +202,10 @@ The tool is read-only by default (no file writes) and returns actionable suggest
         },
         problem: { type: 'string', description: 'Problem statement / bug description' },
         branches: { type: 'number', description: 'Number of branches (2-5, default: 3)', default: 3 },
-        role: { type: 'string', description: 'Subagent role to use for branches (default: investigator)' },
-        files: { type: 'array', items: { type: 'string' }, description: 'Optional relevant files to focus on' },
-        max_iterations: { type: 'number', description: 'Max iterations per branch (default: 40)', default: 40 },
-        min_iterations: { type: 'number', description: 'Min iterations per branch (default: 10)', default: 10 },
-        allow_execute: { type: 'boolean', description: 'Allow execute_bash in branches (default: false)', default: false },
-        require_evidence: { type: 'boolean', description: 'Require evidence block with citations (default: true)', default: true },
-        auto_reflect: {
-          type: 'boolean',
-          description: 'Optionally run a post-pass synthesizer when results look weak (default: true)',
-          default: true,
-        },
-        reflection_passes: {
-          type: 'number',
-          description: 'Force N refinement passes after branches (0-3, default: 0)',
-          default: 0,
-        },
+        role: { type: 'string', description: 'Reasoning persona (default: investigator)' },
+        files: { type: 'array', items: { type: 'string' }, description: 'Optional relevant files' },
+        max_iterations: { type: 'number', description: 'Max iterations per branch', default: 40 },
+        min_iterations: { type: 'number', description: 'Min iterations (enforces depth)', default: 10 },
       },
       required: ['problem'],
     },
@@ -286,378 +214,137 @@ The tool is read-only by default (no file writes) and returns actionable suggest
   protected readonly schema = TreeOfThoughtSchema;
 
   constructor(
-    private subAgentManager: SubAgentManager,
-    private memoryStore?: MemoryStore,
-    private conversation?: ConversationManager
+    private memoryStore?: MemoryStore
   ) {
     super();
   }
 
-  protected async executeInternal(args: z.infer<typeof TreeOfThoughtSchema>): Promise<string> {
-    const mode: ToTMode = args.mode ?? 'diagnose';
-    const requireEvidence = false; // Pure reasoning agents don't gather new evidence
-    const role = args.role || 'investigator';
-    const roleConfig = getRole(role);
+  protected async executeInternal(args: z.infer<typeof TreeOfThoughtSchema>, context?: ToolExecutionContext): Promise<string> {
+    const { mode = 'diagnose', problem, branches: numBranches = 3, role = 'investigator' } = args;
+    const llmClient = context?.llmClient;
+    const conversation = context?.conversation;
 
-    // Pure reasoning: no tools allowed
-    const allowedTools: string[] = [];
-
-    // Extract recent conversation history if available
-    let conversationContext = '';
-    if (this.conversation) {
-      const messages = this.conversation.getMessages();
-      // Get last 15 messages, filtering out system messages and huge tool outputs
-      const recent = messages
-        .slice(-15)
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => {
-          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-          return `${m.role.toUpperCase()}: ${content.slice(0, 500)}${content.length > 500 ? '...' : ''}`;
-        })
-        .join('\n\n');
-      
-      if (recent) {
-        conversationContext = `\nRECENT CONVERSATION HISTORY:\n${recent}\n`;
-      }
+    if (!llmClient) {
+      throw new Error('LLM client not available in tool execution context');
     }
 
-    const buildSchemaHint = (branch: number): string => {
-      if (mode === 'clarify') {
-        return `{
-  "branch": ${branch},
-  "interpretation": "<what the request is asking>",
-  "unknowns": ["..."],
-  "clarifying_questions": ["..."],
-  "acceptance_criteria": ["..."],
-  "next_actions": ["..."]
-}`;
-      }
-      if (mode === 'triage') {
-        return `{
-  "branch": ${branch},
-  "problem_summary": "<1-2 sentences>",
-  "suspected_area": "<module/component>",
-  "quick_checks": ["..."],
-  "next_experiment": ["..."],
-  "expected_observation": "<what you'd expect>",
-  "decision_rule": "<how to choose after experiment>"
-}`;
-      }
-      if (mode === 'next_step') {
-        return `{
-  "branch": ${branch},
-  "primary_goal": "<what we are trying to prove or fix next>",
-  "options": [
-    { "name": "Option A", "why": "...", "experiment": "...", "expected": "...", "decision_rule": "..." },
-    { "name": "Option B", "why": "...", "experiment": "...", "expected": "...", "decision_rule": "..." }
-  ],
-  "recommended_next": "<single best next step>",
-  "verification": ["..."]
-}`;
-      }
-      if (mode === 'patch_plan') {
-        return `{
-  "branch": ${branch},
-  "hypothesis": "<root cause>",
-  "files_to_change": ["..."],
-  "patch_sketch": "<minimal diff sketch or edit instructions>",
-  "risk": "<what could break>",
-  "verification": ["..."]
-}`;
-      }
-      // diagnose (default)
-      return `{
-  "branch": ${branch},
-  "hypothesis": "<most likely root cause>",
-  "evidence_to_collect": ["<MISSING INFO: what files/greps do you need?>"],
-  "likely_files": ["..."],
-  "proposed_fix": "<what to change>",
-  "next_experiment": "<single experiment to disambiguate>",
-  "expected_observation": "<what you'd expect>",
-  "decision_rule": "<how to decide between hypotheses>",
-  "verification": ["..."]
-}`;
-    };
-
-    const branchPrompts = Array.from({ length: args.branches }, (_, idx) => {
-      const branch = idx + 1;
-      const specialization =
-        mode === 'diagnose'
-          ? (branch === 1
-              ? 'Role: The Logic Analyst. Focus on rigorous control flow analysis and stack trace causality.'
-              : branch === 2
-                ? 'Role: The Pattern Detective. Focus on identifying implicit rules, subtle anomalies, and structural symmetries. Treat the code as a puzzle: what invariant property is being violated? Look for "spatial" relationships in data flow.'
-                : 'Role: The Devil\'s Advocate. Actively try to disprove the leading hypothesis. Look for edge cases, race conditions, and hidden assumptions.')
-          : mode === 'triage'
-            ? (branch === 1 ? 'Role: The Rapid Responder. Focus on isolating the immediate failure domain.' : 'Role: The Context Mapper. Focus on recent changes and system-level dependencies.')
-            : mode === 'clarify'
-              ? (branch === 1 ? 'Role: The Literal Interpreter. Focus on exact requirements.' : 'Role: The Ambiguity Hunter. Focus on finding what is NOT stated.')
-              : mode === 'next_step'
-                ? (branch === 1 ? 'Role: The Pragmatist. Focus on the safest, smallest incremental step.' : 'Role: The Strategist. Focus on the high-leverage move that unlocks the most value.')
-                : 'Role: The Architect. Focus on maintainability, robustness, and preventing regression.';
-
-      return [
-        `You are Branch ${branch}/${args.branches} in a Tree-of-Thought analysis.`,
-        `You are a PURE REASONING AGENT. You do NOT have access to tools or the file system.`,
-        `Rely entirely on the provided context, problem description, and your general knowledge.`,
-        conversationContext,
-        specialization,
-        ``,
-        `Problem:`,
-        args.problem,
-        ``,
-        `Output ONLY valid JSON (no markdown) with this exact shape:`,
-        buildSchemaHint(branch),
-        ``,
-        `Be concrete and analytical.`,
-        `CRITICAL: Do not rush to a conclusion. You must spend at least 10 iterations expanding on your ideas. Use the "thinking" (reasoning) space effectively.`,
-        `IF YOU LACK CONTEXT: Do not just list files. Perform a **Hypothetical Analysis**. Reason about dependencies: "If function A does X, then B must handle Y. I need to verify A." Use your iterations to build a precise "Information Acquisition Plan" in the 'evidence_to_collect' field.`,
-        `   - If you identified missing context, your 'recommended_next' step should explicitly state: "Gather [specific evidence], then RE-RUN Tree of Thoughts to verify the hypothesis."`,
-        `   - Avoid the "Streetlight Effect": Do not invent logic errors in the code you can see just because you cannot see the real source (e.g., imports, external libs). It is better to hypothesize about the invisible dependencies.`,
-        ``,
-        `METACOGNITIVE THINKING PROTOCOL (Guide - expand as needed):`,
-        `1. [Iterations 1-3+] Deconstruction & Goal Alignment:`,
-        `   - Re-read the goal. Are we solving the *right* problem? Challenge the premise.`,
-        `   - List all assumptions. Which ones are unchecked?`,
-        `2. [Iterations 4-6+] Pattern Recognition & Implicit Rules (ARC-AGI Style):`,
-        `   - LOOK FOR PATTERNS: What repeating structures, naming conventions, or "shapes" are present?`,
-        `   - Identify the "Invariant": What property *should* always hold true but is broken?`,
-        `   - Look for "spatial" anomalies in data flow or file hierarchy.`,
-        `3. [Iterations 7-8+] Red Teaming & Falsification:`,
-        `   - Assume your best idea is WRONG. Why? Construct a counter-argument.`,
-        `   - What evidence would definitively *disprove* your hypothesis?`,
-        `4. [Iterations 9-10+] Synthesis & Abstraction:`,
-        `   - Move from specific fix to general principle.`,
-        `   - Propose a solution that restores the structural integrity of the system.`,
-        `   - Finalize the JSON output only when you have high confidence.`,
-      ].join('\n');
+    uiState.addMessage({
+      role: 'system',
+      content: chalk.bold(`
+🧠 STARTING STANDALONE TREE OF THOUGHT (${mode.toUpperCase()} MODE)`),
+      timestamp: Date.now()
     });
 
-    const cleanups: (() => void)[] = [];
+    const conversationContext = this.extractRecentContext(conversation);
+    const branchPrompts = this.buildBranchPrompts(numBranches, problem, mode, conversationContext);
 
-    const agentIds = branchPrompts.map((task, idx) => {
-      const brief = this.memoryStore && roleConfig
-        ? buildSubagentBrief(task, this.memoryStore, {
-            role: roleConfig,
-            files: args.files,
-            includeGoal: true,
-            includeTaskHierarchy: true,
-          })
-        : undefined;
+    // Run branches in parallel
+    const runners = branchPrompts.map((task, idx) => {
+      const brief = this.memoryStore ? buildSubagentBrief(task, this.memoryStore, {
+        role: getRole(role) || getRole('investigator')!,
+        files: args.files,
+        includeGoal: true,
+        includeTaskHierarchy: true,
+      }) : undefined;
 
-      const systemPrompt = brief ? briefToSystemPrompt(brief) : undefined;
+      const systemPrompt = brief ? briefToSystemPrompt(brief) : 'You are a reasoning agent.';
 
-      const agentId = this.subAgentManager.spawn({
-        name: `ToT ${role} branch ${idx + 1}`,
-        task,
+      return new BranchRunner(
+        idx + 1,
+        numBranches,
+        llmClient,
         systemPrompt,
-        maxIterations: args.max_iterations,
-        minIterations: args.min_iterations,
-        allowedTools,
-      });
-
-      // Attach UI listeners to show reasoning progress
-      // Use a unique role label for each branch so they are distinct in the log
-      const branchRole = `${role}-${idx + 1}`;
-      const cleanup = attachSubagentUI(
-        this.subAgentManager,
-        agentId,
-        `ToT Branch ${idx + 1}`,
-        branchRole,
-        false, // not background, we wait for it
-        { prefix: `Branch ${idx + 1}`, verbose: true }
+        task,
+        args.max_iterations,
+        args.min_iterations,
+        mode
       );
-      cleanups.push(cleanup);
-
-      return agentId;
     });
 
-    let results: Map<string, any> = new Map();
-    try {
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Waiting for ${agentIds.length} branches...`, timestamp: Date.now() });
-      results = await this.subAgentManager.waitAll(agentIds);
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: All branches returned.`, timestamp: Date.now() });
-    } catch (err: any) {
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: waitAll FAILED: ${err.message}`, timestamp: Date.now() });
-      throw err;
-    } finally {
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Running cleanups...`, timestamp: Date.now() });
-      cleanups.forEach(c => c());
+    const results = await Promise.all(runners.map(r => r.run()));
+
+    // Process and format results
+    const summaries: BranchResult[] = results.map(res => {
+      const scored = this.scoreResult(mode, res.parsedJson);
+      return { ...res, score: scored.score, scoreNotes: scored.notes };
+    });
+
+    const finalOutput = this.formatFinalSummary(mode, problem, summaries);
+    
+    uiState.addMessage({
+      role: 'system',
+      content: chalk.green(`✓ Tree of Thought reasoning complete. Synthesizing ${summaries.length} branches.`),
+      timestamp: Date.now()
+    });
+
+    return finalOutput;
+  }
+
+  private extractRecentContext(conversation?: any): string {
+    if (!conversation) return '';
+    const messages = conversation.getMessages();
+    return messages.slice(-10)
+      .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+      .map((m: any) => `${m.role.toUpperCase()}: ${m.content.slice(0, 300)}`)
+      .join('\n\n');
+  }
+
+  private buildBranchPrompts(count: number, problem: string, mode: ToTMode, context: string): string[] {
+    return Array.from({ length: count }, (_, i) => {
+      const branch = i + 1;
+      const specialization = this.getSpecialization(mode, branch);
+      return [
+        `You are Branch ${branch}/${count} in a Tree-of-Thought analysis.`, 
+        `Role: ${specialization}`,
+        `You are a PURE REASONING ENGINE. You have NO TOOLS.`, 
+        `Problem: ${problem}`, 
+        `Context: ${context}`, 
+        `Output ONLY valid JSON at the end of your reasoning phase.`, 
+        this.getSchemaHint(mode, branch)
+      ].join('\n\n');
+    });
+  }
+
+  private getSpecialization(mode: string, branch: number): string {
+    const specs: Record<string, string[]> = {
+      diagnose: ['Logic Analyst (Rigorous flow)', 'Pattern Detective (Structural anomalies)', 'Devil\'s Advocate (Disprove hypotheses)'],
+      triage: ['Rapid Responder (Domain isolation)', 'Context Mapper (Dependencies)', 'Impact Auditor (Blast radius)'],
+      next_step: ['Pragmatist (Smallest safe step)', 'Strategist (High-leverage)', 'Architect (Robustness)']
+    };
+    return specs[mode]?.[branch - 1] || 'General Analyst';
+  }
+
+  private getSchemaHint(mode: string, branch: number): string {
+    return `Final JSON Schema: {"branch": ${branch}, "hypothesis": "...", "recommended_next": "...", "verification": ["..."]}`;
+  }
+
+  private scoreResult(mode: string, parsed: any): { score: number; notes: string[] } {
+    if (!parsed) return { score: 0, notes: ['Invalid JSON output'] };
+    let score = 5;
+    const notes = [];
+    if (parsed.recommended_next) score += 2; else notes.push('Missing next step');
+    if (parsed.verification?.length > 0) score += 2; else notes.push('Missing verification');
+    return { score, notes };
+  }
+
+  private formatFinalSummary(mode: string, problem: string, branches: BranchResult[]): string {
+    const sorted = [...branches].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const lines = [
+      `[ToT Standalone Summary] Mode: ${mode}`,
+      `Problem: ${problem}`,
+      '',
+      `Top Recommendation (Branch #${sorted[0].branchIdx}):`,
+      `  Focus: ${sorted[0].parsedJson?.recommended_next || 'N/A'}`,
+      `  Verify: ${sorted[0].parsedJson?.verification?.[0] || 'N/A'}`,
+      '',
+      'Branch Summaries:'
+    ];
+
+    for (const b of sorted) {
+      lines.push(`- Branch #${b.branchIdx} (Score: ${b.score}/9): ${b.parsedJson?.hypothesis || 'No hypothesis'}`);
     }
 
-    const branches: BranchSummary[] = [];
-    try {
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Processing results...`, timestamp: Date.now() });
-      for (let i = 0; i < agentIds.length; i++) {
-        const agentId = agentIds[i];
-        const res = results.get(agentId);
-        
-        if (!res) {
-          uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Result for ${agentId} is NULL`, timestamp: Date.now() });
-        }
-
-        const output = res?.output ?? '';
-        const parsed = extractJsonObject(output);
-
-        const summary: BranchSummary = {
-          agent_id: agentId,
-          branch: i + 1,
-          role,
-          success: !!res?.success,
-          parsed_json: parsed.parsed,
-          parse_error: parsed.error,
-          output,
-          tools_used: res?.toolsUsed ?? [],
-        };
-
-        if (!summary.parse_error && summary.parsed_json) {
-          const validation = validateBranchJson(mode, summary.parsed_json);
-          if (!validation.ok) {
-            summary.parse_error = validation.errors.join('; ');
-          } else {
-            const scored = scoreBranch(mode, summary.parsed_json);
-            summary.score = scored.score;
-            summary.score_notes = scored.notes;
-          }
-        }
-
-        branches.push(summary);
-      }
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Result processing complete.`, timestamp: Date.now() });
-    } catch (err: any) {
-      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: result processing CRASHED: ${err.message}\n${err.stack}`, timestamp: Date.now() });
-      throw err;
-    }
-
-    const sorted = [...branches].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-    const top = sorted[0];
-
-    const autoReflect = args.auto_reflect ?? true;
-    const forcedPasses = args.reflection_passes ?? 0;
-
-    const shouldAutoReflect = (() => {
-      if (!autoReflect) return false;
-      if (!top || top.parse_error || !top.parsed_json) return true;
-      if ((top.score ?? 0) < 7) return true;
-      if (!Array.isArray(top.parsed_json?.verification) || top.parsed_json.verification.length === 0) return true;
-      if (requireEvidence) {
-        const ev = top.parsed_json?.evidence;
-        const files = Array.isArray(ev?.files_read) ? ev.files_read.length : 0;
-        const snippets = Array.isArray(ev?.key_snippets) ? ev.key_snippets.length : 0;
-        if (files < 1 || snippets < 1) return true;
-      }
-      return false;
-    })();
-
-    const passes = forcedPasses > 0 ? forcedPasses : shouldAutoReflect ? 1 : 0;
-    const refinements: RefinementSummary[] = [];
-
-    if (passes > 0) {
-      const topCandidates = sorted.filter((b) => !b.parse_error && b.parsed_json).slice(0, 2);
-
-      let previousRefinement: any | undefined;
-      for (let pass = 1; pass <= passes; pass++) {
-        const candidateBlock = topCandidates
-          .map((b) => {
-            const json = truncateForPrompt(JSON.stringify(b.parsed_json, null, 2), 3500);
-            const notes = (b.score_notes ?? []).slice(0, 4).join('; ');
-            return `Branch #${b.branch} (score ${b.score?.toFixed(1) ?? 'n/a'}/10)\nnotes: ${notes}\njson:\n${json}`;
-          })
-          .join('\n\n');
-
-        const prevBlock = previousRefinement
-          ? `\nPrevious refinement (pass ${pass - 1}):\n${truncateForPrompt(JSON.stringify(previousRefinement, null, 2), 2000)}\n`
-          : '';
-
-        const refinementTask = [
-          `You are a post-pass synthesizer for a Tree-of-Thought run (refinement pass ${pass}/${passes}).`,
-          `You must NOT modify files. Do NOT use create_file/patch_file/apply_unified_diff.`,
-          `You may use read-only tools (read_file/grep_repo/list_files). If allowedTools include run_repro/verify_project/execute_bash, you may run commands to gather evidence.`,
-          `Your job is to strengthen decision quality: identify missing evidence, key risks, and the tightest next step + verification.`,
-          ``,
-          `Mode: ${mode}`,
-          `Problem:`,
-          args.problem,
-          ``,
-          `Candidate branches:`,
-          candidateBlock || '(no valid candidate branches)',
-          prevBlock,
-          `Output ONLY valid JSON (no markdown) with this exact shape:`,
-          `{
-  "pass": ${pass},
-  "refined_focus": "<single best next step / experiment / patch direction>",
-  "missing_evidence": ["<what to read/grep/run to disconfirm>"],
-  "risks": ["<top risk/edge case>"],
-  "improved_verification": ["<command(s) to verify>"]
-}`,
-          ``,
-          `Be concrete. Prefer 1-2 missing_evidence items and 1-2 verification commands.`,
-        ].join('\n');
-
-        const refinementBrief = this.memoryStore && roleConfig
-          ? buildSubagentBrief(refinementTask, this.memoryStore, {
-              role: roleConfig,
-              files: args.files,
-              includeGoal: true,
-              includeTaskHierarchy: true,
-            })
-          : undefined;
-
-        const refinementSystemPrompt = refinementBrief ? briefToSystemPrompt(refinementBrief) : undefined;
-
-        const refinementAgentId = this.subAgentManager.spawn({
-          name: `ToT refinement pass ${pass}`,
-          task: refinementTask,
-          systemPrompt: refinementSystemPrompt,
-          maxIterations: Math.min(500, args.max_iterations),
-          minIterations: Math.max(1, Math.floor((args.min_iterations ?? 6) / 2)),
-          allowedTools,
-        });
-
-        const refinementCleanup = attachSubagentUI(
-          this.subAgentManager,
-          refinementAgentId,
-          `ToT Refinement Pass ${pass}`,
-          'refiner',
-          false,
-          { prefix: `Refinement ${pass}`, verbose: true }
-        );
-
-        let refinementResult: Map<string, any>;
-        try {
-          refinementResult = await this.subAgentManager.waitAll([refinementAgentId]);
-        } finally {
-          refinementCleanup();
-        }
-        
-        const res = refinementResult.get(refinementAgentId);
-        const output = res?.output ?? '';
-        const parsed = extractJsonObject(output);
-
-        const summary: RefinementSummary = {
-          agent_id: refinementAgentId,
-          pass,
-          success: !!res?.success,
-          parsed_json: parsed.parsed,
-          parse_error: parsed.error,
-          output,
-          tools_used: res?.toolsUsed ?? [],
-        };
-
-        if (!summary.parse_error && summary.parsed_json) {
-          const validation = validateRefinementJson(summary.parsed_json);
-          if (!validation.ok) summary.parse_error = validation.errors.join('; ');
-        }
-
-        refinements.push(summary);
-        if (!summary.parse_error && summary.parsed_json) previousRefinement = summary.parsed_json;
-      }
-    }
-
-    console.log('[TRACE] TreeOfThought: Formatting final output...');
-    const result = formatForChat(mode, args.problem, branches, refinements);
-    uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Execution complete. Returning ${result.length} chars.`, timestamp: Date.now() });
-    console.log(`[TRACE] TreeOfThought: Returning result (${result.length} chars).`);
-    return result;
+    lines.push('\nSYSTEM: Reasoning complete. ACT NOW. Use read_file or create_task to execute the top plan.');
+    return lines.join('\n');
   }
 }

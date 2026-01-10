@@ -8,18 +8,10 @@ export type AutoToTTrigger =
 
 export type AutoToTDecision = {
   shouldTrigger: boolean;
+  toolName?: string;
   key?: string;
   reason?: string;
-  toolArgs?: {
-    mode: 'clarify' | 'triage' | 'diagnose' | 'next_step' | 'patch_plan';
-    problem: string;
-    branches: number;
-    role: string;
-    allow_execute: boolean;
-    max_iterations: number;
-    files?: string[];
-    require_evidence: boolean;
-  };
+  toolArgs?: any;
 };
 
 const isBugLike = (text: string): boolean => /\b(fix|bug|error|fail|failing|failure|regression|crash|exception|stack|trace|debug|investigate)\b/i.test(text);
@@ -53,7 +45,7 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
     return { shouldTrigger: false };
   }
 
-  // Throttle: don’t re-trigger for the same “state key”.
+  // Throttle: donâ€™t re-trigger for the same â€œstate keyâ€.
   const keyPayload = {
     kind: trigger.kind,
     iteration: trigger.kind === 'iteration_tick' ? trigger.iteration : undefined,
@@ -68,19 +60,21 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
   }
 
   // Trigger-specific gating
+  let useToT = false;
+  let useDeepReasoning = false;
+
   if (trigger.kind === 'iteration_tick') {
-    if (trigger.iteration % 5 !== 0) return { shouldTrigger: false };
-    // Relaxed: Run periodic check regardless of failure state to ensure architectural alignment
+    if (trigger.iteration % 30 === 0) {
+      useToT = true;
+    } else if (trigger.iteration % 5 === 0) {
+      useDeepReasoning = true;
+    } else {
+      return { shouldTrigger: false };
+    }
   }
 
-  if (trigger.kind === 'after_task_set') {
-    // Only auto-trigger after setting a task if we recently generated a dependency-ordered tree or have a failing repro.
-    const hasRecentBreakdown = isRecent(working.lastTaskBreakdown?.generatedAt, 5 * 60_000);
-    if (!hasRecentBreakdown && !lastReproFailing) return { shouldTrigger: false };
-  }
-
-  if (trigger.kind === 'repro_failed') {
-    if (!lastReproFailing) return { shouldTrigger: false };
+  if (trigger.kind === 'repro_failed' || trigger.kind === 'after_task_set' || trigger.kind === 'subagent_spawn') {
+    useDeepReasoning = true; // Use smaller reasoning for immediate errors
   }
 
   const problemParts: string[] = [];
@@ -97,38 +91,40 @@ export function decideAutoToT(memoryStore: MemoryStore, trigger: AutoToTTrigger)
     problemParts.push(`Verification commands: ${working.lastVerification.commands.join(' | ')}`);
   }
 
-  const reason =
-    trigger.kind === 'repro_failed'
-      ? 'Repro is failing; generate competing root-cause hypotheses and patch sketches.'
-      : trigger.kind === 'after_task_set'
-        ? 'Task selected after breakdown; generate a focused plan and verification strategy.'
-        : trigger.kind === 'iteration_tick'
-          ? 'Periodic checkpoint; generate alternatives to unblock progress.'
-          : 'Subagent spawn; generate focused plan before proceeding.';
+  const problem = problemParts.join('\n\n') || 'Investigate and propose a minimal fix plan.';
 
-  const mode =
-    trigger.kind === 'after_task_set'
-      ? 'next_step'
-      : trigger.kind === 'iteration_tick'
-        ? 'next_step'
-        : trigger.kind === 'subagent_spawn'
-          ? 'next_step'
-          : 'diagnose';
+  if (useToT) {
+    return {
+      shouldTrigger: true,
+      toolName: 'tree_of_thought',
+      key,
+      reason: 'Major architectural milestone (30 iterations); generating broad parallel hypotheses.',
+      toolArgs: {
+        mode: 'diagnose',
+        problem,
+        branches: 3,
+        role: 'investigator',
+        max_iterations: 40,
+        min_iterations: 10,
+      },
+    };
+  }
 
-  return {
-    shouldTrigger: true,
-    key,
-    reason,
-    toolArgs: {
-      mode,
-      problem: problemParts.join('\n\n') || 'Investigate and propose a minimal fix plan.',
-      branches: 3,
-      role: 'investigator',
-      allow_execute: false,
-      max_iterations: 40,
-      require_evidence: false,
-    },
-  };
+  if (useDeepReasoning) {
+    return {
+      shouldTrigger: true,
+      toolName: 'deep_reasoning',
+      key,
+      reason: 'Periodic deep reasoning (5 iterations) or immediate error detection.',
+      toolArgs: {
+        problem,
+        max_iterations: 15,
+        min_iterations: 8,
+      },
+    };
+  }
+
+  return { shouldTrigger: false };
 }
 
 export function recordAutoToT(memoryStore: MemoryStore, decision: AutoToTDecision): void {
@@ -145,18 +141,18 @@ export function recordAutoToT(memoryStore: MemoryStore, decision: AutoToTDecisio
 }
 
 export function buildAutoToTInstruction(decision: AutoToTDecision): string {
-  if (!decision.shouldTrigger || !decision.toolArgs) {
+  if (!decision.shouldTrigger || !decision.toolArgs || !decision.toolName) {
     return '';
   }
 
   return [
-    '[AUTO ToT REQUIRED]',
+    `[AUTO REASONING REQUIRED: ${decision.toolName.toUpperCase()}]`,
     `Reason: ${decision.reason ?? 'Generate alternatives'}`,
     '',
-    'Call tree_of_thought with these exact parameters:',
+    `Call ${decision.toolName} with these exact parameters:`,
     JSON.stringify(decision.toolArgs, null, 2),
     '',
-    'tree_of_thought will return ranked suggestions to the chat (it does not enforce a decision).',
-    'Then: pick a branch idea, gather evidence (read_file/grep_repo), implement the minimal fix, run run_repro and verify_project, and continue.',
+    `${decision.toolName} will return suggestions to the chat.`,
+    'Then: execute the suggested plan immediately.',
   ].join('\n');
 }

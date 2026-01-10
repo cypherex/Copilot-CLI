@@ -535,147 +535,147 @@ export class AgenticLoop {
 
         
 
-                            // Auto-wire Tree-of-Thought (ToT) in a few places:
+                                      // Auto-wire Tree-of-Thought (ToT) in a few places:
 
         
 
-                            // 1) After selecting a task (set_current_task)
+                                      // 1) After selecting a task (set_current_task)
 
         
 
-                            // 2) After a failing repro (run_repro)
+                                      // 2) After a failing repro (run_repro)
 
         
 
-                            // 3) Periodically every 5 iterations (iteration_tick)
+                                      // 3) Periodically every 5 iterations (iteration_tick)
 
         
 
-                            if (this.memoryStore && !this.autoToTTriggeredThisTurn) {
+                                      if (this.memoryStore && !this.autoToTTriggeredThisTurn) {
 
         
 
-                              const toolNames = response.toolCalls.map(tc => tc.function.name);
+                                        const toolNames = response.toolCalls.map(tc => tc.function.name);
 
         
 
-                              
+                                        
 
         
 
-                              // CRITICAL: Do not trigger Auto-ToT if we just finished a Tree of Thought run.
+                                        // CRITICAL: Do not trigger Auto-ToT if we just finished a reasoning run.
 
         
 
-                              // This prevents recursive "thinking about thinking" loops that crash the process.
+                                        // This prevents recursive "thinking about thinking" loops that crash the process.
 
         
 
-                              if (!toolNames.includes('tree_of_thought')) {
+                                        if (!toolNames.includes('tree_of_thought') && !toolNames.includes('deep_reasoning')) {
 
         
 
-                                const trigger =
+                                          const trigger =
 
         
 
-                                  toolNames.includes('run_repro')
+                                            toolNames.includes('run_repro')
 
         
 
-                                    ? { kind: 'repro_failed' as const }
+                                              ? { kind: 'repro_failed' as const }
 
         
 
-                                    : toolNames.includes('set_current_task')
+                                              : toolNames.includes('set_current_task')
 
         
 
-                                      ? { kind: 'after_task_set' as const }
+                                                ? { kind: 'after_task_set' as const }
 
         
 
-                                      : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
+                                                : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
 
         
 
-                  
+                            
 
         
 
-                                if (trigger) {
+                                          if (trigger) {
 
         
 
-                                  const decision = decideAutoToT(this.memoryStore, trigger);
+                                            const decision = decideAutoToT(this.memoryStore, trigger);
 
         
 
-                                  if (decision.shouldTrigger) {
+                                            if (decision.shouldTrigger) {
 
         
 
-                                    recordAutoToT(this.memoryStore, decision);
+                                              recordAutoToT(this.memoryStore, decision);
 
         
 
-                                    this.autoToTTriggeredThisTurn = true;
+                                              this.autoToTTriggeredThisTurn = true;
 
         
 
-                  
+                            
 
         
 
-                                    const instruction = buildAutoToTInstruction(decision);
+                                              const instruction = buildAutoToTInstruction(decision);
 
         
 
-                                    if (instruction) {
+                                              if (instruction) {
 
         
 
-                                      uiState.addMessage({
+                                                uiState.addMessage({
 
         
 
-                                        role: 'system',
+                                                  role: 'system',
 
         
 
-                                        content: instruction,
+                                                  content: instruction,
 
         
 
-                                        timestamp: Date.now(),
+                                                  timestamp: Date.now(),
 
         
 
-                                      });
+                                                });
 
         
 
-                                      this.conversation.addUserMessage(instruction);
+                                                this.conversation.addUserMessage(instruction);
 
         
 
-                                    }
+                                              }
 
         
 
-                                  }
+                                            }
 
         
 
-                                }
+                                          }
 
         
 
-                              }
+                                        }
 
         
 
-                            }
+                                      }
 
         
 

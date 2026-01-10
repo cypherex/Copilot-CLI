@@ -12,6 +12,7 @@ import { ParallelTool } from './parallel-tool.js';
 import { SpawnAgentTool, WaitAgentTool, ListAgentsTool, GetAgentQueueStatusTool } from './subagent-tool.js';
 import { ExploreCodebaseTool } from './explore-codebase.js';
 import { TreeOfThoughtTool } from './tree-of-thought.js';
+import { DeepReasoningTool } from './deep-reasoning.js';
 import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool, GetNextTasksTool, ListSubtasksTool, BreakDownTaskTool, ReviewTrackingItemTool, CloseTrackingItemTool, ListTrackingItemsTool, DebugScaffoldTool, RecordExperimentResultTool } from './task-management-tool.js';
 import { RunReproTool } from './repro-tool.js';
 import { VerifyProjectTool } from './verify-tool.js';
@@ -24,6 +25,7 @@ import type { MemoryStore } from '../memory/types.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
 import type { CompletionTracker } from '../audit/index.js';
+import type { LLMClient } from '../llm/types.js';
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
@@ -31,21 +33,28 @@ export class ToolRegistry {
   private hookRegistry?: HookRegistry;
   private conversation?: ConversationManager;
   private completionTracker?: CompletionTracker;
+  private llmClient?: LLMClient;
 
   constructor() {
     this.registerDefaultTools();
   }
 
   // Set execution context for tools that need hooks/tracking
-  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager, completionTracker?: CompletionTracker): void {
+  setExecutionContext(
+    hookRegistry?: HookRegistry, 
+    conversation?: ConversationManager, 
+    completionTracker?: CompletionTracker,
+    llmClient?: LLMClient
+  ): void {
     this.hookRegistry = hookRegistry;
     this.conversation = conversation;
     this.completionTracker = completionTracker;
+    this.llmClient = llmClient;
 
     // Update ParallelTool with new context
     const parallelTool = this.get('parallel');
     if (parallelTool && 'setExecutionContext' in parallelTool) {
-      (parallelTool as any).setExecutionContext(hookRegistry, conversation, completionTracker);
+      (parallelTool as any).setExecutionContext(hookRegistry, conversation, completionTracker, llmClient);
     }
   }
 
@@ -66,10 +75,12 @@ export class ToolRegistry {
     if (memoryStore) {
       this.register(new SpawnAgentTool(manager, memoryStore));
       this.register(new ExploreCodebaseTool(manager, memoryStore));
-      this.register(new TreeOfThoughtTool(manager, memoryStore, conversation));
+      this.register(new TreeOfThoughtTool(memoryStore));
+      this.register(new DeepReasoningTool());
     } else {
       this.register(new SpawnAgentTool(manager));
-      this.register(new TreeOfThoughtTool(manager, undefined, conversation));
+      this.register(new TreeOfThoughtTool());
+      this.register(new DeepReasoningTool());
     }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));
@@ -138,7 +149,12 @@ export class ToolRegistry {
     if (!tool) {
       throw new Error(`Tool not found: ${name}`);
     }
-    return tool.execute(args, context);
+    const effectiveContext = {
+      llmClient: this.llmClient,
+      conversation: this.conversation,
+      ...context
+    };
+    return tool.execute(args, effectiveContext);
   }
 }
 

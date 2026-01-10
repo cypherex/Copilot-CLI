@@ -1,6 +1,7 @@
 // Tool type definitions
 
 import type { ConversationManager } from '../agent/conversation.js';
+import type { LLMClient } from '../llm/types.js';
 
 export interface ToolDefinition {
   name: string;
@@ -21,6 +22,7 @@ export interface ToolExecutionResult {
 
 export interface ToolExecutionContext {
   conversation?: ConversationManager;
+  llmClient?: LLMClient;
 }
 
 export interface Tool {

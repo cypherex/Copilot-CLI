@@ -7,6 +7,7 @@ import type { ToolRegistry } from './index.js';
 import type { HookRegistry } from '../hooks/registry.js';
 import type { ConversationManager } from '../agent/conversation.js';
 import type { CompletionTracker } from '../audit/index.js';
+import type { LLMClient } from '../llm/types.js';
 import { uiState } from '../ui/ui-state.js';
 import { getRenderManager } from '../ui/render-manager.js';
 import chalk from 'chalk';
@@ -107,6 +108,7 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
   private hookRegistry?: HookRegistry;
   private conversation?: ConversationManager;
   private completionTracker?: CompletionTracker;
+  private llmClient?: LLMClient;
 
   constructor(toolRegistry: ToolRegistry) {
     super();
@@ -114,10 +116,16 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
   }
 
   // Set execution context for hook and tracking support
-  setExecutionContext(hookRegistry?: HookRegistry, conversation?: ConversationManager, completionTracker?: CompletionTracker): void {
+  setExecutionContext(
+    hookRegistry?: HookRegistry, 
+    conversation?: ConversationManager, 
+    completionTracker?: CompletionTracker,
+    llmClient?: LLMClient
+  ): void {
     this.hookRegistry = hookRegistry;
     this.conversation = conversation;
     this.completionTracker = completionTracker;
+    this.llmClient = llmClient;
   }
 
   protected async executeInternal(args: z.infer<typeof ParallelSchema>): Promise<string> {
@@ -215,7 +223,10 @@ Note: Tools that have dependencies should NOT be run in parallel - use sequentia
           };
         }
 
-        const result = await tool.execute(toolArgs);
+        const result = await tool.execute(toolArgs, {
+          llmClient: this.llmClient,
+          conversation: this.conversation,
+        });
         const toolExecutionTime = Date.now() - toolStartTime;
 
         // Track file operations in conversation
