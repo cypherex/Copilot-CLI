@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { BaseTool } from './base-tool.js';
 import { getNextTasks } from './get-next-tasks.js';
-import type { ToolDefinition } from './types.js';
+import type { ToolDefinition, ToolExecutionContext } from './types.js';
 import type { MemoryStore, Task, TrackingItem } from '../memory/types.js';
 import { uiState } from '../ui/ui-state.js';
 import type { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
@@ -155,7 +155,7 @@ IMPORTANT: Tasks that are too complex will be rejected. Use break_down_task to d
     this.spawnValidator = validator;
   }
 
-  protected async executeInternal(args: z.infer<typeof CreateTaskSchema>): Promise<string> {
+  protected async executeInternal(args: z.infer<typeof CreateTaskSchema>, context?: ToolExecutionContext): Promise<string> {
     const { description, priority, related_to_goal, parent_id } = args;
 
     // Validate parent exists if parent_id provided
@@ -166,12 +166,27 @@ IMPORTANT: Tasks that are too complex will be rejected. Use break_down_task to d
       }
     }
 
+    // Extract conversation context if available
+    let additionalContext: string | undefined;
+    if (context?.conversation) {
+      const recentMessages = context.conversation.getMessages()
+        .slice(-6) // Last few messages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => `${m.role.toUpperCase()}: ${typeof m.content === 'string' ? m.content.slice(0, 300) : '[Complex Content]'}`)
+        .join('\n');
+      
+      if (recentMessages) {
+        additionalContext = `Recent Conversation:\n${recentMessages}`;
+      }
+    }
+
     // Validate task complexity (same as spawn validation)
     if (this.spawnValidator) {
       const validationResult = await this.spawnValidator.validateSpawn({
         task: description,
         parent_task_id: parent_id,
         memoryStore: this.memoryStore,
+        additionalContext,
         useRecursiveBreakdown: true,  // Enable full recursive breakdown for task creation
         maxBreakdownDepth: 4,          // Up to 4 levels deep
         verbose: true,                 // Enable verbose logging during breakdown

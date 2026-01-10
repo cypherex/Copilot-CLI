@@ -393,143 +393,439 @@ export class AgenticLoop {
           }
         }
 
-        if (response.toolCalls && response.toolCalls.length > 0) {
-          this.conversation.addAssistantMessage(responseContent, response.toolCalls, response.reasoningContent);
+                if (response.toolCalls && response.toolCalls.length > 0) {
 
-          // If we didn't stream, show assistant content once (even for tool-calling responses)
-          if (hasVisibleContent && !hasStartedStreaming) {
-            uiState.addMessage({
-              role: 'assistant',
-              content: responseContent,
-              timestamp: Date.now(),
-            });
-          }
+                  this.conversation.addAssistantMessage(responseContent, response.toolCalls, response.reasoningContent);
 
-          // Check if any file modification tools were called
-          const fileModificationTools = ['create_file', 'patch_file'];
-          const hasFileModifications = response.toolCalls.some(tc =>
-            fileModificationTools.includes(tc.function.name)
-          );
-          if (hasFileModifications) {
-            hadFileModifications = true;
-          }
+                  console.log(`[TRACE] Loop: Assistant called ${response.toolCalls.length} tools.`);
 
-          // Validate planning ONLY when LLM attempts write operations
-          if (this.planningValidator && this.planningValidator.hasWriteOperationTools(response.toolCalls)) {
-            const validation = this.planningValidator.validate(true); // true = write operation
+        
 
-            if (!validation.canProceed) {
-              // Check if agent is trying to fix validation with task management tools
-              const taskManagementTools = [
-                'create_task', 'update_task_status', 'set_current_task',
-                'list_tasks', 'list_subtasks', 'break_down_task',
-                'review_tracking_item', 'close_tracking_item', 'list_tracking_items'
-              ];
-              const taskToolCalls = response.toolCalls.filter(tc =>
-                taskManagementTools.includes(tc.function.name)
-              );
+                  // If we didn't stream, show assistant content once (even for tool-calling responses)
 
-              if (taskToolCalls.length > 0) {
-                // Agent is setting up tasks - execute them and let it continue
-                await this.executeTools(taskToolCalls);
+                  if (hasVisibleContent && !hasStartedStreaming) {
 
-                // Continue loop to let LLM respond after setting up tasks
-                continueLoop = true;
-                continue;
-              } else {
-                // No task management tools - this is a real validation failure
-                this.planningValidator.displayValidation(validation);
+                    uiState.addMessage({
 
-                // Inject validation message to guide the LLM
-                const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
-                this.conversation.addUserMessage(validationMessage);
+                      role: 'assistant',
 
-                // Continue loop to let LLM respond
-                continueLoop = true;
-                continue;
-              }
-            } else if (validation.suggestions && validation.suggestions.length > 0) {
-              // Validation passed but has suggestions
-              uiState.addMessage({
-                role: 'system',
-                content: `[Planning Suggestions]\n${validation.suggestions.join('\n')}`,
-                timestamp: Date.now(),
-              });
-            }
-          }
+                      content: responseContent,
 
-          await this.executeTools(response.toolCalls);
+                      timestamp: Date.now(),
 
-          // Auto-wire Tree-of-Thought (ToT) in a few places:
-          // 1) After selecting a task (set_current_task)
-          // 2) After a failing repro (run_repro)
-          // 3) Periodically every 5 iterations (iteration_tick)
-          if (this.memoryStore && !this.autoToTTriggeredThisTurn) {
-            const toolNames = response.toolCalls.map(tc => tc.function.name);
+                    });
 
-            const trigger =
-              toolNames.includes('run_repro')
-                ? { kind: 'repro_failed' as const }
-                : toolNames.includes('set_current_task')
-                  ? { kind: 'after_task_set' as const }
-                  : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
+                  }
 
-            if (trigger) {
-              const decision = decideAutoToT(this.memoryStore, trigger);
-              if (decision.shouldTrigger) {
-                recordAutoToT(this.memoryStore, decision);
-                this.autoToTTriggeredThisTurn = true;
+        
 
-                const instruction = buildAutoToTInstruction(decision);
-                if (instruction) {
-                  uiState.addMessage({
-                    role: 'system',
-                    content: instruction,
-                    timestamp: Date.now(),
-                  });
-                  this.conversation.addUserMessage(instruction);
-                }
-              }
-            }
-          }
-          continueLoop = true;
-        } else {
-          this.conversation.addAssistantMessage(responseContent);
+                  // Check if any file modification tools were called
 
-          // Log assistant message to UI/session (important for troubleshooting)
-          if (hasVisibleContent && !hasStartedStreaming) {
-            uiState.addMessage({
-              role: 'assistant',
-              content: responseContent,
-              timestamp: Date.now(),
-            });
-          } else if (!hasVisibleContent) {
-            // If the model returns no tool calls AND no visible content, it looks like an abrupt exit.
-            // Treat this as a transient failure and prompt for a proper response.
-            emptyFinalResponseRetries += 1;
-            uiState.addMessage({
-              role: 'system',
-              content: `Warning: model returned an empty response (attempt ${emptyFinalResponseRetries}).`,
-              timestamp: Date.now(),
-            });
+                  const fileModificationTools = ['create_file', 'patch_file'];
 
-            if (emptyFinalResponseRetries <= 2) {
-              this.conversation.addUserMessage(
-                'Your last response was empty. Respond normally with a non-empty assistant message. ' +
-                'If you need to use tools, call them; otherwise provide the answer directly.'
-              );
-              continueLoop = true;
-              continue;
-            }
+                  const hasFileModifications = response.toolCalls.some(tc =>
 
-            uiState.addMessage({
-              role: 'system',
-              content: 'Error: model repeatedly returned an empty response; stopping to avoid a silent exit.',
-              timestamp: Date.now(),
-            });
-            continueLoop = false;
-            break;
-          }
+                    fileModificationTools.includes(tc.function.name)
+
+                  );
+
+                  if (hasFileModifications) {
+
+                    hadFileModifications = true;
+
+                  }
+
+        
+
+                  // Validate planning ONLY when LLM attempts write operations
+
+                  if (this.planningValidator && this.planningValidator.hasWriteOperationTools(response.toolCalls)) {
+
+                    const validation = this.planningValidator.validate(true); // true = write operation
+
+        
+
+                    if (!validation.canProceed) {
+
+                      console.log('[TRACE] Loop: Planning validation failed.');
+
+                      // Check if agent is trying to fix validation with task management tools
+
+                      const taskManagementTools = [
+
+                        'create_task', 'update_task_status', 'set_current_task',
+
+                        'list_tasks', 'list_subtasks', 'break_down_task',
+
+                        'review_tracking_item', 'close_tracking_item', 'list_tracking_items'
+
+                      ];
+
+                      const taskToolCalls = response.toolCalls.filter(tc =>
+
+                        taskManagementTools.includes(tc.function.name)
+
+                      );
+
+        
+
+                      if (taskToolCalls.length > 0) {
+
+                        // Agent is setting up tasks - execute them and let it continue
+
+                        await this.executeTools(taskToolCalls);
+
+        
+
+                        // Continue loop to let LLM respond after setting up tasks
+
+                        continueLoop = true;
+
+                        continue;
+
+                      } else {
+
+                        // No task management tools - this is a real validation failure
+
+                        this.planningValidator.displayValidation(validation);
+
+        
+
+                        // Inject validation message to guide the LLM
+
+                        const validationMessage = `[Planning Validation Required]\n${validation.reason}\n\nSuggestions:\n${validation.suggestions?.join('\n') || ''}`;
+
+                        this.conversation.addUserMessage(validationMessage);
+
+        
+
+                        // Continue loop to let LLM respond
+
+                        continueLoop = true;
+
+                        continue;
+
+                      }
+
+                    } else if (validation.suggestions && validation.suggestions.length > 0) {
+
+                      // Validation passed but has suggestions
+
+                      uiState.addMessage({
+
+                        role: 'system',
+
+                        content: `[Planning Suggestions]\n${validation.suggestions.join('\n')}`,
+
+                        timestamp: Date.now(),
+
+                      });
+
+                    }
+
+                  }
+
+        
+
+                  console.log('[TRACE] Loop: Executing tools...');
+
+                  await this.executeTools(response.toolCalls);
+
+                  console.log('[TRACE] Loop: Tool execution complete.');
+
+        
+
+                            // Auto-wire Tree-of-Thought (ToT) in a few places:
+
+        
+
+                            // 1) After selecting a task (set_current_task)
+
+        
+
+                            // 2) After a failing repro (run_repro)
+
+        
+
+                            // 3) Periodically every 5 iterations (iteration_tick)
+
+        
+
+                            if (this.memoryStore && !this.autoToTTriggeredThisTurn) {
+
+        
+
+                              const toolNames = response.toolCalls.map(tc => tc.function.name);
+
+        
+
+                              
+
+        
+
+                              // CRITICAL: Do not trigger Auto-ToT if we just finished a Tree of Thought run.
+
+        
+
+                              // This prevents recursive "thinking about thinking" loops that crash the process.
+
+        
+
+                              if (!toolNames.includes('tree_of_thought')) {
+
+        
+
+                                const trigger =
+
+        
+
+                                  toolNames.includes('run_repro')
+
+        
+
+                                    ? { kind: 'repro_failed' as const }
+
+        
+
+                                    : toolNames.includes('set_current_task')
+
+        
+
+                                      ? { kind: 'after_task_set' as const }
+
+        
+
+                                      : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
+
+        
+
+                  
+
+        
+
+                                if (trigger) {
+
+        
+
+                                  const decision = decideAutoToT(this.memoryStore, trigger);
+
+        
+
+                                  if (decision.shouldTrigger) {
+
+        
+
+                                    recordAutoToT(this.memoryStore, decision);
+
+        
+
+                                    this.autoToTTriggeredThisTurn = true;
+
+        
+
+                  
+
+        
+
+                                    const instruction = buildAutoToTInstruction(decision);
+
+        
+
+                                    if (instruction) {
+
+        
+
+                                      uiState.addMessage({
+
+        
+
+                                        role: 'system',
+
+        
+
+                                        content: instruction,
+
+        
+
+                                        timestamp: Date.now(),
+
+        
+
+                                      });
+
+        
+
+                                      this.conversation.addUserMessage(instruction);
+
+        
+
+                                    }
+
+        
+
+                                  }
+
+        
+
+                                }
+
+        
+
+                              }
+
+        
+
+                            }
+
+        
+
+                            continueLoop = true;
+
+                } else {
+
+                  // No tool calls
+
+                  this.conversation.addAssistantMessage(responseContent);
+
+                  console.log(`[TRACE] Loop: LLM responded without tools. Content length: ${responseContent.length}`);
+
+                  uiState.addMessage({ role: 'system', content: `[TRACE] LLM responded without tools. Content length: ${responseContent.length}`, timestamp: Date.now() });
+
+        
+
+                  // Log assistant message to UI/session (important for troubleshooting)
+
+                  if (hasVisibleContent && !hasStartedStreaming) {
+
+                    uiState.addMessage({
+
+                      role: 'assistant',
+
+                      content: responseContent,
+
+                      timestamp: Date.now(),
+
+                    });
+
+                  } else if (!hasVisibleContent) {
+
+                    console.log(`[TRACE] Loop: LLM returned empty response. Retries: ${emptyFinalResponseRetries}`);
+
+                    uiState.addMessage({ role: 'system', content: `[TRACE] LLM returned empty response. Retries: ${emptyFinalResponseRetries}`, timestamp: Date.now() });
+
+                    // If the model returns no tool calls AND no visible content, it looks like an abrupt exit.
+
+                    // Treat this as a transient failure and prompt for a proper response.
+
+                    emptyFinalResponseRetries += 1;
+
+                    uiState.addMessage({
+
+                      role: 'system',
+
+                      content: `Warning: model returned an empty response (attempt ${emptyFinalResponseRetries}).`,
+
+                      timestamp: Date.now(),
+
+                    });
+
+        
+
+                    if (emptyFinalResponseRetries <= 2) {
+
+                      this.conversation.addUserMessage(
+
+                        'Your last response was empty. Respond normally with a non-empty assistant message. '
+
+                        + 'If you need to use tools, call them; otherwise provide the answer directly.'
+
+                      );
+
+                      continueLoop = true;
+
+                      continue;
+
+                    }
+
+        
+
+                    uiState.addMessage({
+
+                      role: 'system',
+
+                      content: 'Error: model repeatedly returned an empty response; stopping to avoid a silent exit.',
+
+                      timestamp: Date.now(),
+
+                    });
+
+                    continueLoop = false;
+
+                    break;
+
+                  }
+
+        
+
+                  // SPECIAL: If the last thing we did was a tree_of_thought, we should NOT stop here
+
+                  // even if the model returned text-only. We want to force it to act on the plan.
+
+                  const messages = this.conversation.getMessages();
+
+                  const lastToolMessage = [...messages].reverse().find(m => m.role === 'tool');
+
+                  
+
+                  console.log(`[TRACE] Loop: Last tool message found: ${lastToolMessage?.name || 'none'}`);
+
+                  uiState.addMessage({ role: 'system', content: `[TRACE] Last tool message found: ${lastToolMessage?.name || 'none'}`, timestamp: Date.now() });
+
+        
+
+                            if (lastToolMessage && lastToolMessage.name === 'tree_of_thought') {
+
+        
+
+                              console.log('[TRACE] Loop: Forcing continuation after ToT summary');
+
+        
+
+                              uiState.addMessage({
+
+        
+
+                                role: 'system',
+
+        
+
+                                content: 'Action Required: Agent summarized Tree of Thought results but did not call a tool. Forcing implementation turn...',
+
+        
+
+                                timestamp: Date.now(),
+
+        
+
+                              });
+
+        
+
+                              uiState.addMessage({ role: 'system', content: `[TRACE] Forcing continuation after ToT summary`, timestamp: Date.now() });
+
+                    
+
+                    this.conversation.addUserMessage(
+
+                      'Your summary is noted. You MUST now immediately call the necessary tools (read_file, create_task, patch_file, etc.) to execute the suggested next steps. Do not provide more thoughts or conversation until you have performed an action.'
+
+                    );
+
+                    continueLoop = true;
+
+                    continue;
+
+                  }
 
           // Check if we need compression before ending the loop
           const contextManager = this.conversation.getContextManager();
@@ -853,8 +1149,11 @@ Start with list_tracking_items to see what needs review.`;
             }
           }
         }
-      } catch (error) {
-        uiState.setAgentStatus('error', ErrorHandler.getUserFriendlyMessage(error));
+      } catch (error: any) {
+        const userFriendly = ErrorHandler.getUserFriendlyMessage(error);
+        const stack = ErrorHandler.getStackTrace(error);
+        
+        uiState.setAgentStatus('error', userFriendly);
         
         // Log full error with stack trace for debugging
         handleError(error, {
@@ -864,7 +1163,7 @@ Start with list_tracking_items to see what needs review.`;
         
         uiState.addMessage({
           role: 'system',
-          content: 'Error communicating with Copilot: ' + ErrorHandler.getUserFriendlyMessage(error),
+          content: `Error communicating with Copilot: ${userFriendly}${stack ? `\n\nStack Trace:\n${stack}` : ''}`,
           timestamp: Date.now(),
         });
         continueLoop = false;

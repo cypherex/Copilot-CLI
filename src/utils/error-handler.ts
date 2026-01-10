@@ -5,6 +5,7 @@
 
 import chalk from 'chalk';
 import { LogLevel, logger } from './logger.js';
+import { uiState } from '../ui/ui-state.js';
 
 export interface ErrorHandlingOptions {
   /** Whether to include full stack trace */
@@ -93,20 +94,23 @@ export class ErrorHandler {
     if (!silent) {
       const formattedError = this.formatError(error, { includeStack, context });
 
-      // Write to stderr
-      process.stderr.write(formattedError);
+      // Add to UI state for visibility in log file
+      uiState.addMessage({ role: 'system', content: formattedError, timestamp: Date.now() });
 
       // Log to logger at appropriate level
       if (error instanceof Error) {
+        // ALWAYS log stack trace to file/logger for debugging, even if not shown to user
+        const logMsg = `[${context || 'ErrorHandler'}] ${error.message}`;
+        
         if (logLevel === LogLevel.DEBUG) {
-          logger.debug(`[${context || 'ErrorHandler'}] ${error.message}`);
-          if (includeStack && error.stack) {
-            logger.debug(error.stack);
-          }
+          logger.debug(logMsg);
+          if (error.stack) logger.debug(error.stack);
         } else if (logLevel === LogLevel.WARN) {
-          logger.warn(`[${context || 'ErrorHandler'}] ${error.message}`);
+          logger.warn(logMsg);
+          if (error.stack) logger.debug(error.stack); // Log stack at debug level
         } else {
-          logger.error(`[${context || 'ErrorHandler'}] ${error.message}`);
+          logger.error(logMsg);
+          if (error.stack) logger.error(error.stack); // Always log stack for errors
         }
       } else {
         logger.error(`[${context || 'ErrorHandler'}] ${String(error)}`);
@@ -244,7 +248,7 @@ export class ErrorHandler {
     output.push(chalk.red.bold('=== END ERROR CONTEXT ==='));
     output.push('');
 
-    process.stderr.write(output.join('\n'));
+    uiState.addMessage({ role: 'system', content: output.join('\n'), timestamp: Date.now() });
     logger.error(`[${context}] ${this.getErrorMessage(error)}`);
   }
 }

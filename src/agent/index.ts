@@ -126,9 +126,10 @@ export class CopilotAgent {
 
     // Create SubAgentManager with all infrastructure and register subagent tools
     this.subAgentManager = new SubAgentManager(
-      this.llmClient,
+      this.llmConfig,
       this.toolRegistry,
       5, // maxConcurrency
+      this.authManager ?? undefined,
       this.hookRegistry,
       this.completionTracker,
       planningValidator,

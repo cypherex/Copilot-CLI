@@ -177,6 +177,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
     const requestBody = this.buildRequestBody(messages, tools, true);
 
+    console.log(`[TRACE] GLM: Sending request to ${this.chatEndpoint}...`);
     const response = await fetchWithRetry(this.chatEndpoint, {
       method: 'POST',
       headers: {
@@ -188,9 +189,11 @@ export class OpenAICompatibleClient implements LLMClient {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`[TRACE] GLM: API Error ${response.status}: ${errorText}`);
       throw this.createApiError(response.status, errorText);
     }
 
+    console.log('[TRACE] GLM: Stream opened successfully.');
     yield* this.parseSSEStream(response);
   }
 
@@ -200,11 +203,15 @@ export class OpenAICompatibleClient implements LLMClient {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let chunkCount = 0;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log(`[TRACE] GLM: Stream closed after ${chunkCount} chunks.`);
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -213,10 +220,14 @@ export class OpenAICompatibleClient implements LLMClient {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            if (data === '[DONE]') return;
+            if (data === '[DONE]') {
+              console.log(`[TRACE] GLM: Received [DONE] signal.`);
+              return;
+            }
 
             try {
               const chunk = JSON.parse(data);
+              chunkCount++;
               const delta = chunk.choices?.[0]?.delta || {};
 
               yield {
@@ -233,12 +244,15 @@ export class OpenAICompatibleClient implements LLMClient {
                 },
                 finishReason: chunk.choices?.[0]?.finish_reason,
               };
-            } catch {
-              // Skip invalid JSON
+            } catch (err: any) {
+              console.warn(`[TRACE] GLM: Failed to parse chunk JSON: ${err.message}`);
             }
           }
         }
       }
+    } catch (err: any) {
+      console.error(`[TRACE] GLM: SSE Stream Error: ${err.message}`);
+      throw err;
     } finally {
       reader.releaseLock();
     }

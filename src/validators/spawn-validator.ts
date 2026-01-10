@@ -77,6 +77,7 @@ export interface SpawnValidationContext {
   success_criteria?: string;
   parent_task_id?: string;
   memoryStore: MemoryStore;
+  additionalContext?: string; // Additional context (e.g., conversation summary)
   useRecursiveBreakdown?: boolean; // If true, perform full recursive breakdown
   maxBreakdownDepth?: number; // Max depth for recursive breakdown (default: 4)
   verbose?: boolean; // If true, enable verbose logging during breakdown
@@ -567,6 +568,9 @@ Return the JSON array with one object per task in the same order.`;
       {
         maxDepth: context.maxBreakdownDepth || 4,
         verbose: context.verbose ?? false,
+        parentContext: {
+          additionalContext: context.additionalContext,
+        }
       }
     );
 
@@ -1345,17 +1349,21 @@ Return JSON array: [
         designDecisions?: any[];
         integrationPoints?: any[];
         siblingTasks?: string[];
+        additionalContext?: string;
       };
       verbose?: boolean;
     } = {}
   ): Promise<RecursiveBreakdownResult> {
     const maxDepth = options.maxDepth || 4;
     const verbose = options.verbose ?? false;
-    const parentContext = options.parentContext || {
-      projectGoal: memoryStore.getGoal()?.description || '',
-      designDecisions: [],
-      integrationPoints: [],
-      siblingTasks: [],
+    
+    // Ensure parentContext is fully initialized even if only partial options were provided
+    const parentContext = {
+      projectGoal: options.parentContext?.projectGoal || memoryStore.getGoal()?.description || '',
+      designDecisions: options.parentContext?.designDecisions || [],
+      integrationPoints: options.parentContext?.integrationPoints || [],
+      siblingTasks: options.parentContext?.siblingTasks || [],
+      additionalContext: options.parentContext?.additionalContext || '',
     };
 
     if (verbose) {
@@ -1796,7 +1804,7 @@ Project Context:
 - Goal: ${parentContext.projectGoal}
 - Existing Design Decisions: ${parentContext.designDecisions.length}
 - Known Integration Points: ${parentContext.integrationPoints.length}
-
+${parentContext.additionalContext ? `\nAdditional Context:\n${parentContext.additionalContext}\n` : ''}
 Current Task Context:
 ${taskContext}
 

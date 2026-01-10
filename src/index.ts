@@ -53,4 +53,11 @@ process.on('uncaughtException', (error) => {
   });
 });
 
+// Final emergency flush on exit
+process.on('exit', (code) => {
+  if (code !== 0) {
+    process.stdout.write(`\n[CRITICAL] Process exiting with non-zero code: ${code}\n`);
+  }
+});
+
 main();

@@ -9,6 +9,8 @@ import type { ConversationManager } from '../agent/conversation.js';
 import { extractJsonObject } from '../utils/json-extract.js';
 import { getRole } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
+import { attachSubagentUI } from './subagent-ui-utils.js';
+import { uiState } from '../ui/ui-state.js';
 
 const TreeOfThoughtSchema = z.object({
   mode: z.enum(['clarify', 'triage', 'diagnose', 'next_step', 'patch_plan']).optional().default('diagnose'),
@@ -238,6 +240,8 @@ function formatForChat(
 
   lines.push('');
   lines.push('Next: pick one branch and follow the suggested logic.');
+  lines.push('');
+  lines.push('SYSTEM: You now have a reasoned plan. Do not just summarize it to the user. You MUST immediately call the necessary tools (read_file, create_task, etc.) to execute this plan. Do not stop.');
   return lines.join('\n');
 }
 
@@ -429,6 +433,8 @@ The tool is read-only by default (no file writes) and returns actionable suggest
       ].join('\n');
     });
 
+    const cleanups: (() => void)[] = [];
+
     const agentIds = branchPrompts.map((task, idx) => {
       const brief = this.memoryStore && roleConfig
         ? buildSubagentBrief(task, this.memoryStore, {
@@ -441,7 +447,7 @@ The tool is read-only by default (no file writes) and returns actionable suggest
 
       const systemPrompt = brief ? briefToSystemPrompt(brief) : undefined;
 
-      return this.subAgentManager.spawn({
+      const agentId = this.subAgentManager.spawn({
         name: `ToT ${role} branch ${idx + 1}`,
         task,
         systemPrompt,
@@ -449,40 +455,78 @@ The tool is read-only by default (no file writes) and returns actionable suggest
         minIterations: args.min_iterations,
         allowedTools,
       });
+
+      // Attach UI listeners to show reasoning progress
+      // Use a unique role label for each branch so they are distinct in the log
+      const branchRole = `${role}-${idx + 1}`;
+      const cleanup = attachSubagentUI(
+        this.subAgentManager,
+        agentId,
+        `ToT Branch ${idx + 1}`,
+        branchRole,
+        false, // not background, we wait for it
+        { prefix: `Branch ${idx + 1}`, verbose: true }
+      );
+      cleanups.push(cleanup);
+
+      return agentId;
     });
 
-    const results = await this.subAgentManager.waitAll(agentIds);
+    let results: Map<string, any> = new Map();
+    try {
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Waiting for ${agentIds.length} branches...`, timestamp: Date.now() });
+      results = await this.subAgentManager.waitAll(agentIds);
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: All branches returned.`, timestamp: Date.now() });
+    } catch (err: any) {
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: waitAll FAILED: ${err.message}`, timestamp: Date.now() });
+      throw err;
+    } finally {
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Running cleanups...`, timestamp: Date.now() });
+      cleanups.forEach(c => c());
+    }
 
     const branches: BranchSummary[] = [];
-    for (let i = 0; i < agentIds.length; i++) {
-      const agentId = agentIds[i];
-      const res = results.get(agentId);
-      const output = res?.output ?? '';
-      const parsed = extractJsonObject(output);
-
-      const summary: BranchSummary = {
-        agent_id: agentId,
-        branch: i + 1,
-        role,
-        success: !!res?.success,
-        parsed_json: parsed.parsed,
-        parse_error: parsed.error,
-        output,
-        tools_used: res?.toolsUsed ?? [],
-      };
-
-      if (!summary.parse_error && summary.parsed_json) {
-        const validation = validateBranchJson(mode, summary.parsed_json);
-        if (!validation.ok) {
-          summary.parse_error = validation.errors.join('; ');
-        } else {
-          const scored = scoreBranch(mode, summary.parsed_json);
-          summary.score = scored.score;
-          summary.score_notes = scored.notes;
+    try {
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Processing results...`, timestamp: Date.now() });
+      for (let i = 0; i < agentIds.length; i++) {
+        const agentId = agentIds[i];
+        const res = results.get(agentId);
+        
+        if (!res) {
+          uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Result for ${agentId} is NULL`, timestamp: Date.now() });
         }
-      }
 
-      branches.push(summary);
+        const output = res?.output ?? '';
+        const parsed = extractJsonObject(output);
+
+        const summary: BranchSummary = {
+          agent_id: agentId,
+          branch: i + 1,
+          role,
+          success: !!res?.success,
+          parsed_json: parsed.parsed,
+          parse_error: parsed.error,
+          output,
+          tools_used: res?.toolsUsed ?? [],
+        };
+
+        if (!summary.parse_error && summary.parsed_json) {
+          const validation = validateBranchJson(mode, summary.parsed_json);
+          if (!validation.ok) {
+            summary.parse_error = validation.errors.join('; ');
+          } else {
+            const scored = scoreBranch(mode, summary.parsed_json);
+            summary.score = scored.score;
+            summary.score_notes = scored.notes;
+          }
+        }
+
+        branches.push(summary);
+      }
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Result processing complete.`, timestamp: Date.now() });
+    } catch (err: any) {
+      uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: result processing CRASHED: ${err.message}\n${err.stack}`, timestamp: Date.now() });
+      throw err;
     }
 
     const sorted = [...branches].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
@@ -570,7 +614,22 @@ The tool is read-only by default (no file writes) and returns actionable suggest
           allowedTools,
         });
 
-        const refinementResult = await this.subAgentManager.waitAll([refinementAgentId]);
+        const refinementCleanup = attachSubagentUI(
+          this.subAgentManager,
+          refinementAgentId,
+          `ToT Refinement Pass ${pass}`,
+          'refiner',
+          false,
+          { prefix: `Refinement ${pass}`, verbose: true }
+        );
+
+        let refinementResult: Map<string, any>;
+        try {
+          refinementResult = await this.subAgentManager.waitAll([refinementAgentId]);
+        } finally {
+          refinementCleanup();
+        }
+        
         const res = refinementResult.get(refinementAgentId);
         const output = res?.output ?? '';
         const parsed = extractJsonObject(output);
@@ -595,6 +654,10 @@ The tool is read-only by default (no file writes) and returns actionable suggest
       }
     }
 
-    return formatForChat(mode, args.problem, branches, refinements);
+    console.log('[TRACE] TreeOfThought: Formatting final output...');
+    const result = formatForChat(mode, args.problem, branches, refinements);
+    uiState.addMessage({ role: 'system', content: `[TRACE] TreeOfThought: Execution complete. Returning ${result.length} chars.`, timestamp: Date.now() });
+    console.log(`[TRACE] TreeOfThought: Returning result (${result.length} chars).`);
+    return result;
   }
 }

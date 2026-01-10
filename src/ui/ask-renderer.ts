@@ -32,6 +32,7 @@ export class AskRenderer {
   private liveMessageContent: Map<string, string> = new Map(); // Track last rendered content for live messages
   private activeSubagents: Set<string> = new Set(); // Track active subagent IDs
   private lastRenderedSubagentStatus: Map<string, { status: string; result?: string }> = new Map(); // Track what we last rendered
+  private isProcessingUpdate = false; // Recursion guard
 
   // Subagent event listeners for cleanup
   private subagentMessageListener?: (data: any) => void;
@@ -50,67 +51,81 @@ export class AskRenderer {
    * Start listening to UIState and rendering output
    */
   start(): void {
-    // Subscribe to subagent events for detailed logging if LogManager is available
-    if (this.options.logManager && this.options.subAgentManager) {
+    // Subscribe to subagent events for detailed logging/verbose output
+    if (this.options.subAgentManager) {
       this.setupSubagentListeners();
     }
 
     this.unsubscribe = uiState.subscribe((state, changedKeys) => {
-      // Handle new messages
-      if (changedKeys.includes('pendingMessages') && state.pendingMessages.length > 0) {
-        const messages = uiState.clearPendingMessages();
-        for (const msg of messages) {
-          this.renderMessage(msg);
-        }
-      }
+      if (this.isProcessingUpdate) return;
+      this.isProcessingUpdate = true;
 
-      // Handle live message updates
-      if (changedKeys.includes('liveMessages')) {
-        // Track which subagents are currently live
-        const currentLiveSubagents = new Set<string>();
-
-        for (const [id, msg] of state.liveMessages) {
-          this.renderLiveMessage(id, msg);
-
-          // Track subagent if it's a subagent message
-          if (msg.role === 'subagent-status' && msg.subagentId) {
-            currentLiveSubagents.add(msg.subagentId);
-            this.activeSubagents.add(msg.subagentId);
+      try {
+        // Handle new messages
+        if (changedKeys.includes('pendingMessages') && state.pendingMessages.length > 0) {
+          const messages = uiState.clearPendingMessages();
+          for (const msg of messages) {
+            this.renderMessage(msg);
           }
         }
 
-        // Close streams for subagents that are no longer live
-        for (const subagentId of this.activeSubagents) {
-          if (!currentLiveSubagents.has(subagentId)) {
-            // Subagent was finalized - close its stream
-            if (this.options.logManager) {
-              this.options.logManager.closeSubagentStream(subagentId).catch(err => {
-                console.error('Failed to close subagent stream:', err);
-              });
+        // Handle live message updates
+        if (changedKeys.includes('liveMessages')) {
+          // Track which subagents are currently live
+          const currentLiveSubagents = new Set<string>();
+
+          for (const [id, msg] of state.liveMessages) {
+            this.renderLiveMessage(id, msg);
+
+            // Track subagent if it's a subagent message
+            if (msg.role === 'subagent-status' && msg.subagentId) {
+              currentLiveSubagents.add(msg.subagentId);
+              this.activeSubagents.add(msg.subagentId);
             }
-            this.activeSubagents.delete(subagentId);
+          }
+
+          // Close streams for subagents that are no longer live
+          for (const subagentId of this.activeSubagents) {
+            if (!currentLiveSubagents.has(subagentId)) {
+              // Subagent was finalized - close its stream
+              if (this.options.logManager) {
+                this.options.logManager.closeSubagentStream(subagentId).catch(err => {
+                  // Use direct console error to avoid recursion
+                  console.error(`\n[UI Error] Failed to close subagent stream: ${err.message}\n`);
+                });
+              }
+              this.activeSubagents.delete(subagentId);
+            }
           }
         }
-      }
 
-      // Handle streaming
-      if (changedKeys.includes('isStreaming') && state.isStreaming) {
-        this.writeLine(this.colorize('Assistant:', 'cyan'));
-        this.lastStreamContent = '';
-      }
-
-      if (changedKeys.includes('streamContent') && state.isStreaming) {
-        const newContent = state.streamContent.slice(this.lastStreamContent.length);
-        if (newContent) {
-          this.write(newContent);
-          this.lastStreamContent = state.streamContent;
+        // Handle streaming
+        if (changedKeys.includes('isStreaming') && state.isStreaming) {
+          this.writeLine(this.colorize('Assistant:', 'cyan'));
+          this.lastStreamContent = '';
         }
-      }
 
-      if (changedKeys.includes('isStreaming') && !state.isStreaming && this.lastStreamContent) {
-        this.writeLine('');
-        this.writeLine('');
-        this.lastStreamContent = '';
+        if (changedKeys.includes('streamContent') && state.isStreaming) {
+          const newContent = state.streamContent.slice(this.lastStreamContent.length);
+          if (newContent) {
+            this.write(newContent);
+            this.lastStreamContent = state.streamContent;
+          }
+        }
+
+        if (changedKeys.includes('isStreaming') && !state.isStreaming && this.lastStreamContent) {
+          this.writeLine('');
+          this.writeLine('');
+          this.lastStreamContent = '';
+        }
+      } catch (error: any) {
+        // Use direct console error to avoid recursion
+        console.error(`\n[UI Error] Crash in AskRenderer subscriber: ${error.message}\n`);
+        if (error.stack) {
+          console.error(`${error.stack}\n`);
+        }
+      } finally {
+        this.isProcessingUpdate = false;
       }
     });
   }
@@ -142,76 +157,119 @@ export class AskRenderer {
    * Setup listeners for detailed subagent events (for log file capture)
    */
   private setupSubagentListeners(): void {
-    if (!this.options.subAgentManager || !this.options.logManager) return;
+    if (!this.options.subAgentManager) return;
 
     // Listen for subagent messages (thinking, responses, system messages)
     this.subagentMessageListener = (data: any) => {
-      if (data.agentId && data.content) {
-        const state = uiState.getState();
-        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
-                        state.subagents?.completed.find(s => s.id === data.agentId);
+      try {
+        if (data.agentId && data.content) {
+          const state = uiState.getState();
+          const subagent = (state.subagents?.active || []).find(s => s.id === data.agentId) ||
+                          (state.subagents?.completed || []).find(s => s.id === data.agentId);
 
-        let logContent = '';
+          let logContent = '';
 
-        // Format based on message type
-        if (data.type === 'thinking') {
-          // Thinking/reasoning content (before tool calls)
-          logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-          logContent += `Iteration ${data.iteration || '?'} - Assistant Thinking:\n`;
-          logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-          logContent += `${data.content}\n\n`;
-        } else if (data.type === 'final_response') {
-          // Final response (no more tool calls)
-          logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-          logContent += `Iteration ${data.iteration || '?'} - Final Response:\n`;
-          logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-          logContent += `${data.content}\n\n`;
-        } else if (data.type === 'system') {
-          // System messages (audit results, etc.)
-          logContent = `\n[System] ${data.content}\n`;
-        } else {
-          // Other message types
-          logContent = `\n[${data.type || 'message'}] ${data.content}\n`;
+          // Format based on message type
+          if (data.type === 'thinking') {
+            // Thinking/reasoning content (before tool calls)
+            logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            logContent += `Iteration ${data.iteration || '?'} - Assistant Thinking:\n`;
+            logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            logContent += `${data.content}\n\n`;
+          } else if (data.type === 'final_response') {
+            // Final response (no more tool calls)
+            logContent = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            logContent += `Iteration ${data.iteration || '?'} - Final Response:\n`;
+            logContent += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            logContent += `${data.content}\n\n`;
+          } else if (data.type === 'system') {
+            // System messages (audit results, etc.)
+            logContent = `\n[System] ${data.content}\n`;
+          } else {
+            // Other message types
+            logContent = `\n[${data.type || 'message'}] ${data.content}\n`;
+          }
+
+          if (this.options.logManager) {
+            this.options.logManager.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+          }
+          
+          // ALSO write to main output if verbose is enabled
+          if (this.options.verbose) {
+            this.writeLine(this.colorize(`[Subagent: ${subagent?.role || 'agent'}] ${data.type === 'thinking' ? 'Thinking' : 'Message'}:`, 'dim'));
+            this.writeLine(this.indentLines(data.content, 2));
+            this.writeLine('');
+          }
         }
-
-        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+      } catch (error: any) {
+        console.error(`\n[UI Error] Crash in subagentMessageListener: ${error.message}\n`);
       }
     };
 
     // Listen for tool calls
     this.subagentToolCallListener = (data: any) => {
-      if (data.agentId && data.toolName) {
-        const state = uiState.getState();
-        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
-                        state.subagents?.completed.find(s => s.id === data.agentId);
+      try {
+        if (data.agentId && data.toolName) {
+          const state = uiState.getState();
+          const subagent = (state.subagents?.active || []).find(s => s.id === data.agentId) ||
+                          (state.subagents?.completed || []).find(s => s.id === data.agentId);
 
-        const argsStr = data.args ? JSON.stringify(data.args, null, 2) : '{}';
-        let logContent = `\n⚙️  Executing: ${data.toolName}\n`;
-        logContent += `Arguments:\n${this.indentLines(argsStr, 2)}\n\n`;
+          const argsStr = data.args ? JSON.stringify(data.args, null, 2) : '{}';
+          let logContent = `\n⚙️  Executing: ${data.toolName}\n`;
+          logContent += `Arguments:\n${this.indentLines(argsStr, 2)}\n\n`;
 
-        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+          if (this.options.logManager) {
+            this.options.logManager.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+          }
+
+          // ALSO write to main output if verbose is enabled
+          if (this.options.verbose) {
+            this.writeLine(this.colorize(`[Subagent: ${subagent?.role || 'agent'}] Calling Tool: ${data.toolName}`, 'dim'));
+            this.writeLine(this.indentLines(argsStr, 4));
+          }
+        }
+      } catch (error: any) {
+        console.error(`\n[UI Error] Crash in subagentToolCallListener: ${error.message}\n`);
       }
     };
 
     // Listen for tool results
     this.subagentToolResultListener = (data: any) => {
-      if (data.agentId && data.toolName) {
-        const state = uiState.getState();
-        const subagent = state.subagents?.active.find(s => s.id === data.agentId) ||
-                        state.subagents?.completed.find(s => s.id === data.agentId);
+      try {
+        if (data.agentId && data.toolName) {
+          const state = uiState.getState();
+          const subagent = (state.subagents?.active || []).find(s => s.id === data.agentId) ||
+                          (state.subagents?.completed || []).find(s => s.id === data.agentId);
 
-        const statusSymbol = data.success ? '✓' : '✗';
-        let logContent = `${statusSymbol} Tool Result: ${data.toolName} ${data.success ? 'succeeded' : 'failed'}\n`;
+          const statusSymbol = data.success ? '✓' : '✗';
+          let logContent = `${statusSymbol} Tool Result: ${data.toolName} ${data.success ? 'succeeded' : 'failed'}\n`;
 
-        if (data.output && data.output.trim()) {
-          logContent += `Output:\n${this.indentLines(data.output, 2)}\n`;
+          if (data.output && data.output.trim()) {
+            logContent += `Output:\n${this.indentLines(data.output, 2)}\n`;
+          }
+          if (data.error) {
+            logContent += `Error:\n${this.indentLines(data.error, 2)}\n`;
+          }
+          logContent += '\n';
+
+          if (this.options.logManager) {
+            this.options.logManager.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+          }
+
+          // ALSO write to main output if verbose is enabled
+          if (this.options.verbose) {
+            const status = data.success ? 'Success' : 'Failed';
+            this.writeLine(this.colorize(`[Subagent: ${subagent?.role || 'agent'}] Tool ${data.toolName} ${status}`, 'dim'));
+            if (data.output && this.options.verbose) {
+              this.writeLine(this.indentLines(data.output.substring(0, 500) + (data.output.length > 500 ? '...' : ''), 4));
+            }
+            if (data.error) {
+              this.writeLine(this.colorize(`    Error: ${data.error}`, 'dim'));
+            }
+          }
         }
-        if (data.error) {
-          logContent += `Error:\n${this.indentLines(data.error, 2)}\n`;
-        }
-        logContent += '\n';
-
-        this.options.logManager!.writeToSubagent(data.agentId, logContent, subagent?.role).catch(() => {});
+      } catch (error: any) {
+        console.error(`\n[UI Error] Crash in subagentToolResultListener: ${error.message}\n`);
       }
     };
 
@@ -224,9 +282,10 @@ export class AskRenderer {
   /**
    * Indent all lines in a string
    */
-  private indentLines(text: string, spaces: number): string {
+  private indentLines(text: any, spaces: number): string {
+    const content = typeof text === 'string' ? text : String(text || '');
     const indent = ' '.repeat(spaces);
-    return text.split('\n').map(line => indent + line).join('\n');
+    return content.split('\n').map(line => indent + line).join('\n');
   }
 
   /**
@@ -475,8 +534,8 @@ export class AskRenderer {
    */
   private renderSubagentMessage(subagentId: string): void {
     const state = uiState.getState();
-    const subagentState = state.subagents?.active.find(s => s.id === subagentId) ||
-                          state.subagents?.completed.find(s => s.id === subagentId);
+    const subagentState = (state.subagents?.active || []).find(s => s.id === subagentId) ||
+                          (state.subagents?.completed || []).find(s => s.id === subagentId);
 
     if (!subagentState) return;
 

@@ -5,7 +5,7 @@ import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import type { SubAgentManager } from '../agent/subagent.js';
 import type { MemoryStore } from '../memory/types.js';
-import { listRoles, getRole, buildFocusedContext } from '../agent/subagent-roles.js';
+import { listRoles, getRole } from '../agent/subagent-roles.js';
 import { buildSubagentBrief, briefToSystemPrompt } from '../agent/subagent-brief.js';
 import {
   buildSubagentTask,
@@ -14,13 +14,11 @@ import {
   buildOrchestratorMergeMessage,
   parseSubagentResult,
 } from '../agent/subagent-communication-patterns.js';
-import ora from 'ora';
 import chalk from 'chalk';
-import { SubagentRenderer, subagentRendererRegistry } from '../ui/subagent-renderer.js';
 import { uiState } from '../ui/ui-state.js';
-import { getRenderManager } from '../ui/render-manager.js';
 import type { SpawnValidator } from '../validators/spawn-validator.js';
 import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from '../agent/auto-tot.js';
+import { attachSubagentUI, markSubagentCompletedInUi, backgroundAgentCleanupFunctions } from './subagent-ui-utils.js';
 
 // Schema for spawn_agent
 const SpawnAgentSchema = z.object({
@@ -46,176 +44,6 @@ const ListAgentsSchema = z.object({
 
 // Schema for get_agent_queue_status
 const GetAgentQueueStatusSchema = z.object({});
-
-// Store cleanup functions for background agents to prevent memory leaks
-// Shared across SpawnAgentTool and WaitAgentTool
-const backgroundAgentCleanupFunctions = new Map<string, () => void>();
-
-interface SubagentUiBuffer {
-  agentId: string;
-  role?: string;
-  task: string;
-  background: boolean;
-  startedAt: number;
-  lastProgress?: {
-    iteration?: number;
-    maxIterations?: number;
-    currentTool?: string;
-    stage?: string;
-    stageLastUpdated?: number;
-  };
-  recentLines: string[];
-  toolStarts: Map<string, number>;
-  lastFlushAt: number;
-}
-
-const subagentUiBuffers = new Map<string, SubagentUiBuffer>();
-
-function isInteractiveRenderManagerActive(): boolean {
-  return Boolean(process.stdout.isTTY && getRenderManager());
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  const rem = Math.round(s - m * 60);
-  return `${m}m${String(rem).padStart(2, '0')}s`;
-}
-
-function formatArgsInline(args?: Record<string, any>): string {
-  if (!args || Object.keys(args).length === 0) return '';
-
-  const keyOrder = ['path', 'command', 'pattern', 'directory', 'name', 'id'];
-  const keys = [
-    ...keyOrder.filter(k => k in args),
-    ...Object.keys(args).filter(k => !keyOrder.includes(k)).sort(),
-  ].slice(0, 2);
-
-  const parts: string[] = [];
-  for (const key of keys) {
-    const value = (args as any)[key];
-    const rendered =
-      typeof value === 'string'
-        ? JSON.stringify(value.length > 60 ? value.slice(0, 57) + '...' : value)
-        : typeof value === 'number' || typeof value === 'boolean'
-          ? String(value)
-          : Array.isArray(value)
-            ? `[${value.length}]`
-            : value && typeof value === 'object'
-              ? '{…}'
-              : String(value);
-    parts.push(`${key}=${rendered}`);
-  }
-
-  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
-}
-
-function previewText(text: string, maxChars: number): string {
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-  if (!normalized) return '';
-  const firstLine = normalized.split('\n')[0];
-  if (firstLine.length <= maxChars) return firstLine;
-  return firstLine.slice(0, Math.max(0, maxChars - 1)) + '…';
-}
-
-function pushRecentLine(agentId: string, line: string): void {
-  const buffer = subagentUiBuffers.get(agentId);
-  if (!buffer) return;
-  buffer.recentLines.push(line);
-  if (buffer.recentLines.length > 10) {
-    buffer.recentLines.splice(0, buffer.recentLines.length - 10);
-  }
-}
-
-function updateSubagentLiveMessage(agentId: string, force = false): void {
-  const buffer = subagentUiBuffers.get(agentId);
-  if (!buffer) return;
-
-  const now = Date.now();
-  if (!force && now - buffer.lastFlushAt < 80) return;
-  buffer.lastFlushAt = now;
-
-  const shortId = buffer.agentId.slice(0, 8);
-  const roleStr = buffer.role ? chalk.dim(` · ${buffer.role}`) : '';
-  const bgStr = buffer.background ? chalk.dim(' · bg') : '';
-  const elapsedStr = chalk.dim(` · ${formatDuration(now - buffer.startedAt)}`);
-
-  const header = chalk.yellow(`⧉ Subagent ${shortId}`) + roleStr + bgStr + elapsedStr;
-  const taskLine = chalk.dim(`  Task: ${buffer.task}`);
-
-  const progressParts: string[] = [];
-  if (buffer.lastProgress?.iteration !== undefined) {
-  const max = buffer.lastProgress.maxIterations
-    ? `/${Number.isFinite(buffer.lastProgress.maxIterations) ? buffer.lastProgress.maxIterations : '∞'}`
-    : '';
-    progressParts.push(`iter ${buffer.lastProgress.iteration}${max}`);
-  }
-  if (buffer.lastProgress?.currentTool) {
-    progressParts.push(`tool ${buffer.lastProgress.currentTool}`);
-  } else if (buffer.lastProgress?.stage) {
-    progressParts.push(buffer.lastProgress.stage);
-  }
-  const progressLine = progressParts.length > 0 ? chalk.dim(`  ${progressParts.join(' · ')}`) : '';
-
-  const bodyLines = buffer.recentLines.map(l => `  ${l}`);
-
-  const lines = [header, taskLine];
-  if (progressLine) lines.push(progressLine);
-  if (bodyLines.length > 0) {
-    lines.push(chalk.dim('  Recent:'));
-    lines.push(...bodyLines);
-  }
-
-  uiState.updateLiveMessage(agentId, {
-    content: lines.join('\n'),
-    timestamp: Date.now(),
-  });
-}
-
-function markSubagentCompletedInUi(agentId: string, result: { success: boolean; output?: string; error?: string; iterations?: number; toolsUsed?: string[] }): void {
-  const current = uiState.getState().subagents || { active: [], completed: [], showCompleted: false };
-
-  const existingActive = current.active.find(a => a.id === agentId);
-  const existingCompleted = current.completed.find(a => a.id === agentId);
-
-  if (existingActive && !existingCompleted) {
-    uiState.update({
-      subagents: {
-        ...current,
-        active: current.active.filter(a => a.id !== agentId),
-        completed: [
-          ...current.completed,
-          {
-            ...existingActive,
-            status: result.success ? 'completed' : 'failed',
-            endTime: Date.now(),
-            iterations: result.iterations,
-            error: result.error,
-            result: result.output,
-          },
-        ],
-      },
-    });
-  }
-
-  const buffer = subagentUiBuffers.get(agentId);
-  if (buffer) {
-    const summary = result.success ? chalk.green('✓ completed') : chalk.red('✗ failed');
-    const iter = result.iterations !== undefined ? chalk.dim(` · ${result.iterations} iter`) : '';
-    const tools = result.toolsUsed && result.toolsUsed.length > 0 ? chalk.dim(` · tools: ${result.toolsUsed.slice(0, 4).join(', ')}${result.toolsUsed.length > 4 ? ', …' : ''}`) : '';
-    pushRecentLine(agentId, `${summary}${iter}${tools}`);
-    if (!result.success && result.error) pushRecentLine(agentId, chalk.red(`error: ${result.error}`));
-    if (result.success && result.output) {
-      const preview = previewText(result.output, 120);
-      if (preview) pushRecentLine(agentId, chalk.dim(`result: ${preview}`));
-    }
-    updateSubagentLiveMessage(agentId, true);
-  }
-
-  uiState.finalizeLiveMessage(agentId);
-}
 
 export class SpawnAgentTool extends BaseTool {
   private spawnValidator?: SpawnValidator;
@@ -329,21 +157,14 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
 
     const warnings: string[] = [];
 
-    // VALIDATION: Disabled for spawn_agent - agents can work on any task
-    // Validation only enabled for create_task to enforce upfront breakdown
-    let contextSummary: string | undefined;
-
     // AUTOMATIC CONTEXT MANAGEMENT: Summarize context if conversation is getting long
-    // This prevents context pollution in the main orchestrator when spawning subagents
     if (this.memoryStore) {
       const workingState = this.memoryStore.getWorkingState();
       const tasks = this.memoryStore.getTasks();
       
-      // Determine if we need to summarize
       const needsSummary = tasks.length > 10 || workingState.editHistory.length > 10;
       
       if (needsSummary) {
-        // Use the summarize_context tool logic directly
         const goal = this.memoryStore.getGoal();
         const currentTask = tasks.find((t) => t.status === 'active');
         const userFacts = this.memoryStore.getUserFacts();
@@ -378,9 +199,8 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
           lines.push('');
         }
         
-        contextSummary = lines.join('\n');
+        const contextSummary = lines.join('\n');
         
-        // Store summary in working state for reference
         this.memoryStore.updateWorkingState({
           lastContextSummary: contextSummary,
           summaryScope: 'pre-subagent',
@@ -395,7 +215,7 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       }
     }
 
-    // Validate task scope - encourage hierarchical breakdown for complex tasks
+    // Validate task scope
     if (this.memoryStore) {
       const complexityIndicators = [
         /implement (a |the )?[\w\s]+(system|feature|module|service)/i,
@@ -411,7 +231,6 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
         const currentTask = this.memoryStore.getActiveTask();
         const allTasks = this.memoryStore.getTasks();
 
-        // Check if current task has subtasks that could be delegated instead
         if (currentTask) {
           const subtasks = allTasks.filter(t => t.parentId === currentTask.id);
 
@@ -433,7 +252,6 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
             });
           }
         } else {
-          // No current task set - suggest creating and breaking down
           const warning = [
             '⚠️  WARNING: Delegating complex task without task hierarchy',
             'Recommended workflow:',
@@ -463,71 +281,58 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       const goal = this.memoryStore.getGoal();
       const allTasks = this.memoryStore.getTasks();
 
-      let enrichedTask = task;
       const contextParts: string[] = [];
 
-      // Add goal context
       if (goal) {
         contextParts.push(`Overall Goal: ${goal.description}`);
       }
 
-      // Add parent task context if current task exists
       if (currentTask) {
         contextParts.push(`Parent Task: ${currentTask.description}`);
 
-        // Check if current task has subtasks
         const subtasks = allTasks.filter(t => t.parentId === currentTask.id);
         if (subtasks.length > 0) {
           const completedSubtasks = subtasks.filter(t => t.status === 'completed');
           contextParts.push(`Task Progress: ${completedSubtasks.length}/${subtasks.length} subtasks completed`);
         }
 
-        // Add related files from parent task
         if (currentTask.relatedFiles && currentTask.relatedFiles.length > 0 && !files) {
           contextParts.push(`Related Files: ${currentTask.relatedFiles.join(', ')}`);
         }
       }
 
-      // Build enriched task description
       if (contextParts.length > 0) {
-        enrichedTask = `# Task Context\n\n${contextParts.join('\n')}\n\n# Your Specific Task\n\n${task}`;
-        focusedTask = enrichedTask;
+        focusedTask = `# Task Context\n\n${contextParts.join('\n')}\n\n# Your Specific Task\n\n${task}`;
       }
     }
 
-    // If a role is provided and memoryStore is available, build a brief and convert to system prompt
+    // Role-based configuration
     if (role && this.memoryStore) {
       const roleConfig = getRole(role);
       if (roleConfig) {
         maxIterations = roleConfig.defaultMaxIterations;
 
-        // Tool-restricted roles
         if (roleConfig.id === 'explorer') {
-          allowedTools = ['read_file', 'grep_repo'];
+          allowedTools = ['read_file', 'grep_repo', 'list_files'];
         }
 
-        // Build focused context with communication patterns
         const pattern = getRecommendedPattern(task, files);
         focusedTask = buildSubagentTask(role, focusedTask, files, pattern);
 
-        // Build dispatch message for orchestrator
         const dispatchMessage = buildOrchestratorDispatchMessage(pattern, [{
           task,
           roleId: role,
           files,
         }]);
 
-        // Show dispatch message
         uiState.addMessage({
           role: 'system',
           content: dispatchMessage,
           timestamp: Date.now(),
         });
 
-        // Determine which task ID to use for context
         let contextTaskId = task_id;
         if (!contextTaskId && this.memoryStore) {
-          // Fall back to active task if no task_id provided
           const activeTask = this.memoryStore.getActiveTask();
           if (activeTask) {
             contextTaskId = activeTask.id;
@@ -547,12 +352,10 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       }
     }
 
-    // Auto-wire Tree-of-Thought (ToT) inside the spawned subagent by prepending a required prelude.
-    // This is useful after task selection/breakdown or when repro/verification indicates ambiguity.
+    // Auto-ToT logic
     if (this.memoryStore) {
       const decision = decideAutoToT(this.memoryStore, { kind: 'subagent_spawn' });
       if (decision.shouldTrigger && decision.toolArgs) {
-        // Keep subagent ToT lightweight.
         decision.toolArgs.branches = 2;
         decision.toolArgs.max_iterations = Math.min(decision.toolArgs.max_iterations, 400);
         recordAutoToT(this.memoryStore, decision);
@@ -572,167 +375,17 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       outputJsonFromReasoning: role === 'explorer' ? true : undefined,
     });
 
-    // Add subagent to UIState tracking
-    const currentSubagents = uiState.getState().subagents || { active: [], completed: [], showCompleted: false };
-    uiState.update({
-      subagents: {
-        ...currentSubagents,
-        active: [
-          ...currentSubagents.active,
-          {
-            id: agentId,
-            task,
-            role,
-            status: 'spawning',
-            background,
-            startTime: Date.now(),
-          },
-        ],
-      },
-    });
-
-    // Add live-updating message
-    uiState.addLiveMessage(agentId, {
-      role: 'subagent-status',
-      content: '', // Will be rendered from SubagentRenderer
-      timestamp: Date.now(),
-      subagentId: agentId,
-    });
-
-    const interactiveUi = isInteractiveRenderManagerActive();
-
-    // Create either a RenderManager-friendly live block (interactive) or the legacy nested log renderer (non-interactive)
-    const renderer = interactiveUi ? undefined : subagentRendererRegistry.create(agentId);
-
-    if (interactiveUi) {
-      subagentUiBuffers.set(agentId, {
-        agentId,
-        role,
-        task,
-        background,
-        startedAt: Date.now(),
-        recentLines: [],
-        toolStarts: new Map(),
-        lastFlushAt: 0,
-      });
-      updateSubagentLiveMessage(agentId, true);
-    } else {
-      renderer!.renderStart({
-        agentId,
-        role: role || 'general',
-        task,
-      });
-    }
-
-    const messageListener = (data: any) => {
-      if (data.agentId !== agentId) return;
-      if (!interactiveUi) {
-        renderer!.renderMessage(data);
-        return;
-      }
-
-      if (data.type === 'status') {
-        pushRecentLine(agentId, chalk.cyan(data.content));
-      }
-      updateSubagentLiveMessage(agentId);
-    };
-
-    const toolCallListener = (data: any) => {
-      if (data.agentId !== agentId) return;
-      if (!interactiveUi) {
-        renderer!.renderToolCall(data);
-        return;
-      }
-
-      const buffer = subagentUiBuffers.get(agentId);
-      if (buffer) buffer.toolStarts.set(data.toolCallId, Date.now());
-      pushRecentLine(agentId, chalk.blue(`→ ${data.toolName}${formatArgsInline(data.args)}`));
-      updateSubagentLiveMessage(agentId, true);
-    };
-
-    const toolResultListener = (data: any) => {
-      if (data.agentId !== agentId) return;
-      if (!interactiveUi) {
-        renderer!.renderToolResult(data);
-        return;
-      }
-
-      const buffer = subagentUiBuffers.get(agentId);
-      const startedAt = buffer?.toolStarts.get(data.toolCallId);
-      if (startedAt && buffer) buffer.toolStarts.delete(data.toolCallId);
-      const duration = startedAt ? ` (${formatDuration(Date.now() - startedAt)})` : '';
-
-      if (data.success) {
-        pushRecentLine(agentId, chalk.green(`✓ ${data.toolName}${duration}`));
-        const preview = data.output ? previewText(String(data.output), 120) : '';
-        if (preview) pushRecentLine(agentId, chalk.dim(`↳ ${preview}`));
-      } else {
-        pushRecentLine(agentId, chalk.red(`✗ ${data.toolName}${duration}`));
-        if (data.error) pushRecentLine(agentId, chalk.red(`↳ ${String(data.error)}`));
-      }
-      updateSubagentLiveMessage(agentId, true);
-    };
-
-    const progressListener = (data: any) => {
-      if (data.agentId !== agentId) return;
-      if (!interactiveUi) return;
-
-      const buffer = subagentUiBuffers.get(agentId);
-      if (!buffer) return;
-      buffer.lastProgress = {
-        iteration: data.iteration,
-        maxIterations: data.maxIterations,
-        currentTool: data.currentTool,
-        stage: data.stage,
-        stageLastUpdated: data.stageLastUpdated,
-      };
-
-      // Upgrade spawning -> running as soon as we see progress
-      const runningSubagents = uiState.getState().subagents;
-      if (runningSubagents) {
-        uiState.update({
-          subagents: {
-            ...runningSubagents,
-            active: runningSubagents.active.map(a =>
-              a.id === agentId && a.status === 'spawning' ? { ...a, status: 'running' } : a
-            ),
-          },
-        });
-      }
-
-      updateSubagentLiveMessage(agentId);
-    };
-
-    this.subAgentManager.on('message', messageListener);
-    this.subAgentManager.on('tool_call', toolCallListener);
-    this.subAgentManager.on('tool_result', toolResultListener);
-    this.subAgentManager.on('progress', progressListener);
-
-    const cleanup = () => {
-      this.subAgentManager.off('message', messageListener);
-      this.subAgentManager.off('tool_call', toolCallListener);
-      this.subAgentManager.off('tool_result', toolResultListener);
-      this.subAgentManager.off('progress', progressListener);
-      if (!interactiveUi) {
-        subagentRendererRegistry.remove(agentId);
-      }
-      subagentUiBuffers.delete(agentId);
-    };
+    // Attach UI listeners using centralized utility
+    const cleanup = attachSubagentUI(
+      this.subAgentManager,
+      agentId,
+      task,
+      role,
+      background
+    );
 
     if (background) {
-      // For background tasks, store cleanup function for later
       backgroundAgentCleanupFunctions.set(agentId, cleanup);
-
-      // Auto-finalize UI tracking when the agent completes (so the live block settles without requiring wait_agent)
-      this.subAgentManager.wait(agentId).then(result => {
-        markSubagentCompletedInUi(agentId, result);
-      }).catch(() => {}).finally(() => {
-        const storedCleanup = backgroundAgentCleanupFunctions.get(agentId);
-        if (storedCleanup) {
-          storedCleanup();
-          backgroundAgentCleanupFunctions.delete(agentId);
-        }
-      });
 
       const response: any = {
         status: 'spawned',
@@ -747,37 +400,9 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
       return JSON.stringify(response, null, 2);
     }
 
-    // Update status to running
-    const runningSubagents = uiState.getState().subagents;
-    if (runningSubagents) {
-      uiState.update({
-        subagents: {
-          ...runningSubagents,
-          active: runningSubagents.active.map(a =>
-            a.id === agentId ? { ...a, status: 'running' } : a
-          ),
-        },
-      });
-    }
-
-    // Wait for completion with guaranteed cleanup
+    // Wait for completion
     try {
-      const startTime = Date.now();
       const result = await this.subAgentManager.wait(agentId);
-      const duration = Date.now() - startTime;
-
-      // Render completion
-      if (renderer) {
-        if (result.success) {
-          renderer.renderEnd({
-            duration,
-            summary: `Completed in ${result.iterations} iterations. Used tools: ${result.toolsUsed.join(', ')}`,
-          });
-        } else {
-          renderer.renderError(result.error || 'Unknown error');
-        }
-      }
-
       markSubagentCompletedInUi(agentId, result);
 
       const response: any = {
@@ -795,7 +420,6 @@ Each subagent can run for thousands of iterations (default: 1000) and is suitabl
 
       return JSON.stringify(response, null, 2);
     } finally {
-      // ALWAYS cleanup event listeners and renderer, even on error
       cleanup();
     }
   }
@@ -844,17 +468,14 @@ The merge message will be displayed showing how the subagent's work integrates i
     if (status === 'completed') {
       const result = this.subAgentManager.getResult(agent_id)!;
 
-      // Ensure UI tracking is finalized (background runs may have already done this)
       markSubagentCompletedInUi(agent_id, result);
 
-      // Cleanup event listeners if this was a background agent
       const cleanup = backgroundAgentCleanupFunctions.get(agent_id);
       if (cleanup) {
         cleanup();
         backgroundAgentCleanupFunctions.delete(agent_id);
       }
 
-      // Parse and show merge message
       const parsedResult = parseSubagentResult(result.output || '');
       const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
         taskId: agent_id,
@@ -876,12 +497,9 @@ The merge message will be displayed showing how the subagent's work integrates i
       }, null, 2);
     }
 
-    // Wait for completion
     const result = await this.subAgentManager.wait(agent_id);
-
     markSubagentCompletedInUi(agent_id, result);
 
-    // Parse and show merge message
     const parsedResult = parseSubagentResult(result.output || '');
     const mergeMessage = buildOrchestratorMergeMessage('sequential-focus', [{
       taskId: agent_id,
@@ -894,7 +512,6 @@ The merge message will be displayed showing how the subagent's work integrates i
       timestamp: Date.now(),
     });
 
-    // Cleanup event listeners if this was a background agent
     const cleanup = backgroundAgentCleanupFunctions.get(agent_id);
     if (cleanup) {
       cleanup();
@@ -1005,9 +622,7 @@ This helps understand agent concurrency and queue state.`,
   }
 
   protected async executeInternal(_args: z.infer<typeof GetAgentQueueStatusSchema>): Promise<string> {
-    // Get queue status from manager
     const queueStatus = this.subAgentManager.getQueueStatus();
-
     return JSON.stringify(queueStatus, null, 2);
   }
 }

@@ -157,16 +157,16 @@ export async function chatCommand(options: { directory: string; maxIterations?: 
 
   // Provider-specific validation (before UI init so errors go to stderr)
   if (config.llm.provider === 'copilot' && !config.auth.clientId) {
-    process.stderr.write(chalk.yellow('⚠️  No Azure Client ID configured.\n'));
-    process.stderr.write(chalk.gray('Set AZURE_CLIENT_ID environment variable or run:\n'));
-    process.stderr.write(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_CLIENT_ID\n\n'));
+    console.error(chalk.yellow('⚠️  No Azure Client ID configured.'));
+    console.error(chalk.gray('Set AZURE_CLIENT_ID environment variable or run:'));
+    console.error(chalk.gray('  copilot-cli config --set auth.clientId=YOUR_CLIENT_ID\n'));
     return;
   }
 
   if (config.llm.provider === 'zai' && !config.llm.apiKey) {
-    process.stderr.write(chalk.yellow('⚠️  No Z.ai API key configured.\n'));
-    process.stderr.write(chalk.gray('Get your API key at https://z.ai/subscribe\n'));
-    process.stderr.write(chalk.gray('Then set ZAI_API_KEY environment variable\n\n'));
+    console.error(chalk.yellow('⚠️  No Z.ai API key configured.'));
+    console.error(chalk.gray('Get your API key at https://z.ai/subscribe'));
+    console.error(chalk.gray('Then set ZAI_API_KEY environment variable\n'));
     return;
   }
 

@@ -7,6 +7,7 @@
  */
 
 import chalk from 'chalk';
+import { uiState } from '../ui/ui-state.js';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -67,6 +68,9 @@ export class Logger {
       : '';
 
     const fullMessage = timestamp + message + '\n';
+
+    // Write to UI state - ensures capture in log files
+    uiState.addMessage({ role: 'system', content: timestamp + message, timestamp: Date.now() });
 
     // Write to stderr - keeps debug output separate from UI
     process.stderr.write(fullMessage);
@@ -129,6 +133,7 @@ export class Logger {
    */
   newline(): void {
     if (this.shouldLog(LogLevel.INFO)) {
+      uiState.addMessage({ role: 'system', content: '', timestamp: Date.now() });
       process.stderr.write('\n');
     }
   }

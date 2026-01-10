@@ -1,0 +1,670 @@
+// SubAgent - autonomous agent that can be spawned to handle specific tasks
+
+import { EventEmitter } from 'events';
+import type { LLMClient, LLMConfig, ToolCall } from '../llm/types.js';
+import type { ToolRegistry } from '../tools/index.js';
+import { ConversationManager } from './conversation.js';
+import { StreamAccumulator } from '../llm/streaming.js';
+import chalk from 'chalk';
+import type { HookRegistry } from '../hooks/registry.js';
+import type { CompletionTracker } from '../audit/index.js';
+import type { PlanningValidator } from './planning-validator.js';
+import type { ProactiveContextMonitor } from './proactive-context-monitor.js';
+import type { IncompleteWorkDetector } from './incomplete-work-detector.js';
+import type { FileRelationshipTracker } from './file-relationship-tracker.js';
+import type { MemoryStore } from '../memory/types.js';
+import { filterToolDefinitions, isToolAllowed } from './tool-allowlist.js';
+import { extractJsonObject } from '../utils/json-extract.js';
+import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from './auto-tot.js';
+
+export interface SubAgentConfig {
+  name: string;
+  task: string;
+  systemPrompt?: string;
+  maxIterations?: number;
+  minIterations?: number;
+  workingDirectory?: string;
+  allowedTools?: string[];
+  outputJsonFromReasoning?: boolean;
+  memoryStore?: MemoryStore;
+}
+
+export interface SubAgentResult {
+  success: boolean;
+  output: string;
+  error?: string;
+  iterations: number;
+  toolsUsed: string[];
+}
+
+export interface SubAgentProgress {
+  agentId: string;
+  name: string;
+  iteration: number;
+  maxIterations: number;
+  minIterations?: number;
+  currentTool?: string;
+  stage?: string; // Current stage within the iteration (e.g., 'thinking', 'executing', 'analyzing')
+  stageLastUpdated?: number; // Timestamp when stage last updated
+  status: 'running' | 'paused' | 'waiting_for_input' | 'completed' | 'failed';
+}
+
+export class SubAgent extends EventEmitter {
+  private conversation: ConversationManager;
+  private maxIterations: number;
+  private minIterations: number;
+  private toolsUsed: Set<string> = new Set();
+  private currentIteration = 0; // Track current iteration for progress reporting
+  private abortSignal?: AbortSignal;
+  private hookRegistry?: HookRegistry;
+  private completionTracker?: CompletionTracker;
+  private planningValidator?: PlanningValidator;
+  private proactiveContextMonitor?: ProactiveContextMonitor;
+  private incompleteWorkDetector?: IncompleteWorkDetector;
+  private fileRelationshipTracker?: FileRelationshipTracker;
+  private memoryStore?: MemoryStore;
+  private autoToTTriggeredThisTurn = false;
+
+  constructor(
+    private llmClient: LLMClient,
+    private toolRegistry: ToolRegistry,
+    private config: SubAgentConfig,
+    abortSignal?: AbortSignal,
+    hookRegistry?: HookRegistry,
+    completionTracker?: CompletionTracker,
+    planningValidator?: PlanningValidator,
+    proactiveContextMonitor?: ProactiveContextMonitor,
+    incompleteWorkDetector?: IncompleteWorkDetector,
+    fileRelationshipTracker?: FileRelationshipTracker,
+    private modelName?: string
+  ) {
+    super();
+    this.config = config;
+    this.abortSignal = abortSignal;
+    this.hookRegistry = hookRegistry;
+    this.completionTracker = completionTracker;
+    this.planningValidator = planningValidator;
+    this.proactiveContextMonitor = proactiveContextMonitor;
+    this.incompleteWorkDetector = incompleteWorkDetector;
+    this.fileRelationshipTracker = fileRelationshipTracker;
+    this.memoryStore = config.memoryStore;
+
+    const systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
+    this.conversation = new ConversationManager(systemPrompt, {
+      // Use same max history as main agent (defaults to 50)
+      enableSmartMemory: true,
+      contextConfig: {
+        verbose: false,
+      },
+    });
+    this.conversation.setLLMClient(llmClient);
+
+    // Set model-specific context limits (same as main agent)
+    if (modelName) {
+      this.conversation.setModelContextLimit(modelName);
+    }
+
+    this.maxIterations = config.maxIterations || 10000;
+    this.minIterations = config.minIterations || 0;
+  }
+
+  private buildDefaultSystemPrompt(): string {
+    return `You are a focused subagent tasked with completing a specific objective.
+
+Your task: ${this.config.task}
+
+# Your Tools
+
+## read_file
+- Read files before patching to ensure exact matching
+- Use to explore existing code and integration points
+- Essential for understanding the codebase before making changes
+
+## create_file
+- Creates new files with content
+- Automatically creates parent directories
+- Use overwrite: true only when explicitly needed
+
+## patch_file
+- **CRITICAL**: Uses EXACT string matching (including whitespace/indentation)
+- The search string must match character-for-character
+- ALWAYS read the file first to get exact formatting
+- Use expectCount to validate you're changing what you intend
+
+## execute_bash
+- Run shell commands, tests, build steps
+- Execute Python via: "python script.py"
+- Use timeout for long-running commands
+
+## list_files
+- Use glob patterns: "**/*.ts" for recursive, "*.json" for current dir
+- Discover project structure and find relevant files
+
+## parallel
+- Execute multiple tools in parallel (e.g., read multiple files at once)
+- All tools execute concurrently; results returned together
+
+# ⚡ MAXIMIZE PARALLEL EXECUTION
+
+**CRITICAL**: ALWAYS use the parallel tool for independent operations. This is a major performance optimization.
+
+Reading 2+ files? Use parallel:
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "src/a.ts" } },
+    { tool: "read_file", parameters: { path: "src/b.ts" } }
+  ]})
+
+Running multiple commands? Use parallel:
+  parallel({ tools: [
+    { tool: "execute_bash", parameters: { command: "npm run lint" } },
+    { tool: "execute_bash", parameters: { command: "npm run test" } }
+  ]})
+
+Mixed operations? Use parallel:
+  parallel({ tools: [
+    { tool: "read_file", parameters: { path: "config.json" } },
+    { tool: "list_files", parameters: { pattern: "src/**/*.ts" } },
+    { tool: "execute_bash", parameters: { command: "git status" } }
+  ]})
+
+**Default mindset**: If you're about to use the same tool twice, or use multiple different tools for independent operations, use parallel. It's 3-10x faster.
+
+# Tracking Items (if applicable)
+
+If you encounter tracking items during your work, you have access to these tools:
+
+## list_tracking_items
+- View tracking items by status (open, under-review, closed, all)
+- Use to see incomplete work that needs attention
+
+## review_tracking_item
+- Move item to 'under-review' status
+- **REQUIRES files_to_verify**: Array of file paths you READ (minimum 1)
+- You MUST read files first before calling this - no guessing!
+
+## close_tracking_item
+- Close a tracking item with reason and evidence
+- Reasons: completed, added-to-tasks, duplicate, not-needed, out-of-scope
+- Provide file evidence for completed items
+
+**Workflow**: list → read files → review → close with evidence
+
+# Critical Requirements
+
+1. **NO PLACEHOLDERS**: Never leave TODO, FIXME, NotImplemented, or placeholder comments
+   - Implement complete, working solutions
+   - If you can't implement something, explain why in your response
+
+2. **EXPLORE INTEGRATION POINTS**: Before implementing:
+   - Read relevant files to understand existing patterns
+   - Check how similar features are implemented
+   - Understand data flow and dependencies
+   - Verify your changes integrate correctly with existing code
+
+3. **READ BEFORE PATCH**: ALWAYS read files before using patch_file
+   - Get exact whitespace and formatting
+   - Understand the context around your change
+   - Ensure search string will match
+
+4. **USE TREE-OF-THOUGHT WHEN STUCK**:
+   - If you’re stuck after 1-2 attempts (repro still failing, patch keeps failing, unclear root cause), call tree_of_thought
+   - Keep branches read-only; use it to produce competing hypotheses and patch sketches
+
+5. **COMPLETE THE TASK**: Don't stop until the task is fully complete
+   - Test your changes if applicable
+   - Verify integration points work
+   - Clean up any temporary code
+
+6. **BE THOROUGH**:
+   - Explore necessary files to understand the system
+   - Follow existing code patterns and conventions
+   - Make changes that fit naturally with the codebase
+
+7. **TASK COMPLETION**: If you have access to update_task_status:
+   - When marking a task as "completed", you MUST provide a completion_message
+   - Summarize what was accomplished (files created/modified, functions implemented, etc.)
+   - Example: update_task_status({
+       task_id: "task_123",
+       status: "completed",
+       completion_message: "Created lexer.rs with Token enum and tokenize() function. Added tests covering all token types."
+     })
+
+# Finishing Your Subagent Session
+
+When your task is complete, follow these steps to properly finish:
+
+1. **Update task status** (if you have update_task_status tool):
+   - Mark your task as "completed" with a completion_message
+   - Summarize what was accomplished
+
+2. **Provide a final summary**:
+   - Output a clear message describing what you accomplished
+   - List all files created or modified
+   - Mention any important decisions or changes made
+   - Note any remaining work (if applicable)
+
+3. **Stop naturally**:
+   - After your final summary, stop responding
+   - You don't need to continue iterating once the task is complete
+   - The system will automatically detect completion and end your session
+
+**Example final response:**
+"Task complete! I've implemented the symbol table for the type checker:
+
+Files created:
+- src/symbol.rs (250 lines): Symbol and SymbolTable types with scope management
+- src/symbol_tests.rs (120 lines): Comprehensive test coverage
+
+Key features:
+- Hierarchical scope resolution with parent chain traversal
+- Symbol shadowing support
+- Type information storage for variables and functions
+
+All tests passing (15/15). Ready for integration with type inference engine."
+
+**IMPORTANT**: You are a FOCUSED subagent. Complete your ONE assigned task and finish. Don't try to do additional work or pick up other tasks. The main orchestrator will handle what comes next.
+
+Working directory: ${this.config.workingDirectory || process.cwd()}
+
+Remember: You are responsible for delivering complete, production-ready work. No shortcuts, no placeholders. When done, provide a clear summary and stop.
+`;
+  }
+
+  async execute(): Promise<SubAgentResult> {
+    console.log(`[TRACE] SubAgent ${this.config.name}: Starting execution loop...`);
+    // Add the task as the initial user message
+    this.conversation.addUserMessage(this.config.task);
+
+    let iteration = 0;
+    let finalOutput = '';
+    let continueLoop = true;
+    let currentStage = 'thinking'; // Track current stage
+    const debugSubagent = !!process.env.DEBUG_SUBAGENT || !!process.env.DEBUG_EXPLORER;
+
+    // Emit start message
+    this.emit('message', {
+      agentId: this.config.name,
+      content: `Starting subagent execution\nTask: ${this.config.task}\nMax iterations: ${this.maxIterations}`,
+      type: 'system',
+    });
+
+    try {
+      while (continueLoop && iteration < this.maxIterations) {
+        iteration++;
+        this.currentIteration = iteration; // Update instance variable for progress tracking
+
+        // Emit iteration start message
+        this.emit('message', {
+          agentId: this.config.name,
+          content: `\n${'='.repeat(60)}\nIteration ${iteration}/${this.maxIterations}\n${'='.repeat(60)}`,
+          type: 'system',
+        });
+
+        // Inject iteration status into conversation
+        if (this.minIterations > 0) {
+          this.conversation.addSystemMessage(
+            `[System] Iteration ${iteration} of ${this.maxIterations} (Minimum ${this.minIterations} required)`
+          );
+        }
+
+        // Update stage to thinking before LLM call
+        currentStage = 'thinking';
+        this.emit('progress', {
+          agentId: this.config.name,
+          name: this.config.name,
+          iteration,
+          maxIterations: this.maxIterations,
+          minIterations: this.minIterations,
+          currentTool: undefined,
+          stage: currentStage,
+          stageLastUpdated: Date.now(),
+          status: 'running',
+        });
+
+        const tools = filterToolDefinitions(this.toolRegistry.getDefinitions(), this.config.allowedTools);
+        const accumulator = new StreamAccumulator();
+
+        for await (const chunk of this.llmClient.chatStream(
+          this.conversation.getMessages(),
+          tools
+        )) {
+          accumulator.addChunk(chunk);
+        }
+
+        const response = accumulator.getResponse();
+        const contentLen = (response.content || '').trim().length;
+        const reasoningLen = (response.reasoningContent || '').trim().length;
+        const toolCallsCount = response.toolCalls?.length || 0;
+
+        if (debugSubagent) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `[Subagent Debug] iter ${iteration}/${this.maxIterations} stage=${currentStage} contentLen=${contentLen} reasoningLen=${reasoningLen} toolCalls=${toolCallsCount}`,
+          });
+        }
+
+        // Always emit thinking content for logging (even if empty or with tool calls)
+        if (response.content) {
+          finalOutput = response.content;
+          // Emit message event for real-time display and logging
+          this.emit('message', {
+            agentId: this.config.name,
+            content: response.content,
+            type: 'thinking',
+            iteration,
+          });
+        }
+
+        if (response.toolCalls && response.toolCalls.length > 0) {
+          // Update stage to executing
+          currentStage = 'executing';
+          this.emit('progress', {
+            agentId: this.config.name,
+            name: this.config.name,
+            iteration,
+            maxIterations: this.maxIterations,
+            minIterations: this.minIterations,
+            currentTool: undefined,
+            stage: currentStage,
+            stageLastUpdated: Date.now(),
+            status: 'running',
+          });
+
+          this.conversation.addAssistantMessage(response.content || '', response.toolCalls, response.reasoningContent);
+          await this.executeTools(response.toolCalls);
+
+          // Auto-wire Tree-of-Thought (ToT) if allowed and not already triggered this turn
+          if (this.memoryStore && !this.autoToTTriggeredThisTurn && isToolAllowed('tree_of_thought', this.config.allowedTools)) {
+            const toolNames = response.toolCalls.map(tc => tc.function.name);
+
+            const trigger =
+              toolNames.includes('run_repro')
+                ? { kind: 'repro_failed' as const }
+                : (iteration % 5 === 0 ? { kind: 'iteration_tick' as const, iteration } : null);
+
+            if (trigger) {
+              const decision = decideAutoToT(this.memoryStore, trigger);
+              if (decision.shouldTrigger) {
+                recordAutoToT(this.memoryStore, decision);
+                this.autoToTTriggeredThisTurn = true;
+
+                const instruction = buildAutoToTInstruction(decision);
+                if (instruction) {
+                  this.emit('message', {
+                    agentId: this.config.name,
+                    content: instruction,
+                    type: 'system',
+                  });
+                  this.conversation.addUserMessage(instruction);
+                }
+              }
+            }
+          }
+
+          continueLoop = true;
+        } else {
+          // Reset trigger flag for next turn
+          this.autoToTTriggeredThisTurn = false;
+
+          // Check for minIterations enforcement
+          if (iteration <= this.minIterations) {
+            if (debugSubagent) {
+              this.emit('message', {
+                agentId: this.config.name,
+                type: 'system',
+                content: `[Subagent Debug] Iteration ${iteration} <= minIterations (${this.minIterations}); forcing expansion`,
+              });
+            }
+            this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+            
+            const directive = iteration === this.minIterations 
+              ? `CRITICAL: You have completed the mandatory reasoning phase (${this.minIterations} iterations). You MUST now output your final results in the valid JSON format specified in your system prompt. Do not provide any more thoughts, summaries, or conversation. Output JSON only.`
+              : `Continue: you are at iteration ${iteration} of ${this.minIterations} minimum. Expand on your reasoning, explore edge cases, and refine your thoughts. Do not provide the final JSON until iteration ${this.minIterations}.`;
+            
+            this.conversation.addUserMessage(directive);
+            continueLoop = true;
+            continue;
+          }
+
+          // If model produced output only in reasoning_content (thinking-enabled providers),
+          // optionally extract JSON for tool-driven subagents (e.g., explorer) without leaking reasoning.
+          // If extraction fails, fall back to returning the raw reasoning content instead of an empty output
+          // (the caller can attempt its own parse/repair).
+          if (this.config.outputJsonFromReasoning && (!response.content || !response.content.trim()) && response.reasoningContent) {
+            const extracted = extractJsonObject(response.reasoningContent);
+            finalOutput = extracted.jsonText || response.reasoningContent;
+          } else if (response.content) {
+            finalOutput = response.content;
+          }
+
+          // Final response (no tool calls) - emit as completion message
+          this.emit('message', {
+            agentId: this.config.name,
+            content: finalOutput || response.content || '',
+            type: 'final_response',
+            iteration,
+          });
+          this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+          continueLoop = false;
+        }
+      }
+
+      // If we hit maxIterations while still in a tool loop, attempt one final "no tools" completion pass.
+      // This is especially important for tool-driven subagents like the explorer, which often need an
+      // additional iteration after tool execution to synthesize a final JSON result.
+      if (continueLoop && this.config.outputJsonFromReasoning) {
+        this.emit('message', {
+          agentId: this.config.name,
+          type: 'system',
+          content: `[Subagent Debug] reached maxIterations (${this.maxIterations}) with pending tool loop; running 1 final no-tools completion pass`,
+        });
+
+        this.conversation.addUserMessage(
+          'Finalize now: you have NO tools. Return the final required output directly (one JSON object if requested).'
+        );
+
+        const accumulator = new StreamAccumulator();
+        for await (const chunk of this.llmClient.chatStream(this.conversation.getMessages(), [])) {
+          accumulator.addChunk(chunk);
+        }
+        const response = accumulator.getResponse();
+
+        if ((!response.content || !response.content.trim()) && response.reasoningContent) {
+          const extracted = extractJsonObject(response.reasoningContent);
+          finalOutput = extracted.jsonText || response.reasoningContent;
+        } else {
+          finalOutput = response.content || finalOutput;
+        }
+
+        this.emit('message', {
+          agentId: this.config.name,
+          content: finalOutput || '',
+          type: 'final_response',
+          iteration: iteration + 1,
+        });
+
+        this.conversation.addAssistantMessage(response.content || '', undefined, response.reasoningContent);
+        continueLoop = false;
+      }
+
+      const toolsUsed = Array.from(this.toolsUsed);
+
+      // Emit completion message
+      this.emit('message', {
+        agentId: this.config.name,
+        content: `\n${'='.repeat(60)}\nSubagent Completed Successfully\nTotal iterations: ${iteration}\nTools used: ${toolsUsed.join(', ')}\n${'='.repeat(60)}`,
+        type: 'system',
+      });
+
+      return {
+        success: true,
+        output: finalOutput,
+        iterations: iteration,
+        toolsUsed,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Emit error message
+      this.emit('message', {
+        agentId: this.config.name,
+        content: `\n${'='.repeat(60)}\nSubagent Failed\nError: ${errorMessage}\nIterations completed: ${iteration}\n${'='.repeat(60)}`,
+        type: 'system',
+      });
+
+      return {
+        success: false,
+        output: finalOutput,
+        error: errorMessage,
+        iterations: iteration,
+        toolsUsed: Array.from(this.toolsUsed),
+      };
+    }
+  }
+
+  private async executeTools(toolCalls: ToolCall[]): Promise<void> {
+    for (const toolCall of toolCalls) {
+      const toolName = toolCall.function.name;
+
+      if (!isToolAllowed(toolName, this.config.allowedTools)) {
+        throw new Error(`Tool not allowed for this subagent: ${toolName}`);
+      }
+      this.toolsUsed.add(toolName);
+
+      // Update stage to show which tool is being executed
+      this.emit('progress', {
+        agentId: this.config.name,
+        name: this.config.name,
+        iteration: this.currentIteration,
+        maxIterations: this.maxIterations,
+        currentTool: toolName,
+        stage: `executing: ${toolName}`,
+        stageLastUpdated: Date.now(),
+        status: 'running',
+      });
+
+      let toolArgs: Record<string, any>;
+      try {
+        toolArgs = JSON.parse(toolCall.function.arguments);
+      } catch {
+        toolArgs = {};
+      }
+
+      // Emit tool call event for real-time display and logging
+      this.emit('tool_call', {
+        agentId: this.config.name,
+        toolName,
+        args: toolArgs,
+        toolCallId: toolCall.id,
+      });
+
+      try {
+        const result = await this.toolRegistry.execute(toolName, toolArgs, {
+          conversation: this.conversation,
+        });
+
+        // Emit tool result event for real-time display and logging
+        this.emit('tool_result', {
+          agentId: this.config.name,
+          toolCallId: toolCall.id,
+          toolName,
+          success: result.success,
+          output: result.output,
+          error: result.error,
+        });
+
+        if (result.success) {
+          this.conversation.addToolResult(toolCall.id, toolName, result.output || 'Success');
+          // Audit file modifications for incomplete scaffolding
+          await this.auditFileModification(toolName, toolArgs, result);
+        } else {
+          this.conversation.addToolResult(toolCall.id, toolName, `Error: ${result.error}`);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Emit error result event
+        this.emit('tool_result', {
+          agentId: this.config.name,
+          toolCallId: toolCall.id,
+          toolName,
+          success: false,
+          error: errorMessage,
+        });
+
+        this.conversation.addToolResult(toolCall.id, toolName, `Error: ${errorMessage}`);
+      }
+    }
+  }
+
+  /**
+   * Audit file modifications for incomplete scaffolding
+   */
+  private async auditFileModification(
+    toolName: string,
+    toolArgs: Record<string, any>,
+    result: { success: boolean; output?: string; error?: string }
+  ): Promise<void> {
+    const fileModificationTools = ['create_file', 'patch_file'];
+    if (!fileModificationTools.includes(toolName) || !result.success || !this.completionTracker) {
+      return;
+    }
+
+    try {
+      // Log audit start
+      this.emit('message', {
+        agentId: this.config.name,
+        type: 'system',
+        content: `🔍 [Subagent] Auditing ${toolName} on ${toolArgs.path || 'unknown'}...`,
+      });
+
+      // Build context with actual file content for audit
+      let context: string;
+      if (toolName === 'create_file') {
+        // For create_file, include FULL file content so audit can detect all issues
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n\nFile Content:\n${toolArgs.content || '(no content)'}`;
+      } else if (toolName === 'patch_file') {
+        // For patch_file, include search/replace patterns and context
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n\nSearch pattern:\n${toolArgs.search || '(no search pattern)'}\n\nReplacement:\n${toolArgs.replace || '(no replacement)'}\n\nResult: ${result.output || ''}`;
+      } else {
+        context = `Tool: ${toolName} (subagent: ${this.config.name})\nFile: ${toolArgs.path || 'unknown'}\n${result.output || ''}`;
+      }
+
+      const responseId = `subagent_${this.config.name}_${toolName}_${Date.now()}`;
+      const auditResult = await this.completionTracker.auditResponse(context, this.conversation.getMessages(), responseId);
+
+      if (auditResult.newItems.length > 0 || auditResult.resolvedItems.length > 0) {
+        // Emit audit results
+        for (const item of auditResult.newItems) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `Tracking: ${item.type} in ${item.file}: ${item.description}`,
+          });
+        }
+        for (const item of auditResult.resolvedItems) {
+          this.emit('message', {
+            agentId: this.config.name,
+            type: 'system',
+            content: `Resolved: ${item.type} in ${item.file}`,
+          });
+        }
+      } else {
+        this.emit('message', {
+          agentId: this.config.name,
+          type: 'system',
+          content: `✓ [Subagent] Audit complete: No incomplete scaffolding detected in ${toolArgs.path || 'unknown'}`,
+        });
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.emit('message', {
+        agentId: this.config.name,
+        type: 'system',
+        content: `⚠️ [Subagent] Scaffolding audit failed: ${errorMsg}`,
+      });
+      console.error(`[Subagent ${this.config.name} Scaffold Audit] Failed:`, error);
+    }
+  }
+}

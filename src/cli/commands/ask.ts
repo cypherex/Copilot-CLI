@@ -405,9 +405,6 @@ export async function askCommand(
       }
     }
 
-    // Stop renderer
-    renderer.stop();
-
     if (options.json) {
       const result = {
         success: true,
@@ -420,13 +417,40 @@ export async function askCommand(
     }
 
     await agent.shutdown();
+    uiState.addMessage({ role: 'system', content: `[TRACE] Agent shutdown complete.`, timestamp: Date.now() });
 
     // Close all log streams
     if (logManager) {
       await logManager.closeAll();
+      uiState.addMessage({ role: 'system', content: `[TRACE] Log manager closed.`, timestamp: Date.now() });
     }
-  } catch (error) {
+    
+    // Add final completion message for visibility in output file
+    uiState.addMessage({ 
+      role: 'system', 
+      content: '\n✅ PROCESS COMPLETED SUCCESSFULLY. EXITING.', 
+      timestamp: Date.now() 
+    });
+    
+    uiState.addMessage({ role: 'system', content: `[TRACE] askCommand finishing normally.`, timestamp: Date.now() });
+
+    // STOP RENDERER AT THE VERY END
+    renderer.stop();
+    
+    // FINAL DIRECT WRITE
+    process.stdout.write('[TRACE] ABSOLUTE END OF askCommand REACHED\n');
+  } catch (error: any) {
     spinner?.fail('Failed');
+
+    const userFriendly = ErrorHandler.getUserFriendlyMessage(error);
+    const stack = ErrorHandler.getStackTrace(error);
+
+    // Add crash message to UI state for visibility in output file
+    uiState.addMessage({
+      role: 'system',
+      content: `\n🛑 FATAL ERROR: ${userFriendly}${stack ? `\n\nStack Trace:\n${stack}` : ''}`,
+      timestamp: Date.now(),
+    });
 
     // Close log streams on error
     if (logManager) {

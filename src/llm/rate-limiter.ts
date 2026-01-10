@@ -39,6 +39,7 @@ export class RateLimiter {
         const randomExtra = Math.random() * (baseDelay * 0.5);
         const totalDelay = Math.ceil(baseDelay + randomExtra);
 
+        console.log(`[TRACE] RateLimiter: Waiting ${totalDelay}ms...`);
         // Sleep for the calculated delay
         await this.sleep(totalDelay);
       }

@@ -125,10 +125,11 @@ async function main(): Promise<void> {
   const completionWorkflowValidator = new CompletionWorkflowValidator(llmClient);
 
   const subAgentManager = new SubAgentManager(
-    llmClient,
+    appConfig.llm,
     toolRegistry,
     5,
     undefined,
+    undefined, // hookRegistry
     completionTracker,
     planningValidator,
     proactiveContextMonitor,
