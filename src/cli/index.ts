@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { chatCommand } from './commands/chat.js';
 import { askCommand } from './commands/ask.js';
 import { configCommand } from './commands/config.js';
+import { registerBenchmarkCommand } from './commands/benchmark.js';
 
 export function createCLI(): Command {
   const program = new Command();
@@ -45,6 +46,9 @@ export function createCLI(): Command {
     .option('--clear-cache', 'Clear authentication token cache')
     .option('--verify', 'Verify Azure AD configuration')
     .action(configCommand);
+
+  // Benchmark command
+  registerBenchmarkCommand(program);
 
   return program;
 }

@@ -13,6 +13,7 @@ import { SpawnAgentTool, WaitAgentTool, ListAgentsTool, GetAgentQueueStatusTool 
 import { ExploreCodebaseTool } from './explore-codebase.js';
 import { TreeOfThoughtTool } from './tree-of-thought.js';
 import { DeepReasoningTool } from './deep-reasoning.js';
+import { AskFileTool } from './ask-file.js';
 import { CreateTaskTool, UpdateTaskStatusTool, SetCurrentTaskTool, ListTasksTool, GetNextTasksTool, ListSubtasksTool, BreakDownTaskTool, ReviewTrackingItemTool, CloseTrackingItemTool, ListTrackingItemsTool, DebugScaffoldTool, RecordExperimentResultTool } from './task-management-tool.js';
 import { RunReproTool } from './repro-tool.js';
 import { VerifyProjectTool } from './verify-tool.js';
@@ -77,10 +78,12 @@ export class ToolRegistry {
       this.register(new ExploreCodebaseTool(manager, memoryStore));
       this.register(new TreeOfThoughtTool(memoryStore));
       this.register(new DeepReasoningTool());
+      this.register(new AskFileTool());
     } else {
       this.register(new SpawnAgentTool(manager));
       this.register(new TreeOfThoughtTool());
       this.register(new DeepReasoningTool());
+      this.register(new AskFileTool());
     }
     this.register(new WaitAgentTool(manager));
     this.register(new ListAgentsTool(manager));

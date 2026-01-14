@@ -1,0 +1,58 @@
+{
+  "dataset": "swe-bench-lite",
+  "total_instances": 5,
+  "completed": 5,
+  "passed": 5,
+  "passed_rate": 1,
+  "total_time_seconds": 197.62199999999999,
+  "average_time_per_task": 39.5244,
+  "average_iterations": 0,
+  "results": [
+    {
+      "task_id": "django__django-00001",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 13.948,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "pallets__flask-00001",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 11.191,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "requests__requests-00001",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 79.195,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "psf__requests-00002",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 82.671,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "scikit-learn__scikit-learn-00001",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 10.617,
+      "test_output": "\n"
+    }
+  ],
+  "timestamp": "2026-01-11T04:03:16.291Z"
+}

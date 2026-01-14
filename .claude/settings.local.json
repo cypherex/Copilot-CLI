@@ -6,7 +6,12 @@
       "Bash(tee:*)",
       "Bash(npm run type-check:*)",
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebSearch",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(huggingface-hub download:*)",
+      "Bash(/c/Python313/python:*)"
     ]
   }
 }

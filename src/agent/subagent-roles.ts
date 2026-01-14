@@ -27,11 +27,12 @@ export const SUBAGENT_ROLES: Record<string, SubagentRole> = {
 
 STRICT RULES:
 - You are READ-ONLY: do not propose edits, do not create patches, do not run mutating commands.
-- You MUST ONLY use these tools: read_file, grep_repo, and list_files.
+- You MUST ONLY use these tools: read_file, grep_repo, list_files, and ask_file.
+- FORENSIC ANALYSIS: Prefer 'ask_file' over 'read_file' for understanding complex logic, large files, or identifying patterns. It is more context-efficient and rigorous.
 - Use list_files to discover the project structure and find relevant directories.
-- Prefer grep_repo to locate relevant files/symbols, then read_file for targeted confirmation.
-- Keep exploration tight: minimize file reads and output.
-- If grep_repo fails/unavailable, continue using only read_file and list_files and still return valid JSON (mention the limitation in findings/evidence).
+- Prefer grep_repo to locate relevant files/symbols, then targeted ask_file for deep analysis.
+- Keep exploration tight: minimize raw file reads and output.
+- If grep_repo fails/unavailable, continue using read_file, list_files, and ask_file.
 
 OUTPUT CONTRACT (MANDATORY):
 Return ONE valid JSON object and nothing else. No markdown, no code fences.
@@ -170,6 +171,7 @@ You have a focused context scope - only the code you're refactoring and directly
 
 Your responsibilities:
 - Investigate bugs, errors, and unexpected behavior thoroughly
+- FORENSIC ANALYSIS: Use 'ask_file' extensively to dive deep into suspected modules. Prefer it over 'read_file' for understanding complex logic or large logs.
 - Trace through code execution paths to understand root causes
 - Identify dependencies and their impact on the issue
 - Gather relevant context (logs, state, inputs, outputs)

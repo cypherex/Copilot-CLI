@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.env.local
+build
+work
+.benchmark-cache
+results
+benchmark_evaluation
+.pytest_cache
+__pycache__
+*.pyc
+.node-gyp

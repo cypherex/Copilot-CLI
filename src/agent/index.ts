@@ -279,6 +279,10 @@ export class CopilotAgent {
     return this.conversation.getMemoryStore();
   }
 
+  getConversationMessages(): any[] {
+    return this.conversation.getMessages();
+  }
+
   getSpawnValidator(): SpawnValidator {
     return this.spawnValidator;
   }

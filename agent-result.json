@@ -1,0 +1,12 @@
+{
+  "dataset": "swe-bench-lite",
+  "total_instances": 0,
+  "completed": 0,
+  "passed": 0,
+  "passed_rate": null,
+  "total_time_seconds": 0,
+  "average_time_per_task": null,
+  "average_iterations": null,
+  "results": [],
+  "timestamp": "2026-01-12T09:12:26.355Z"
+}

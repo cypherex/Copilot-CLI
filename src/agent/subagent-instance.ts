@@ -117,8 +117,12 @@ Your task: ${this.config.task}
 
 ## read_file
 - Read files before patching to ensure exact matching
-- Use to explore existing code and integration points
-- Essential for understanding the codebase before making changes
+- Best for small files or when exact text is needed for patching.
+- **Avoid** for complex analysis; use 'ask_file' instead.
+
+## ask_file
+- PREFERRED FOR ANALYSIS: Use this instead of 'read_file' for understanding complex logic, investigating bugs, or exploring large files.
+- It performs an autonomous forensic deep-dive and returns distilled insights.
 
 ## create_file
 - Creates new files with content

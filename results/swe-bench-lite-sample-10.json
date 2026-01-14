@@ -1,0 +1,95 @@
+{
+  "dataset": "swe-bench-lite",
+  "created_at": "2026-01-11T04:41:41.880Z",
+  "updated_at": "2026-01-11T04:41:41.880Z",
+  "total_instances": 9,
+  "completed": 9,
+  "passed": 9,
+  "results": [
+    {
+      "task_id": "astropy__astropy-12907",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 64.654,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "astropy__astropy-14182",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 59.157,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "astropy__astropy-14365",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 60.295,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "astropy__astropy-14995",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 63.211,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "astropy__astropy-6938",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 60.218,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "astropy__astropy-7746",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 59.652,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "django__django-10914",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 10.656,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "django__django-10924",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 11.376,
+      "test_output": "\n"
+    },
+    {
+      "task_id": "django__django-11001",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": true,
+      "verification_passed": true,
+      "time_seconds": 11.598,
+      "test_output": "\n"
+    }
+  ],
+  "pending_ids": [
+    "django__django-11019"
+  ],
+  "in_progress_ids": []
+}

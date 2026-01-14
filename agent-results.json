@@ -1,0 +1,22 @@
+{
+  "dataset": "swe-bench-lite",
+  "total_instances": 1,
+  "completed": 1,
+  "passed": 0,
+  "passed_rate": 0,
+  "total_time_seconds": 2327.102,
+  "average_time_per_task": 2327.102,
+  "average_iterations": 0,
+  "results": [
+    {
+      "task_id": "django__django-10914",
+      "dataset": "swe-bench",
+      "status": "completed",
+      "passed": false,
+      "verification_passed": false,
+      "time_seconds": 2327.102,
+      "test_output": "Agent did not modify any files"
+    }
+  ],
+  "timestamp": "2026-01-12T11:33:52.357Z"
+}
