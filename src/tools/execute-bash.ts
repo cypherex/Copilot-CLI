@@ -63,27 +63,48 @@ Note: Only use parallel for commands that don't depend on each other.`,
     const mode = policy.mode as string | undefined;
     const bashPolicy = policy.executeBash || {};
 
-    const defaultDeny = mode === 'eval'
-      ? [
-          '\\bcurl\\b',
-          '\\bwget\\b',
-          '\\bInvoke-WebRequest\\b',
-          '\\bpowershell\\s+-Command\\b',
-          '\\bgit\\s+clone\\b',
-          '\\bnpm\\s+(install|ci)\\b',
-          '\\bpnpm\\s+(install|add)\\b',
-          '\\byarn\\s+(install|add)\\b',
-          '\\bpip(3)?\\s+install\\b',
-          '\\bapt(-get)?\\s+(install|update|upgrade)\\b',
-          '\\bbrew\\s+install\\b',
-          '\\bchoco\\s+install\\b',
-          '\\bdocker\\b',
-          '\\bssh\\b',
-          '\\bscp\\b',
-        ]
-      : [];
+    const defaultEvalDeny = [
+      '\\bcurl\\b',
+      '\\bwget\\b',
+      '\\bInvoke-WebRequest\\b',
+      '\\bpowershell\\s+-Command\\b',
+      '\\bgit\\s+clone\\b',
+      '\\bnpm\\s+(install|ci)\\b',
+      '\\bpnpm\\s+(install|add)\\b',
+      '\\byarn\\s+(install|add)\\b',
+      '\\bpip(3)?\\s+install\\b',
+      '\\bapt(-get)?\\s+(install|update|upgrade)\\b',
+      '\\bbrew\\s+install\\b',
+      '\\bchoco\\s+install\\b',
+      '\\bdocker\\b',
+      '\\bssh\\b',
+      '\\bscp\\b',
+    ];
 
-    const allowPatterns = this.compilePatterns(bashPolicy.allowPatterns);
+    const defaultJudgeDeny = [
+      ...defaultEvalDeny,
+      // Disallow Git and shell composition in judge mode.
+      '\\bgit\\b',
+      '[;&|]',
+      '>>',
+      '>',
+      '\\brm\\b',
+      '\\bdel\\b',
+      '\\bmv\\b',
+      '\\bcopy\\b',
+      '\\bmove\\b',
+    ];
+
+    const defaultDeny = mode === 'judge' ? defaultJudgeDeny : mode === 'eval' ? defaultEvalDeny : [];
+
+    const defaultAllow = mode === 'judge'
+      ? [
+          // Allow running local test/smoke commands only.
+          '^(node|python|cargo)(\\s|$)',
+        ]
+      : undefined;
+
+    const allowPatterns = this.compilePatterns(bashPolicy.allowPatterns ?? defaultAllow);
     const denyPatterns = this.compilePatterns(bashPolicy.denyPatterns && bashPolicy.denyPatterns.length > 0
       ? bashPolicy.denyPatterns
       : defaultDeny);

@@ -4,7 +4,7 @@ import type { ConversationManager } from '../agent/conversation.js';
 import type { LLMClient } from '../llm/types.js';
 
 export interface ToolPolicy {
-  mode?: 'normal' | 'eval';
+  mode?: 'normal' | 'eval' | 'judge';
   executeBash?: {
     /** If provided, command must match at least one allow pattern (regex as string). */
     allowPatterns?: string[];

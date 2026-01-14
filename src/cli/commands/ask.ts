@@ -23,6 +23,7 @@ interface AskOptions {
   file?: string;
   taskTree?: string;
   eval?: boolean;
+  toolPolicyMode?: string;
   allowedTools?: string;
   seed?: string;
   record?: string;
@@ -163,6 +164,12 @@ export async function askCommand(
       ? options.allowedTools.split(',').map(s => s.trim()).filter(Boolean)
       : undefined;
 
+    const toolPolicyMode = (() => {
+      const m = options.toolPolicyMode?.trim();
+      if (m === 'normal' || m === 'eval' || m === 'judge') return m;
+      return undefined;
+    })();
+
     const agent = new CopilotAgent(
       config.auth,
       config.llm,
@@ -171,6 +178,7 @@ export async function askCommand(
       {
         traceFile: options.record,
         evalMode: options.eval,
+        toolPolicyMode,
         allowedTools,
         seed: options.seed,
       }

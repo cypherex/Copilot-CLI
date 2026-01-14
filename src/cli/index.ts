@@ -33,6 +33,7 @@ export function createCLI(): Command {
     .option('--no-tools', 'Disable tool execution (answer only)')
     .option('--max-iterations <n>', 'Limit iterations (default: unlimited)', parseInt)
     .option('--eval', 'Evaluation mode: safer defaults + stricter tool policy')
+    .option('--tool-policy-mode <mode>', 'Tool policy mode: normal|eval|judge (overrides --eval default)')
     .option('--allowed-tools <list>', 'Comma-separated tool allowlist (overrides --eval defaults)')
     .option('--seed <seed>', 'Best-effort deterministic seed (recorded in trace)')
     .option('--record <path>', 'Write a JSONL trace of the run to this path')

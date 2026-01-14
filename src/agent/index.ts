@@ -29,6 +29,8 @@ export interface AgentRuntimeConfig {
   evalMode?: boolean;
   allowedTools?: string[];
   seed?: string;
+  toolPolicyMode?: ToolPolicy['mode'];
+  toolPolicy?: ToolPolicy;
 }
 
 export class CopilotAgent {
@@ -89,7 +91,13 @@ export class CopilotAgent {
     ];
 
     const allowedTools = runtimeConfig?.allowedTools ?? (evalMode ? defaultEvalAllowedTools : undefined);
-    const toolPolicy: ToolPolicy | undefined = evalMode ? { mode: 'eval' } : undefined;
+
+    const envPolicyMode = (process.env.COPILOT_CLI_TOOL_POLICY_MODE as ToolPolicy['mode'] | undefined);
+    const policyMode = runtimeConfig?.toolPolicyMode ?? envPolicyMode;
+    const toolPolicy: ToolPolicy | undefined =
+      runtimeConfig?.toolPolicy ??
+      (policyMode ? { mode: policyMode } : undefined) ??
+      (evalMode ? { mode: 'eval' } : undefined);
 
     this.runtime = {
       evalMode,
