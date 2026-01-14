@@ -18,9 +18,18 @@ import { WorkContinuityManager } from './work-continuity-manager.js';
 import { SpawnValidator } from '../validators/spawn-validator.js';
 import { CompletionWorkflowValidator } from '../validators/completion-workflow-validator.js';
 import { ErrorHandler, handleError } from '../utils/error-handler.js';
+import { TraceRecorder } from '../trace/recorder.js';
 import type { AuthConfig } from '../auth/types.js';
 import type { LLMConfig, LLMClient } from '../llm/types.js';
 import type { CompletionTrackerConfig } from '../audit/types.js';
+import type { ToolPolicy } from '../tools/types.js';
+
+export interface AgentRuntimeConfig {
+  traceFile?: string;
+  evalMode?: boolean;
+  allowedTools?: string[];
+  seed?: string;
+}
 
 export class CopilotAgent {
   private authManager: AuthManager | null = null;
@@ -35,15 +44,59 @@ export class CopilotAgent {
   private llmConfig: LLMConfig;
   private workingDirectory: string;
   private spawnValidator: SpawnValidator;
+  private traceRecorder?: TraceRecorder;
+  private runtime: { evalMode: boolean; allowedTools?: string[]; toolPolicy?: ToolPolicy; seed?: string };
+  private sessionId?: string;
 
   constructor(
     authConfig: AuthConfig,
     llmConfig: LLMConfig,
     workingDirectory: string = process.cwd(),
-    trackerConfig?: Partial<CompletionTrackerConfig>
+    trackerConfig?: Partial<CompletionTrackerConfig>,
+    runtimeConfig?: AgentRuntimeConfig
   ) {
     this.llmConfig = llmConfig;
     this.workingDirectory = workingDirectory;
+
+    const evalMode = (runtimeConfig?.evalMode ?? (process.env.COPILOT_CLI_EVAL === '1')) === true;
+    const defaultEvalAllowedTools = [
+      // Safe file + repo inspection
+      'read_file',
+      'list_files',
+      'grep_repo',
+      'unified_diff',
+      // Local edits
+      'create_file',
+      'patch_file',
+      // Local validation
+      'execute_bash',
+      // Optional helpers
+      'verify_project',
+      'run_repro',
+      'parallel',
+      // Task tracking (for scoring + governance)
+      'create_task',
+      'update_task_status',
+      'set_current_task',
+      'list_tasks',
+      'list_subtasks',
+      'break_down_task',
+      'get_next_tasks',
+      'list_tracking_items',
+      'review_tracking_item',
+      'close_tracking_item',
+      'record_experiment_result',
+    ];
+
+    const allowedTools = runtimeConfig?.allowedTools ?? (evalMode ? defaultEvalAllowedTools : undefined);
+    const toolPolicy: ToolPolicy | undefined = evalMode ? { mode: 'eval' } : undefined;
+
+    this.runtime = {
+      evalMode,
+      allowedTools,
+      toolPolicy,
+      seed: runtimeConfig?.seed,
+    };
 
     // Only create AuthManager for Copilot provider
     if (llmConfig.provider === 'copilot') {
@@ -91,6 +144,16 @@ export class CopilotAgent {
     // Initialize hook and plugin registries
     this.hookRegistry = new HookRegistry();
     this.pluginRegistry = new PluginRegistry(this.hookRegistry, this.toolRegistry, workingDirectory);
+
+    if (runtimeConfig?.traceFile) {
+      this.traceRecorder = new TraceRecorder(this.hookRegistry, {
+        tracePath: runtimeConfig.traceFile,
+        evalMode: this.runtime.evalMode,
+        seed: this.runtime.seed,
+        allowedTools: this.runtime.allowedTools,
+        llm: { provider: llmConfig.provider, model: llmConfig.model },
+      });
+    }
 
     // Initialize scaffolding tracker
     this.completionTracker = new CompletionTracker(workingDirectory, trackerConfig);
@@ -169,6 +232,9 @@ export class CopilotAgent {
     this.loop.setFileRelationshipTracker(fileRelationshipTracker);
     this.loop.setWorkContinuityManager(workContinuityManager);
     this.loop.setMemoryStore(this.conversation.getMemoryStore());
+
+    this.loop.setAllowedTools(this.runtime.allowedTools);
+    this.loop.setToolPolicy(this.runtime.toolPolicy);
   }
 
   async chat(userMessage: string): Promise<void> {
@@ -188,6 +254,11 @@ export class CopilotAgent {
   }
 
   async initialize(): Promise<void> {
+    // Trace recorder must be installed before session:start.
+    if (this.traceRecorder) {
+      await this.traceRecorder.install();
+    }
+
     // Only authenticate for Copilot provider
     if (this.authManager) {
       await this.authManager.getToken();
@@ -204,8 +275,11 @@ export class CopilotAgent {
     await this.pluginRegistry.register(new RalphWiggumPlugin());
 
     // Execute session:start hook
+    const sessionId = `session_${Date.now()}`;
+    this.sessionId = sessionId;
+    this.loop.setSessionId(sessionId);
     await this.hookRegistry.execute('session:start', {
-      sessionId: `session_${Date.now()}`,
+      sessionId,
     });
   }
 
@@ -217,7 +291,7 @@ export class CopilotAgent {
     await this.conversation.saveMemory();
 
     // Execute session:end hook
-    await this.hookRegistry.execute('session:end', {});
+    await this.hookRegistry.execute('session:end', { sessionId: this.sessionId });
   }
 
   getProviderName(): string {

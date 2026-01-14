@@ -22,6 +22,10 @@ interface AskOptions {
   outputFile?: string;
   file?: string;
   taskTree?: string;
+  eval?: boolean;
+  allowedTools?: string;
+  seed?: string;
+  record?: string;
 }
 
 async function readStdin(): Promise<string> {
@@ -155,7 +159,22 @@ export async function askCommand(
   }
 
   try {
-    const agent = new CopilotAgent(config.auth, config.llm, options.directory);
+    const allowedTools = options.allowedTools
+      ? options.allowedTools.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    const agent = new CopilotAgent(
+      config.auth,
+      config.llm,
+      options.directory,
+      undefined,
+      {
+        traceFile: options.record,
+        evalMode: options.eval,
+        allowedTools,
+        seed: options.seed,
+      }
+    );
 
     // Set iteration limit (null = unlimited, which is default for ask)
     const maxIter = options.maxIterations !== undefined ? options.maxIterations : null;

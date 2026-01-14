@@ -1,12 +1,31 @@
-
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { AgenticLoop } from '../loop.js';
 import { ConversationManager } from '../conversation.js';
-import { ToolRegistry } from '../../tools/index.js';
 import { PlanningValidator } from '../planning-validator.js';
 import { IncompleteWorkDetector } from '../incomplete-work-detector.js';
 import { uiState } from '../../ui/ui-state.js';
 import type { LLMClient, ChatMessage, ChatCompletionResponse, StreamChunk } from '../../llm/types.js';
+
+type ToolExecutionResult = { success: boolean; output?: string; error?: string };
+
+class FakeToolRegistry {
+  private tools = new Map<string, { name: string; execute: (args: any, ctx?: any) => Promise<ToolExecutionResult> }>();
+
+  register(tool: { definition: { name: string }; execute: (args: any, ctx?: any) => Promise<ToolExecutionResult> }): void {
+    this.tools.set(tool.definition.name, { name: tool.definition.name, execute: tool.execute });
+  }
+
+  getDefinitions(): any[] {
+    return Array.from(this.tools.keys()).map((name) => ({ name, description: name, parameters: { type: 'object', properties: {} } }));
+  }
+
+  async execute(name: string, args: any, ctx?: any): Promise<ToolExecutionResult> {
+    const tool = this.tools.get(name);
+    if (!tool) {
+      return { success: false, error: `Tool not found: ${name}` };
+    }
+    return tool.execute(args, ctx);
+  }
+}
 
 /**
  * Mock LLM client that returns predefined responses
@@ -86,14 +105,14 @@ function createResponse(content: string, toolCalls?: Array<{ name: string; args:
 
 describe('Completion Validation Test', () => {
   let mockLLM: MockLLMClient;
-  let toolRegistry: ToolRegistry;
+  let toolRegistry: FakeToolRegistry;
   let conversation: ConversationManager;
   let loop: AgenticLoop;
 
   beforeEach(async () => {
     uiState.reset();
     mockLLM = new MockLLMClient();
-    toolRegistry = new ToolRegistry();
+    toolRegistry = new FakeToolRegistry();
     
     conversation = new ConversationManager('You are a helpful assistant.', {
       workingDirectory: '/test',
@@ -101,13 +120,42 @@ describe('Completion Validation Test', () => {
     });
     conversation.setLLMClient(mockLLM);
 
-    toolRegistry.registerTaskManagementTools(conversation.getMemoryStore());
+    // Minimal task management tool subset used by these tests
+    toolRegistry.register({
+      definition: { name: 'create_task' },
+      execute: async (args: any, ctx?: any) => {
+        const store = ctx?.conversation?.getMemoryStore?.();
+        const task = store.addTask({
+          description: args.description || 'task',
+          status: 'waiting',
+          priority: 'medium',
+          relatedFiles: [],
+        });
+        return { success: true, output: JSON.stringify({ task_id: task.id }) };
+      },
+    });
+    toolRegistry.register({
+      definition: { name: 'set_current_task' },
+      execute: async (args: any, ctx?: any) => {
+        const store = ctx?.conversation?.getMemoryStore?.();
+        store.updateWorkingState({ currentTask: args.task_id, lastUpdated: new Date() });
+        return { success: true, output: 'ok' };
+      },
+    });
+    toolRegistry.register({
+      definition: { name: 'update_task_status' },
+      execute: async (args: any, ctx?: any) => {
+        const store = ctx?.conversation?.getMemoryStore?.();
+        store.updateTask(args.task_id, { status: args.status, completionMessage: args.completion_message });
+        return { success: true, output: 'ok' };
+      },
+    });
     
     const planningValidator = new PlanningValidator(conversation.getMemoryStore());
     const incompleteWorkDetector = new IncompleteWorkDetector(conversation.getMemoryStore(), mockLLM);
 
-    loop = new AgenticLoop(mockLLM, toolRegistry, conversation);
-    loop.setMaxIterations(5);
+    loop = new AgenticLoop(mockLLM, toolRegistry as any, conversation);
+    loop.setMaxIterations(15);
     loop.setPlanningValidator(planningValidator);
     loop.setIncompleteWorkDetector(incompleteWorkDetector);
     loop.setMemoryStore(conversation.getMemoryStore());
@@ -156,19 +204,19 @@ describe('Completion Validation Test', () => {
         // Add a few extra just in case of unexpected internal calls
         mockLLM.queueResponse(createResponse("I am sure I am done."));
         mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
+        mockLLM.queueResponse(createResponse("Confirmed."));
     
         // Start the loop
         await loop.processUserMessage('Check status');
     
-        // Verify conversation history
         const messages = conversation.getMessages();
-        
-        // Debug: log all messages
-        console.log('Conversation History:');
-        messages.forEach((m, i) => {
-          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-          console.log(`[${i}] ${m.role}: ${content.substring(0, 100)}`);
-        });
     
         // Check for planning validation
         const planningValidation = messages.find(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('[Planning Validation Required]'));
@@ -178,11 +226,9 @@ describe('Completion Validation Test', () => {
         const openTasksMsg = messages.find(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('open tasks that need to be completed'));
         expect(openTasksMsg).toBeDefined();
         
-        // Verify it reached the end - find the last assistant message
-        const assistantMessages = messages.filter(m => m.role === 'assistant');
-        const lastAssistantMsg = assistantMessages[assistantMessages.length - 1];
-        expect(lastAssistantMsg).toBeDefined();
-        expect(lastAssistantMsg.content).toContain('complete now');
+        // Ensure the task was driven to completion via tool calls
+        const updated = store.getTasks().find((t: any) => t.id === taskId);
+        expect(updated?.status).toBe('completed');
       });
   test('Loop continues when agent attempts write operation without active task', async () => {
     const store = conversation.getMemoryStore();
@@ -190,10 +236,10 @@ describe('Completion Validation Test', () => {
     // No active task set
     
     // 1. Mock LLM trying to create a file
-    // Note: We need to register create_file or it will fail
+    // Register create_file for this test
     toolRegistry.register({
-      definition: { name: 'create_file', description: 'desc', parameters: { type: 'object', properties: {} } },
-      execute: async () => ({ success: true, output: 'Created' })
+      definition: { name: 'create_file' },
+      execute: async () => ({ success: true, output: 'Created' }),
     });
 
     mockLLM.queueResponse(createResponse("Creating file...", [
@@ -207,6 +253,20 @@ describe('Completion Validation Test', () => {
 
     // 3. Final response
     mockLLM.queueResponse(createResponse("Task created."));
+
+    // Extra buffers in case the loop injects follow-ups
+    mockLLM.queueResponse(createResponse("Continuing."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
+    mockLLM.queueResponse(createResponse("Done."));
 
     await loop.processUserMessage('Create a file');
 

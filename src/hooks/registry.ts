@@ -97,6 +97,15 @@ export class HookRegistry {
       try {
         const hookResult = await hook.handler(fullContext);
 
+        // Propagate modifications so later hooks see the updated context.
+        // This is especially important for recorders/observers that should capture final values.
+        if (type === 'user:prompt-submit' && hookResult.modifiedMessage !== undefined) {
+          fullContext.userMessage = hookResult.modifiedMessage;
+        }
+        if (type === 'tool:pre-execute' && hookResult.modifiedArgs !== undefined) {
+          fullContext.toolArgs = hookResult.modifiedArgs;
+        }
+
         // Merge results
         result = {
           continue: result.continue && hookResult.continue,

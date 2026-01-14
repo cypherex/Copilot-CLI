@@ -48,8 +48,9 @@ describe('auto ToT', () => {
 
     const decision = decideAutoToT(memoryStore, { kind: 'after_task_set' });
     expect(decision.shouldTrigger).toBe(true);
-    expect(decision.toolArgs?.mode).toBe('next_step');
-    expect(buildAutoToTInstruction(decision)).toContain('tree_of_thought');
+    expect(decision.toolName).toBe('deep_reasoning');
+    expect(decision.toolArgs?.problem).toContain('Current task:');
+    expect(buildAutoToTInstruction(decision)).toContain('DEEP_REASONING');
   });
 
   it('triggers on repro_failed when last repro is failing', () => {
@@ -61,7 +62,8 @@ describe('auto ToT', () => {
 
     const decision = decideAutoToT(memoryStore, { kind: 'repro_failed' });
     expect(decision.shouldTrigger).toBe(true);
-    expect(decision.toolArgs?.mode).toBe('diagnose');
+    expect(decision.toolName).toBe('deep_reasoning');
+    expect(decision.toolArgs?.problem).toContain('Last repro command:');
   });
 
   it('triggers on iteration 5 tick when repro is failing', () => {

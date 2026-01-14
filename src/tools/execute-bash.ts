@@ -44,8 +44,79 @@ Note: Only use parallel for commands that don't depend on each other.`,
 
   protected readonly schema = executeBashSchema;
 
-  protected async executeInternal(args: z.infer<typeof executeBashSchema>): Promise<string> {
-    const timeout = args.timeout && args.timeout > 0 ? args.timeout : undefined;
+  private compilePatterns(patterns: string[] | undefined): RegExp[] {
+    if (!patterns || patterns.length === 0) return [];
+    const compiled: RegExp[] = [];
+    for (const p of patterns) {
+      try {
+        compiled.push(new RegExp(p, 'i'));
+      } catch {
+        // Ignore invalid patterns
+      }
+    }
+    return compiled;
+  }
+
+  private enforcePolicy(command: string, timeoutMs: number | undefined, policy: any): { timeoutMs?: number } {
+    if (!policy) return { timeoutMs };
+
+    const mode = policy.mode as string | undefined;
+    const bashPolicy = policy.executeBash || {};
+
+    const defaultDeny = mode === 'eval'
+      ? [
+          '\\bcurl\\b',
+          '\\bwget\\b',
+          '\\bInvoke-WebRequest\\b',
+          '\\bpowershell\\s+-Command\\b',
+          '\\bgit\\s+clone\\b',
+          '\\bnpm\\s+(install|ci)\\b',
+          '\\bpnpm\\s+(install|add)\\b',
+          '\\byarn\\s+(install|add)\\b',
+          '\\bpip(3)?\\s+install\\b',
+          '\\bapt(-get)?\\s+(install|update|upgrade)\\b',
+          '\\bbrew\\s+install\\b',
+          '\\bchoco\\s+install\\b',
+          '\\bdocker\\b',
+          '\\bssh\\b',
+          '\\bscp\\b',
+        ]
+      : [];
+
+    const allowPatterns = this.compilePatterns(bashPolicy.allowPatterns);
+    const denyPatterns = this.compilePatterns(bashPolicy.denyPatterns && bashPolicy.denyPatterns.length > 0
+      ? bashPolicy.denyPatterns
+      : defaultDeny);
+
+    if (allowPatterns.length > 0) {
+      const allowed = allowPatterns.some(r => r.test(command));
+      if (!allowed) {
+        throw new Error(`execute_bash blocked by policy (not in allowlist): ${command}`);
+      }
+    }
+
+    if (denyPatterns.length > 0) {
+      const denied = denyPatterns.find(r => r.test(command));
+      if (denied) {
+        throw new Error(`execute_bash blocked by policy (matched deny pattern ${denied}): ${command}`);
+      }
+    }
+
+    const maxTimeoutMs = typeof bashPolicy.maxTimeoutMs === 'number' ? bashPolicy.maxTimeoutMs : undefined;
+    if (maxTimeoutMs !== undefined && timeoutMs !== undefined) {
+      return { timeoutMs: Math.min(timeoutMs, maxTimeoutMs) };
+    }
+    if (maxTimeoutMs !== undefined && timeoutMs === undefined) {
+      return { timeoutMs: maxTimeoutMs };
+    }
+
+    return { timeoutMs };
+  }
+
+  protected async executeInternal(args: z.infer<typeof executeBashSchema>, context?: any): Promise<string> {
+    const requestedTimeout = args.timeout && args.timeout > 0 ? args.timeout : undefined;
+    const enforced = this.enforcePolicy(args.command, requestedTimeout, context?.toolPolicy);
+    const timeout = enforced.timeoutMs;
 
     const result = await execaBash(args.command, {
       cwd: args.cwd || process.cwd(),

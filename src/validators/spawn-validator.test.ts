@@ -434,41 +434,36 @@ describe('SpawnValidator', () => {
             },
           }],
         })
-        // Mock subtask 1 - moderate (ready)
+        // Mock batch complexity for both subtasks (order matters)
         .mockResolvedValueOnce({
           choices: [{
             message: {
-              content: JSON.stringify({
-                rating: 'moderate',
-                evidence: {
-                  filesCount: 1,
-                  functionsEstimate: 3,
-                  linesEstimate: 50,
-                  integrationPoints: [],
-                  hasMultipleSteps: false,
-                  requiresCoordination: false,
+              content: JSON.stringify([
+                {
+                  rating: 'moderate',
+                  evidence: {
+                    filesCount: 1,
+                    functionsEstimate: 3,
+                    linesEstimate: 50,
+                    integrationPoints: [],
+                    hasMultipleSteps: false,
+                    requiresCoordination: false,
+                  },
+                  reasoning: 'Simple type definitions',
                 },
-                reasoning: 'Simple type definitions',
-              }),
-            },
-          }],
-        })
-        // Mock subtask 2 - moderate (ready)
-        .mockResolvedValueOnce({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                rating: 'moderate',
-                evidence: {
-                  filesCount: 2,
-                  functionsEstimate: 5,
-                  linesEstimate: 150,
-                  integrationPoints: [],
-                  hasMultipleSteps: true,
-                  requiresCoordination: false,
+                {
+                  rating: 'moderate',
+                  evidence: {
+                    filesCount: 2,
+                    functionsEstimate: 5,
+                    linesEstimate: 150,
+                    integrationPoints: [],
+                    hasMultipleSteps: true,
+                    requiresCoordination: false,
+                  },
+                  reasoning: 'Tokenizer is well-scoped',
                 },
-                reasoning: 'Tokenizer is well-scoped',
-              }),
+              ]),
             },
           }],
         });
@@ -602,27 +597,22 @@ describe('SpawnValidator', () => {
             },
           }],
         })
-        // Complexity for subtask 1
+        // Batch complexity for both subtasks
         .mockResolvedValueOnce({
           choices: [{
             message: {
-              content: JSON.stringify({
-                rating: 'simple',
-                evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
-                reasoning: 'Simple',
-              }),
-            },
-          }],
-        })
-        // Complexity for subtask 2
-        .mockResolvedValueOnce({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                rating: 'simple',
-                evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
-                reasoning: 'Simple',
-              }),
+              content: JSON.stringify([
+                {
+                  rating: 'simple',
+                  evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
+                  reasoning: 'Simple',
+                },
+                {
+                  rating: 'simple',
+                  evidence: { filesCount: 1, hasMultipleSteps: false, requiresCoordination: false },
+                  reasoning: 'Simple',
+                },
+              ]),
             },
           }],
         });

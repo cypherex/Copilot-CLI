@@ -26,9 +26,14 @@ import { WorkContinuityManager } from './work-continuity-manager.js';
 import type { MemoryStore } from '../memory/types.js';
 import { ErrorHandler, handleError } from '../utils/error-handler.js';
 import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from './auto-tot.js';
+import { filterToolDefinitions, isToolAllowed } from './tool-allowlist.js';
+import type { ToolPolicy } from '../tools/types.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
+  private allowedTools?: string[];
+  private toolPolicy?: ToolPolicy;
+  private sessionId?: string;
   private hookRegistry?: HookRegistry;
   private completionTracker?: CompletionTracker;
   private planningValidator?: PlanningValidator;
@@ -61,6 +66,18 @@ export class AgenticLoop {
 
   setMaxIterations(max: number | null): void {
     this.maxIterations = max;
+  }
+
+  setAllowedTools(allowedTools?: string[]): void {
+    this.allowedTools = allowedTools;
+  }
+
+  setToolPolicy(policy?: ToolPolicy): void {
+    this.toolPolicy = policy;
+  }
+
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
   }
 
   setHookRegistry(hookRegistry: HookRegistry): void {
@@ -128,6 +145,7 @@ export class AgenticLoop {
     let messageToProcess = userMessage;
     if (this.hookRegistry) {
       const promptResult = await this.hookRegistry.execute('user:prompt-submit', {
+        sessionId: this.sessionId,
         userMessage,
       });
       if (!promptResult.continue) {
@@ -233,6 +251,7 @@ export class AgenticLoop {
       // Execute agent:iteration hook
       if (this.hookRegistry) {
         const iterationResult = await this.hookRegistry.execute('agent:iteration', {
+          sessionId: this.sessionId,
           iteration,
           maxIterations: this.maxIterations ?? Infinity,
         });
@@ -246,7 +265,7 @@ export class AgenticLoop {
         }
       }
 
-      const tools = this.toolRegistry.getDefinitions();
+      const tools = filterToolDefinitions(this.toolRegistry.getDefinitions() as any, this.allowedTools) as any;
       uiState.setAgentStatus('thinking', 'Processing...');
 
       // Show thinking indicator in conversation
@@ -380,6 +399,7 @@ export class AgenticLoop {
         // Execute assistant:response hook
         if (this.hookRegistry) {
           const responseResult = await this.hookRegistry.execute('assistant:response', {
+            sessionId: this.sessionId,
             assistantMessage: responseContent,
             hasToolCalls: !!(response.toolCalls && response.toolCalls.length > 0),
           });
@@ -1231,9 +1251,40 @@ Start with list_tracking_items to see what needs review.`;
         toolArgs = {};
       }
 
+      if (!isToolAllowed(toolName, this.allowedTools)) {
+        const err = `Tool not allowed in this run: ${toolName}`;
+
+        uiState.startToolExecution({
+          id: toolCall.id,
+          name: toolName,
+          args: toolArgs,
+          status: 'running',
+          startTime: Date.now(),
+        });
+        uiState.endToolExecution(undefined, err);
+
+        uiState.addMessage({
+          role: 'tool',
+          content: `${toolName} error: ${err}`,
+          timestamp: Date.now(),
+        });
+        this.conversation.addToolResult(toolCall.id, toolName, `Error: ${err}`);
+
+        if (this.hookRegistry) {
+          await this.hookRegistry.execute('tool:post-execute', {
+            sessionId: this.sessionId,
+            toolName,
+            toolArgs,
+            toolResult: { success: false, error: err },
+          });
+        }
+        continue;
+      }
+
       // Execute tool:pre-execute hook
       if (this.hookRegistry) {
         const preResult = await this.hookRegistry.execute('tool:pre-execute', {
+          sessionId: this.sessionId,
           toolName,
           toolArgs,
         });
@@ -1275,6 +1326,7 @@ Start with list_tracking_items to see what needs review.`;
       try {
         result = await this.toolRegistry.execute(toolName, toolArgs, {
           conversation: this.conversation,
+          toolPolicy: this.toolPolicy,
         });
         const duration = Date.now() - startTime;
 
@@ -1341,6 +1393,7 @@ Start with list_tracking_items to see what needs review.`;
       // Execute tool:post-execute hook
       if (this.hookRegistry) {
         await this.hookRegistry.execute('tool:post-execute', {
+          sessionId: this.sessionId,
           toolName,
           toolArgs,
           toolResult: result,
@@ -1446,6 +1499,32 @@ Start with list_tracking_items to see what needs review.`;
       toolArgs = {};
     }
 
+    if (!isToolAllowed(toolName, this.allowedTools)) {
+      const err = `Tool not allowed in this run: ${toolName}`;
+      const duration = 0;
+      this.conversation.addToolResult(toolCall.id, toolName, `Error: ${err}`);
+      this.updateAutoParallelToolState(executionId, toolIndex, {
+        status: 'error',
+        executionTime: duration,
+        error: err,
+        args: toolArgs,
+      });
+      uiState.addMessage({
+        role: 'tool',
+        content: `${toolName} error: ${err}`,
+        timestamp: Date.now(),
+      });
+      if (this.hookRegistry) {
+        await this.hookRegistry.execute('tool:post-execute', {
+          sessionId: this.sessionId,
+          toolName,
+          toolArgs,
+          toolResult: { success: false, error: err },
+        });
+      }
+      return { duration };
+    }
+
     this.updateAutoParallelToolState(executionId, toolIndex, {
       status: 'running',
       args: toolArgs,
@@ -1457,6 +1536,7 @@ Start with list_tracking_items to see what needs review.`;
       // Execute tool:pre-execute hook
       if (this.hookRegistry) {
         const preResult = await this.hookRegistry.execute('tool:pre-execute', {
+          sessionId: this.sessionId,
           toolName,
           toolArgs,
         });
@@ -1476,7 +1556,7 @@ Start with list_tracking_items to see what needs review.`;
         }
       }
 
-      const result = await this.toolRegistry.execute(toolName, toolArgs);
+      const result = await this.toolRegistry.execute(toolName, toolArgs, { toolPolicy: this.toolPolicy, conversation: this.conversation });
       const duration = Date.now() - startTime;
 
       if (result.success) {
@@ -1521,6 +1601,7 @@ Start with list_tracking_items to see what needs review.`;
       // Execute tool:post-execute hook
       if (this.hookRegistry) {
         await this.hookRegistry.execute('tool:post-execute', {
+          sessionId: this.sessionId,
           toolName,
           toolArgs,
           toolResult: result,

@@ -5,6 +5,7 @@ import { chatCommand } from './commands/chat.js';
 import { askCommand } from './commands/ask.js';
 import { configCommand } from './commands/config.js';
 import { registerBenchmarkCommand } from './commands/benchmark.js';
+import { replayCommand } from './commands/replay.js';
 
 export function createCLI(): Command {
   const program = new Command();
@@ -31,10 +32,21 @@ export function createCLI(): Command {
     .option('--json', 'Output response as JSON')
     .option('--no-tools', 'Disable tool execution (answer only)')
     .option('--max-iterations <n>', 'Limit iterations (default: unlimited)', parseInt)
+    .option('--eval', 'Evaluation mode: safer defaults + stricter tool policy')
+    .option('--allowed-tools <list>', 'Comma-separated tool allowlist (overrides --eval defaults)')
+    .option('--seed <seed>', 'Best-effort deterministic seed (recorded in trace)')
+    .option('--record <path>', 'Write a JSONL trace of the run to this path')
     .option('-o, --output-file <path>', 'Save output to file (in addition to displaying)')
     .option('-f, --file <path>', 'Read question/prompt from file')
     .option('--task-tree <path>', 'Continue task breakdown from existing task_hierarchy.json')
     .action(askCommand);
+
+  // Replay a recorded trace
+  program
+    .command('replay <trace>')
+    .description('Replay a previously recorded JSONL trace (prints last assistant message)')
+    .option('--json', 'Output replay summary as JSON')
+    .action(replayCommand);
 
   // Configuration management
   program

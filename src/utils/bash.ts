@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import path from 'path';
-import { execa, type ExecaReturnValue } from 'execa';
+import type { ExecaReturnValue } from 'execa';
 
 function unique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
@@ -51,6 +51,9 @@ export async function execaBash(
   script: string,
   options: { cwd?: string; timeout?: number; reject?: boolean; all?: boolean } = {}
 ): Promise<ExecaReturnValue> {
+  // Dynamic import avoids Jest ESM/CJS interop issues when tests import modules
+  // that reference this helper but don't actually execute it.
+  const { execa } = await import('execa');
   const candidates = getBashCandidates().filter((c) => c === 'bash' || existsSync(c));
 
   let lastError: any;

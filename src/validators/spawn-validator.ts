@@ -1779,7 +1779,33 @@ QUALITY STANDARDS:
       }
     }
 
-    return { totalTasks, readyTasks, maxDepth, allIntegrationPoints, allDesignDecisions };
+    // De-duplicate inherited/contextual points so callers get stable counts.
+    const dedupe = <T>(items: T[], keyFn: (t: T) => string): T[] => {
+      const seen = new Set<string>();
+      const out: T[] = [];
+      for (const item of items) {
+        const key = keyFn(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+      }
+      return out;
+    };
+
+    const uniqueIntegrationPoints = dedupe(allIntegrationPoints, (p: any) =>
+      `${p?.integrates_with ?? p?.targetComponent ?? ''}|${p?.requirement ?? ''}|${p?.dataContract ?? ''}`
+    );
+    const uniqueDesignDecisions = dedupe(allDesignDecisions, (d: any) =>
+      `${d?.decision ?? ''}|${d?.scope ?? ''}|${Array.isArray(d?.affects) ? d.affects.join(',') : ''}`
+    );
+
+    return {
+      totalTasks,
+      readyTasks,
+      maxDepth,
+      allIntegrationPoints: uniqueIntegrationPoints,
+      allDesignDecisions: uniqueDesignDecisions,
+    };
   }
 
   /**

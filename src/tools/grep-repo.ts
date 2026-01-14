@@ -1,7 +1,6 @@
 // Grep Repo Tool - fast codebase search (read-only)
 
 import { z } from 'zod';
-import { execa } from 'execa';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import { execaBash } from '../utils/bash.js';
@@ -146,6 +145,7 @@ Examples:
 
     // Prefer native rg (avoids MSYS/WSL bash edge cases); fall back to bash-driven rg/grep.
     try {
+      const { execa } = await import('execa');
       const rgArgs = buildRgArgs(args);
       const result = await execa('rg', rgArgs, {
         cwd,
