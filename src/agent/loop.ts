@@ -29,6 +29,7 @@ import { ErrorHandler, handleError } from '../utils/error-handler.js';
 import { buildAutoToTInstruction, decideAutoToT, recordAutoToT } from './auto-tot.js';
 import { filterToolDefinitions, isToolAllowed } from './tool-allowlist.js';
 import type { ToolPolicy } from '../tools/types.js';
+import { ToolErrorRecovery } from './tool-error-recovery.js';
 
 export class AgenticLoop {
   private maxIterations: number | null = 10;
@@ -58,6 +59,8 @@ export class AgenticLoop {
   // Track if we just asked LLM to review tracking items (to avoid re-parsing the review response)
   private justAskedToReviewTrackingItems = false;
   private autoToTTriggeredThisTurn = false;
+
+  private toolErrorRecovery = new ToolErrorRecovery();
 
   constructor(
     private llmClient: LLMClient,
@@ -345,6 +348,20 @@ export class AgenticLoop {
         messages = [
           ...messages.slice(0, -1),
           { role: 'system' as const, content: subagentReminder },
+          messages[messages.length - 1],
+        ];
+      }
+
+      // Remove old tool error triage messages before injecting a new one.
+      messages = messages.filter(
+        (msg) => !(msg.role === 'system' && typeof msg.content === 'string' && msg.content.includes('[Tool Error Triage]'))
+      );
+
+      const toolErrorAdvice = this.toolErrorRecovery.buildSystemAdvice();
+      if (toolErrorAdvice) {
+        messages = [
+          ...messages.slice(0, -1),
+          { role: 'system' as const, content: toolErrorAdvice },
           messages[messages.length - 1],
         ];
       }
@@ -1213,6 +1230,41 @@ Start with list_tracking_items to see what needs review.`;
     }
   }
 
+  private async executeToolWithRecovery(
+    toolName: string,
+    toolArgs: Record<string, any>
+  ): Promise<{ success: boolean; output?: string; error?: string }> {
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const result = await this.toolRegistry.execute(toolName, toolArgs, {
+        conversation: this.conversation,
+        toolPolicy: this.toolPolicy,
+      });
+
+      if (result.success) {
+        return result;
+      }
+
+      const err = result.error || 'Unknown error';
+      this.toolErrorRecovery.recordToolError(toolName, err);
+
+      if (!this.toolErrorRecovery.shouldRetry({ toolName, error: err, attempt, maxRetries })) {
+        return result;
+      }
+
+      const backoffMs = 200 * Math.pow(2, attempt);
+      uiState.addMessage({
+        role: 'system',
+        content: chalk.dim(`Retrying ${toolName} after transient failure (${attempt + 1}/${maxRetries})...`),
+        timestamp: Date.now(),
+      });
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+
+    return { success: false, error: 'Unknown error' };
+  }
+
   private updateAutoParallelToolState(
     executionId: string,
     toolIndex: number,
@@ -1325,10 +1377,7 @@ Start with list_tracking_items to see what needs review.`;
       const startTime = Date.now();
 
       try {
-        result = await this.toolRegistry.execute(toolName, toolArgs, {
-          conversation: this.conversation,
-          toolPolicy: this.toolPolicy,
-        });
+        result = await this.executeToolWithRecovery(toolName, toolArgs);
         const duration = Date.now() - startTime;
 
         // Update uiState with tool result
@@ -1373,6 +1422,8 @@ Start with list_tracking_items to see what needs review.`;
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+
+        this.toolErrorRecovery.recordToolError(toolName, errorMessage);
 
         // Log full error with stack trace for debugging
         handleError(error, {
@@ -1557,7 +1608,7 @@ Start with list_tracking_items to see what needs review.`;
         }
       }
 
-      const result = await this.toolRegistry.execute(toolName, toolArgs, { toolPolicy: this.toolPolicy, conversation: this.conversation });
+      const result = await this.executeToolWithRecovery(toolName, toolArgs);
       const duration = Date.now() - startTime;
 
       if (result.success) {
@@ -1613,6 +1664,8 @@ Start with list_tracking_items to see what needs review.`;
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.toolErrorRecovery.recordToolError(toolName, errorMessage);
 
       // Log full error with stack trace for debugging
       handleError(error, {
