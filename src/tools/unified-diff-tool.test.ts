@@ -30,27 +30,27 @@ describe('UnifiedDiffTool', () => {
     expect(result.success).toBe(true);
 
     const updated = await fs.readFile(file, 'utf-8');
-    expect(updated).toBe(['one', 'TWO', 'three', ''].join('\n'));
+    expect(updated.replace(/\r\n/g, '\n')).toBe(['one', 'TWO', 'three', ''].join('\n'));
   });
 
-  it('rejects ambiguous hunks', async () => {
+  it('fails (dry-run) when the diff does not apply', async () => {
     const dir = await makeTempDir();
     const file = path.join(dir, 'b.txt');
-    await fs.writeFile(file, ['X', 'Y', 'X', 'Y', ''].join('\n'), 'utf-8');
+    await fs.writeFile(file, ['X', 'Y', ''].join('\n'), 'utf-8');
 
     const diff = [
       `--- a/b.txt`,
       `+++ b/b.txt`,
       `@@ -1,2 +1,2 @@`,
       ` X`,
-      `-Y`,
+      `-MISSING`,
       `+Z`,
       ``,
     ].join('\n');
 
     const tool = new UnifiedDiffTool();
-    const res = await tool.execute({ diff, cwd: dir, fuzz: 10 });
+    const res = await tool.execute({ diff, cwd: dir, dry_run: true });
     expect(res.success).toBe(false);
-    expect(String(res.error)).toContain('ambiguous');
+    expect(String(res.error)).toMatch(/patch failed|failed to apply|No (file|fuzzy) match|Hunk failed/i);
   });
 });

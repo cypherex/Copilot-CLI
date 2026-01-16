@@ -66,7 +66,7 @@ export class CopilotAgent {
       'read_file',
       'list_files',
       'grep_repo',
-      'unified_diff',
+      'apply_unified_diff',
       // Local edits
       'create_file',
       'patch_file',

@@ -9,6 +9,7 @@
 // Non-mandatory opportunities are presented as suggestions that the agent may consider.
 
 import chalk from 'chalk';
+import path from 'path';
 import { uiState } from '../ui/ui-state.js';
 import type { LLMClient, ToolCall } from '../llm/types.js';
 import type { ToolRegistry } from '../tools/index.js';
@@ -1641,7 +1642,7 @@ Start with list_tracking_items to see what needs review.`;
    */
   private canExecuteInParallel(toolCalls: ToolCall[]): boolean {
     // Tools that modify state should not run in parallel with tools that depend on that state
-    const writeTools = new Set(['create_file', 'patch_file', 'execute_bash', 'parallel']);
+    const writeTools = new Set(['create_file', 'patch_file', 'apply_unified_diff', 'execute_bash', 'parallel']);
     const readTools = new Set([
       'read_file',
       'list_files',
@@ -1649,7 +1650,6 @@ Start with list_tracking_items to see what needs review.`;
       'grep_repo',
       'explore_codebase',
       'tree_of_thought',
-      'unified_diff',
     ]);
 
     let hasWrites = false;
@@ -1718,6 +1718,61 @@ Start with list_tracking_items to see what needs review.`;
           path: toolArgs.path,
           purpose: 'Modified in session',
         });
+      } else if (toolName === 'apply_unified_diff') {
+        const cwd = typeof toolArgs.cwd === 'string' ? path.resolve(toolArgs.cwd) : process.cwd();
+        const diffText = typeof toolArgs.diff === 'string' ? toolArgs.diff : '';
+        if (!diffText) return;
+
+        const lines = diffText.replace(/\r\n/g, '\n').split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.startsWith('--- ')) continue;
+
+          const oldHeader = line.replace(/^---\s+/, '').trim().split(/\s+/)[0];
+          const newLine = lines[i + 1] ?? '';
+          if (!newLine.startsWith('+++ ')) continue;
+          const newHeader = newLine.replace(/^\+\+\+\s+/, '').trim().split(/\s+/)[0];
+
+          const strip = (p: string): string => (p === '/dev/null' ? p : p.replace(/^(a|b)\//, ''));
+          const oldRel = strip(oldHeader);
+          const newRel = strip(newHeader);
+
+          if (newRel === '/dev/null') {
+            // Deletion: record against old path.
+            if (oldRel !== '/dev/null') {
+              const abs = path.resolve(cwd, oldRel);
+              memoryStore.addEditRecord({
+                file: abs,
+                description: 'Applied unified diff (delete)',
+                changeType: 'delete',
+                beforeSnippet: diffText.slice(0, 200),
+                relatedTaskId: activeTask?.id,
+              });
+              memoryStore.addActiveFile({ path: abs, purpose: 'Deleted in session' });
+              if (this.fileRelationshipTracker) this.fileRelationshipTracker.trackFileAccess(abs, true);
+            }
+          } else {
+            const abs = path.resolve(cwd, newRel);
+            editedFile = abs;
+            const changeType = oldRel === '/dev/null' ? 'create' : 'modify';
+            memoryStore.addEditRecord({
+              file: abs,
+              description: 'Applied unified diff',
+              changeType,
+              beforeSnippet: diffText.slice(0, 200),
+              relatedTaskId: activeTask?.id,
+            });
+            memoryStore.addActiveFile({ path: abs, purpose: changeType === 'create' ? 'Created in session' : 'Modified in session' });
+            if (this.fileRelationshipTracker) {
+              this.fileRelationshipTracker.trackFileAccess(abs, true);
+              if (this.fileRelationshipTracker.shouldPrompt(abs)) {
+                this.fileRelationshipTracker.displayPrompt(abs);
+              }
+            }
+          }
+
+          i += 1;
+        }
       }
     } catch {
       // Silent - memory tracking failure is not critical

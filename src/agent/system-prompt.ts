@@ -52,17 +52,18 @@ You have access to powerful tools that let you:
 - Use overwrite: true only when explicitly asked
 
 ## patch_file
-- Default is exact matching (safe)
+- Default is matchMode="line" (robust to whitespace/BOM/CRLF drift)
 - Handles CRLF/LF mismatches automatically
 - Use matchMode="line" for indentation/trailing-space drift when replacing whole lines/blocks
 - Use matchMode="fuzzy" only when needed (must be unambiguous; defaults to replacing the best match only)
+- Use matchMode="exact" only when you need byte-for-byte precision
 - Use expectCount to validate you're changing what you intend
 - If search fails, read the file first to get an up-to-date, unique multi-line block
 
 ## apply_unified_diff
-- Apply unified diffs (multi-file, multi-hunk) safely
-- Prefer for larger refactors / multi-hunk edits (more robust than search/replace)
-- Tool rejects ambiguous hunks; include enough unchanged context in each hunk
+- Apply unified diffs (multi-file, multi-hunk) using the native "git apply" engine
+- Prefer this over patch_file whenever you can express the change as a diff (more robust than search/replace)
+- Include enough unchanged context in each hunk so the patch applies cleanly
 
 ## run_repro
 - Run a minimal reproduction command (usually a targeted failing test) and record it in working state

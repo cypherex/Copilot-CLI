@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import { BaseTool } from './base-tool.js';
 import type { ToolDefinition } from './types.js';
 import { createFilesystemError } from '../utils/filesystem-errors.js';
@@ -175,13 +176,40 @@ function applyHunk(
   return { lines: updated, appliedAt: start + 1 };
 }
 
+async function runGitApply(opts: { cwd: string; diff: string; checkOnly: boolean }): Promise<{ exitCode: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const args = opts.checkOnly
+      ? ['apply', '--check', '--whitespace=nowarn', '--recount', '-']
+      : ['apply', '--whitespace=nowarn', '--recount', '-'];
+
+    const child = spawn('git', args, {
+      cwd: opts.cwd,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let out = '';
+    child.stdout.on('data', (d) => {
+      out += String(d);
+    });
+    child.stderr.on('data', (d) => {
+      out += String(d);
+    });
+    child.on('error', (err) => reject(err));
+    child.on('close', (code) => resolve({ exitCode: code ?? 1, output: out }));
+
+    child.stdin.write(opts.diff);
+    child.stdin.end();
+  });
+}
+
 export class UnifiedDiffTool extends BaseTool {
   readonly definition: ToolDefinition = {
     name: 'apply_unified_diff',
     description: `Apply a unified diff (multi-file, multi-hunk) to the workspace.
 
-This is more resilient and LLM-friendly than exact search/replace for multi-hunk edits.
-The tool rejects hunks that are ambiguous or cannot be applied.`,
+This tool uses the native [1mgit apply[0m patch engine when available.
+It is more resilient and LLM-friendly than exact search/replace for multi-hunk edits.`,
     parameters: {
       type: 'object',
       properties: {
@@ -200,10 +228,39 @@ The tool rejects hunks that are ambiguous or cannot be applied.`,
     const baseDir = args.cwd ? path.resolve(args.cwd) : process.cwd();
     const patches = parseUnifiedDiff(args.diff);
 
+    // Precompute a lightweight summary (even if git apply fails).
     const summary: any = {
+      engine: 'git',
       dry_run: args.dry_run,
-      files: [] as any[],
+      files: patches.map(p => ({
+        oldPath: p.oldPath,
+        newPath: p.newPath,
+        hunks: p.hunks.length,
+      })),
+      note: args.fuzz ? `fuzz=${args.fuzz} (note: git apply uses its own context heuristics)` : undefined,
     };
+
+    // Use git apply (works even outside a git repo). If git isn't available, fall back to the old in-process engine.
+    try {
+      const res = await runGitApply({ cwd: baseDir, diff: args.diff, checkOnly: args.dry_run });
+
+      if (res.exitCode !== 0) {
+        throw new Error(res.output || `git apply failed (exit=${res.exitCode})`);
+      }
+
+      return JSON.stringify(summary, null, 2);
+    } catch (err: any) {
+      // Fallback if git is not present.
+      const msg = String(err?.message ?? err);
+      if (!/ENOENT|not found|spawn\s+git/i.test(msg) && !(process.platform === 'win32' && /is not recognized/i.test(msg))) {
+        // git exists but patch didn't apply.
+        throw new Error(`${msg}\n\nSummary:\n${JSON.stringify(summary, null, 2)}`);
+      }
+    }
+
+    // === Fallback engine (no git) ===
+    // Apply a best-effort, conservative unified-diff application.
+    const fbSummary: any = { ...summary, engine: 'builtin' };
 
     for (const patch of patches) {
       const oldPath = patch.oldPath === '/dev/null' ? '/dev/null' : path.resolve(baseDir, patch.oldPath);
@@ -222,71 +279,40 @@ The tool rejects hunks that are ambiguous or cannot be applied.`,
             throw createFilesystemError(error, oldPath, 'delete');
           }
         }
-        summary.files.push({ action: 'delete', path: patch.oldPath });
         continue;
       }
 
-      // Read old content (or treat as empty for creation)
       let original = '';
-      let existed = true;
-      if (patch.oldPath === '/dev/null') {
-        existed = false;
-      } else {
+      if (patch.oldPath !== '/dev/null') {
         try {
           original = await fs.readFile(oldPath, 'utf-8');
-        } catch (error) {
-          existed = false;
+        } catch {
           original = '';
         }
       }
 
       const eol = detectEol(original);
       const { lines: fileLines, hasTrailing } = splitWithTrailing(original, eol);
-
       let updatedLines = fileLines;
-      const applied: Array<{ hunk: string; appliedAtLine: number }> = [];
 
       for (const hunk of patch.hunks) {
-        const before = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
-        const res = applyHunk(updatedLines, hunk, args.fuzz);
-        updatedLines = res.lines;
-        applied.push({ hunk: before, appliedAtLine: res.appliedAt });
+        updatedLines = applyHunk(updatedLines, hunk, args.fuzz).lines;
       }
 
       const updatedText = joinWithTrailing(updatedLines, eol, hasTrailing);
-
       if (!args.dry_run) {
         const targetPath = newPath;
         try {
           await fs.mkdir(path.dirname(targetPath), { recursive: true });
-        } catch (error) {
-          throw createFilesystemError(error, path.dirname(targetPath), 'create directory');
-        }
-        try {
           await fs.writeFile(targetPath, updatedText, 'utf-8');
         } catch (error) {
           throw createFilesystemError(error, targetPath, 'write');
         }
-
-        // If this was a rename, delete old file
-        if (patch.oldPath !== '/dev/null' && patch.oldPath !== patch.newPath && patch.oldPath !== '' && existed) {
-          try {
-            await fs.unlink(oldPath);
-          } catch {
-            // Best-effort: ignore failures deleting old file.
-          }
-        }
       }
 
-      summary.files.push({
-        action: patch.oldPath === '/dev/null' ? 'create' : (patch.oldPath !== patch.newPath ? 'modify_or_rename' : 'modify'),
-        old_path: patch.oldPath,
-        new_path: patch.newPath,
-        hunks_applied: applied,
-      });
     }
 
-    return JSON.stringify(summary, null, 2);
+    return JSON.stringify(fbSummary, null, 2);
   }
 }
 

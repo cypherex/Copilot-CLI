@@ -12,7 +12,7 @@ const patchFileSchema = z.object({
   search: z.string(),
   replace: z.string(),
   expectCount: z.number().optional(),
-  matchMode: z.enum(['exact', 'line', 'fuzzy']).optional().default('exact'),
+  matchMode: z.enum(['exact', 'line', 'fuzzy']).optional().default('line'),
   replaceMode: z.enum(['all', 'first']).optional(),
   fuzzyThreshold: z.number().min(0.5).max(1).optional().default(0.92),
   contextLines: z.number().int().min(0).max(5).optional().default(2),
@@ -23,9 +23,11 @@ export class PatchFileTool extends BaseTool {
     name: 'patch_file',
     description: `Patch a file using search/replace.
 
-Default behavior is exact matching. For LLM resilience you can opt into:
+Default behavior is matchMode="line" (more resilient to whitespace/BOM/CRLF differences). You can opt into:
 - matchMode="line": matches whole lines ignoring leading/trailing whitespace (good for indentation / CRLF vs LF issues)
 - matchMode="fuzzy": finds the best near-match block (requires an unambiguous match; defaults to replacing only the best match)
+
+Use matchMode="exact" when you need byte-for-byte precision.
 
 Tips:
 - Prefer multi-line search blocks (2-20 lines) for stable matching.

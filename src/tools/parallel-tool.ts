@@ -21,12 +21,22 @@ interface ParallelToolCall {
   parameters: Record<string, any>;
 }
 
+const ParallelToolCallSchema = z
+  .object({
+    tool: z.string().describe('The name of the tool to execute'),
+    // LLMs occasionally omit the `parameters` wrapper and pass tool args at the top-level.
+    // Accept both forms and normalize to { parameters: {...} }.
+    parameters: z.record(z.any()).optional().describe('Parameters for the tool'),
+  })
+  .passthrough()
+  .transform((val): ParallelToolCall => {
+    const { tool, parameters, ...rest } = val as any;
+    return { tool, parameters: parameters ?? rest };
+  });
+
 // Schema for parallel tool execution
 const ParallelSchema = z.object({
-  tools: z.array(z.object({
-    tool: z.string().describe('The name of the tool to execute'),
-    parameters: z.record(z.any()).describe('Parameters for the tool'),
-  })).max(10).describe('Array of tool calls to execute in parallel (max 10)'),
+  tools: z.array(ParallelToolCallSchema).max(10).describe('Array of tool calls to execute in parallel (max 10)'),
   description: z.string().optional().describe('Optional description of what the parallel block is accomplishing'),
 });
 
