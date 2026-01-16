@@ -136,7 +136,7 @@ Use this after implementing changes and before marking tasks as completed.`,
       const enforced = this.enforcePolicy(command, timeout, context?.toolPolicy);
       const res = await execaBash(command, { cwd, timeout: enforced.timeoutMs, all: true, reject: false });
       const durationMs = Date.now() - start;
-      const exitCode = res.exitCode ?? 0;
+      const exitCode = typeof res.exitCode === 'number' ? res.exitCode : 1;
       const output = res.all ?? '';
 
       results.push({ command, exitCode, durationMs });
@@ -181,7 +181,10 @@ Use this after implementing changes and before marking tasks as completed.`,
         startedAt: startedAt.toISOString(),
         finishedAt: finishedAt.toISOString(),
         passed,
-        results,
+        results: results.map((r, idx) => ({
+          ...r,
+          outputSnippet: commandRecords[idx]?.outputSnippet,
+        })),
       },
       null,
       2

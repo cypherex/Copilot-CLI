@@ -74,6 +74,28 @@ Tips:
       throw createFilesystemError(error, absolutePath, 'read');
     }
 
+    const writeAndVerify = async (nextContent: string): Promise<void> => {
+      try {
+        await fs.writeFile(absolutePath, nextContent, 'utf-8');
+      } catch (error) {
+        throw createFilesystemError(error, absolutePath, 'write');
+      }
+
+      let reread: string;
+      try {
+        reread = await fs.readFile(absolutePath, 'utf-8');
+      } catch (error) {
+        throw createFilesystemError(error, absolutePath, 'read');
+      }
+
+      if (reread !== nextContent) {
+        throw new Error(
+          `Patch verification failed for ${absolutePath}: file contents on disk did not match the expected result after write. ` +
+            `This may indicate another process modified the file concurrently. Consider using apply_unified_diff for more robust edits.`
+        );
+      }
+    };
+
     const fileEol = content.includes('\r\n') ? '\r\n' : '\n';
     const fileHasTrailingEol = content.endsWith(fileEol);
 
@@ -118,11 +140,7 @@ Tips:
         const regex = new RegExp(escapedSearch, replaceMode === 'all' ? 'g' : undefined);
         const newContent = content.replace(regex, effectiveReplace);
 
-        try {
-          await fs.writeFile(absolutePath, newContent, 'utf-8');
-        } catch (error) {
-          throw createFilesystemError(error, absolutePath, 'write');
-        }
+        await writeAndVerify(newContent);
 
         const replacedCount = replaceMode === 'all' ? exactOccurrences : 1;
         return `Successfully patched ${absolutePath}: ${replacedCount} occurrence(s) replaced (matchMode=exact, replaceMode=${replaceMode}).`;
@@ -289,11 +307,7 @@ Tips:
         updated.splice(start, searchLines.length, ...replaceLines);
       }
 
-      try {
-        await fs.writeFile(absolutePath, joinLines(updated), 'utf-8');
-      } catch (error) {
-        throw createFilesystemError(error, absolutePath, 'write');
-      }
+      await writeAndVerify(joinLines(updated));
 
       return `Successfully patched ${absolutePath}: ${effectiveMatches.length} match(es) replaced (matchMode=line, replaceMode=${replaceMode}).`;
     }
@@ -363,11 +377,7 @@ Tips:
       updated.splice(start, searchLines.length, ...replaceLines);
     }
 
-    try {
-      await fs.writeFile(absolutePath, joinLines(updated), 'utf-8');
-    } catch (error) {
-      throw createFilesystemError(error, absolutePath, 'write');
-    }
+    await writeAndVerify(joinLines(updated));
 
     const bestLine = selectedStarts[0] + 1;
     return `Successfully patched ${absolutePath}: ${selectedStarts.length} match(es) replaced (matchMode=fuzzy, replaceMode=${replaceMode}, bestScore=${(best.score * 100).toFixed(1)}%, bestAtLine=${bestLine}).`;
