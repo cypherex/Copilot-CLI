@@ -32,3 +32,8 @@ coverage/
 
 # Cache
 .cache/
+
+# Local scratch dirs created by benchmarks / experiments
+astropy_repo/
+benchmark-workspace/
+testbox/

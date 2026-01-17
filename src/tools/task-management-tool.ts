@@ -307,8 +307,25 @@ Note: Task completion is validated to ensure proper workflow and next step plann
     const { task_id, status, notes, completion_message } = args;
 
     const mode = context?.toolPolicy?.mode;
-    const relaxCompletionWorkflow = mode === 'eval' || mode === 'judge';
+    const strictCompletionWorkflow =
+      String(process.env.COPILOT_CLI_STRICT_COMPLETION ?? '').trim() === '1' ||
+      String(process.env.COPILOT_CLI_STRICT_VERIFY ?? '').trim() === '1';
+    const relaxCompletionWorkflow = (mode === 'eval' || mode === 'judge') && !strictCompletionWorkflow;
     const warnings: string[] = [];
+
+    const hasBuildOrTestCommand = (commands: string[] | undefined): boolean => {
+      const joined = (commands ?? []).join('\n').toLowerCase();
+      return (
+        joined.includes('npm test') ||
+        joined.includes('npm run build') ||
+        joined.includes('pnpm test') ||
+        joined.includes('pnpm run build') ||
+        joined.includes('yarn test') ||
+        joined.includes('yarn build') ||
+        joined.includes('tsc ') ||
+        joined.includes('pytest')
+      );
+    };
 
     const task = this.memoryStore.getTasks().find((t: any) => t.id === task_id);
     if (!task) {
@@ -342,7 +359,9 @@ Note: Task completion is validated to ensure proper workflow and next step plann
     }
 
     // VALIDATION: Require a passing verification run after entering pending_verification (for tasks with recorded edits)
-    if (status === 'completed' && hasRecordedEdits) {
+    // When strict completion is enabled, require verification even if edits were not recorded.
+    const requireVerification = hasRecordedEdits || strictCompletionWorkflow;
+    if (status === 'completed' && requireVerification) {
       const verification = workingStateForVerification.lastVerification;
       if (!verification) {
         if (relaxCompletionWorkflow) {
@@ -366,6 +385,14 @@ Note: Task completion is validated to ensure proper workflow and next step plann
           );
         }
       }
+
+      if (verification && verification.passed && strictCompletionWorkflow && !hasBuildOrTestCommand(verification.commands)) {
+        throw new Error(
+          `Cannot mark task completed: strict verification is enabled but the last verify_project commands did not include a build/test command. ` +
+            `Re-run verify_project({ commands: ["npm run build", "npm test"] }) (or equivalent) before completing.`
+        );
+      }
+
       if (verification) {
         const pendingAt = task.pendingVerificationAt ? new Date(task.pendingVerificationAt).getTime() : task.updatedAt.getTime();
         const verifiedAt = new Date(verification.finishedAt).getTime();
