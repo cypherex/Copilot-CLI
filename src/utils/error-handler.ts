@@ -7,6 +7,9 @@ import chalk from 'chalk';
 import { LogLevel, logger } from './logger.js';
 import { uiState } from '../ui/ui-state.js';
 
+// Re-export LogLevel for convenience
+export { LogLevel };
+
 export interface ErrorHandlingOptions {
   /** Whether to include full stack trace */
   includeStack?: boolean;
